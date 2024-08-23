@@ -1,8 +1,8 @@
-# LoRa PTT Communication Project with NRF52840
+# LoRa PTT Communication Project with NRF52840 on T-Echo
 
 ## Overview
 
-This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa communication on an NRF52840 microcontroller. The project is designed to work with an e-paper display (e.g., GxEPD2 1.54" display) and supports different operating modes including PTT, text message display (TXT), raw data display (RAW), and a test mode (TST). 
+This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa communication on a LilyGO T-Echo board with an NRF52840 microcontroller. The project is designed to work with an e-paper display (e.g., GxEPD2 1.54" display) and supports different operating modes including PTT, text message display (TXT), raw data display (RAW), and a test mode (TST). 
 
 ## Features
 
@@ -15,7 +15,7 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 
 ## Hardware Requirements
 
-- **Microcontroller**: NRF52840 (e.g., Adafruit Feather nRF52840, Nordic nRF52840 DK)
+- **Microcontroller**: LilyGO T-Echo with NRF52840
 - **LoRa Module**: SX1262
 - **E-Paper Display**: GxEPD2 1.54" e-paper display or similar
 - **Buttons**: Two buttons for mode switching and PTT action
@@ -33,41 +33,79 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 
 ## Setup Instructions
 
-1. **Install Arduino IDE/Arduino Studio**:
-   - Download and install the Arduino IDE on your desktop, or Arduino Studio on your Android device.
+### Using Arduino IDE
 
-2. **Install the Adafruit nRF52 Board Package**:
-   - In the Arduino IDE, go to `File > Preferences`.
-   - Add the following URL to the Additional Boards Manager URLs: `https://adafruit.github.io/arduino-board-index/package_adafruit_index.json`.
-   - Go to `Tools > Board > Boards Manager`, search for "Adafruit nRF52", and install the package.
+1. **Download and Install Arduino IDE**:
+   - Download the latest version of the Arduino IDE from the [official website](https://www.arduino.cc/en/software).
 
-3. **Install Required Libraries**:
-   - Use the Library Manager in Arduino IDE (`Sketch > Include Library > Manage Libraries...`) to install the following libraries:
-     - `RadioLib`
-     - `GxEPD2`
-     - `Adafruit GFX`
-     - `Codec2`
+2. **Configure Board Manager**:
+   - Open Arduino IDE, then navigate to `File > Preferences`.
+   - In the "Additional Boards Manager URLs" field, add the following URL:
+     ```
+     https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+     ```
+   - Click "OK" to save the preferences.
 
-4. **Wiring Connections**:
-   - **LoRa Module**:
-     - Connect `MOSI`, `MISO`, `SCK`, `CS`, `RST`, and `IRQ` to the respective pins on the NRF52840.
-   - **E-Paper Display**:
-     - Connect `CS`, `DC`, `RST`, and `BUSY` pins to the NRF52840.
-   - **Buttons**:
-     - Connect one button to `GPIO` for PTT action and another for mode switching.
-   - **Audio Components**:
-     - Connect the microphone and speaker to appropriate I2S pins.
+3. **Install the Adafruit nRF52 Board Package**:
+   - Go to `Tools > Board > Boards Manager`.
+   - Search for "Adafruit nRF52" and click "Install" next to "Adafruit nRF52 by Adafruit".
+   - After installation, select `Nordic nRF52840 (PCA10056)` from the board list.
 
-5. **Upload the Code**:
-   - Open the provided code files in the Arduino IDE.
-   - Select your board (`Adafruit Feather nRF52840` or similar).
-   - Compile and upload the code to your NRF52840 board.
+4. **Copy Required Libraries**:
+   - Copy all the folders from the `lib` directory in this project to your Arduino libraries directory:
+     ```
+     C:\Users\<YourName>\Documents\Arduino\libraries
+     ```
+   - The required libraries include:
+     - arduino-lmic
+     - AceButton
+     - Adafruit_BME280_Library
+     - Adafruit_BusIO
+     - Adafruit_EPD
+     - Adafruit-GFX-Library
+     - Button2
+     - GxEPD
+     - PCF8563_Library
+     - RadioLib
+     - SerialFlash
+     - SoftSPI
+     - TinyGPSPlus
 
-6. **Operating the Device**:
-   - **PTT Mode**: Press and hold the PTT button to transmit audio.
-   - **TXT Mode**: Display received text messages.
-   - **RAW Mode**: Display raw LoRa packets.
-   - **Test Mode**: Automatically send test messages every 10 seconds.
+5. **Connect the T-Echo Board**:
+   - Connect your T-Echo board to your computer via USB.
+   - In the Arduino IDE, go to `Tools > Port` and select the port corresponding to your board.
+
+6. **Upload the Code**:
+   - Open the project sketch in Arduino IDE.
+   - Click the upload button to compile and upload the code to your T-Echo board.
+
+### Using PlatformIO
+
+1. **Install VSCode and Python**:
+   - Download and install [Visual Studio Code (VSCode)](https://code.visualstudio.com/) and [Python](https://www.python.org/downloads/).
+
+2. **Install PlatformIO**:
+   - Open VSCode and go to the Extensions view by clicking on the square icon on the left sidebar.
+   - Search for "PlatformIO IDE" and install the extension.
+
+3. **Open the Project**:
+   - Open the T-Echo project folder in VSCode by going to `File > Open Folder`.
+
+4. **Compile and Upload**:
+   - On the PlatformIO home page, click the checkmark (√) in the lower left corner to compile the project.
+   - Click the arrow (→) to upload the firmware to the T-Echo board.
+
+5. **DFU Mode (for USB Upload)**:
+   - If you are uploading firmware via USB (`upload_protocol = nrfutil`), double-click the reset button on the T-Echo to enter DFU mode before uploading.
+
+### Precautions
+
+- **Library Files**: Ensure that the files in the `lib` directory are correctly placed in your Arduino libraries directory, as they include crucial dependencies.
+- **Pin Compatibility**: The T-Echo pin assignments may not be directly compatible with the official SDK. Pay special attention to pin definitions if using the nRF5-SDK.
+- **Bootloader**: The T-Echo comes with the Adafruit_nRF52_Arduino bootloader pre-installed. Programming the board with the nRF5-SDK will overwrite this bootloader.
+- **NFC Functionality**: NFC is not supported in the Adafruit_nRF52_Arduino environment; use the nRF5-SDK if NFC functionality is required.
+- **Flash Memory**: The T-Echo may use either the MX25R1635FZUIL0 or ZD25WQ16B flash memory chip. Be aware of the differences when programming.
+- **Burning a New Bootloader**: If you need to restore the bootloader, refer to the official documentation on burning a new bootloader.
 
 ## Code Overview
 
