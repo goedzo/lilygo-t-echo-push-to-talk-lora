@@ -1,5 +1,8 @@
 #include "display.h"
 #include "app_modes.h"
+#include "settings.h"
+#include <GxEPD2_BW.h>
+#include <Fonts/FreeMonoBold9pt7b.h>
 
 // Define the 16x16 pixel icon for "TXT" mode
 const uint8_t txt_icon[16] = {
@@ -41,7 +44,20 @@ const uint8_t ptt_icon[16] = {
     0b0000000000000000
 };
 
+// E-Paper display initialization
 GxEPD2_BW<GxEPD2_154, GxEPD2_154::HEIGHT> disp(GxEPD2_154(/*CS=*/29, /*DC=*/27, /*RST=*/30, /*BUSY=*/31));
+
+// Display buffer for each line (Top line, middle, bottom, and errors)
+char disp_buf[4][24] = {
+    "chn:A Bitrate: 1300 bps",  // Top line with channel and bitrate
+    "Idle...",                 // Middle line
+    "",                        // Bottom line for errors
+    ""                         // 4th line for non-PTT messages
+};
+
+// Buffer to store 10 lines of received text messages
+char message_lines[10][24] = {""};
+int current_message_line = 0;
 
 void setupDisplay() {
     disp.init();
@@ -110,7 +126,7 @@ void updModeAndChannelDisplay() {
         disp.setFont(&FreeMonoBold9pt7b);
 
         char buf[30];
-        snprintf(buf, sizeof(buf), "chn:%c Bitrate: %d bps", channels[channel_idx], codec2_bits_per_second(codec));
+        snprintf(buf, sizeof(buf), "chn:%c Bitrate: %d bps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
         disp.print(buf);
 
         for (uint8_t i = 1; i < 4; i++) {
@@ -119,4 +135,9 @@ void updModeAndChannelDisplay() {
         }
 
     } while (disp.nextPage());
+}
+
+void showError(const char* error_msg) {
+    // Display error message on the bottom line
+    updDisp(3, error_msg);
 }
