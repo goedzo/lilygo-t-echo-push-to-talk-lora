@@ -2,6 +2,9 @@
 #define SETTINGS_H
 
 void setupSettings();
-void handleSettings();
+void handleEvent(AceButton* button, uint8_t eventType, uint8_t buttonState);
+void displayCurrentSetting();
+void displayCurrentTimeSetting();
+int getBitrateFromIndex(int index);
 
 #endif
