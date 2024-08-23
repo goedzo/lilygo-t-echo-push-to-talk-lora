@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa communication on a LilyGO T-Echo board with an NRF52840 microcontroller. The project is designed to work with an e-paper display (e.g., GxEPD2 1.54" display) and supports different operating modes including PTT, text message display (TXT), raw data display (RAW), and a test mode (TST). 
+This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa communication on a LilyGO T-Echo board with an NRF52840 microcontroller. The project is designed to work with an e-paper display (e.g., GxEPD2 1.54" display) and supports different operating modes, including PTT, text message display (TXT), raw data display (RAW), and a test mode (TST).
 
 ## Features
 
@@ -165,13 +165,4 @@ For further assistance, feel free to open an issue in the repository or contact 
 ## Related Resources
 
 - **T-Echo Official Documentation**: Visit the [T-Echo GitHub repository](https://github.com/Xinyuan-LilyGO/LilyGo-T-Echo) for detailed hardware documentation and additional resources.
-- **Adafruit nRF52 Libraries**: The [Adafruit GitHub repository](https://github.com/adafruit/Adafruit_nRF52_Arduino) contains the official libraries and tools for working with the nRF52 series.
-- **Codec2 Documentation**: Learn more about the [Codec2 audio codec](https://www.rowetel.com/?page_id=452) used in this project.
-
-## Contributing
-
-Contributions are welcome! If you find a bug or want to add a new feature, feel free to open an issue or submit a pull request. Please ensure your code adheres to the project's coding standards.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- **Adafruit nRF52 Libraries**: The [Adafruit GitHub repository](https://github.com/adafruit/Adafruit_nRF52_Arduino) contains the official libraries
