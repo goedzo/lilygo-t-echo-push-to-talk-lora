@@ -133,6 +133,9 @@ Handles audio capture and playback using the NRF52840's I2S interface, with Code
 ### `settings.cpp`
 Manages user settings, including mode switching and configuration adjustments.
 
+### `app_modes.cpp`
+Implements the core logic for the different operational modes (PTT, TXT, TST, RAW). This includes handling button events for mode switching, managing audio transmission in PTT mode, sending test messages, and processing received LoRa packets. The functions also update the display to reflect the current mode and channel.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -165,4 +168,13 @@ For further assistance, feel free to open an issue in the repository or contact 
 ## Related Resources
 
 - **T-Echo Official Documentation**: Visit the [T-Echo GitHub repository](https://github.com/Xinyuan-LilyGO/LilyGo-T-Echo) for detailed hardware documentation and additional resources.
-- **Adafruit nRF52 Libraries**: The [Adafruit GitHub repository](https://github.com/adafruit/Adafruit_nRF52_Arduino) contains the official libraries
+- **Adafruit nRF52 Libraries**: The [Adafruit GitHub repository](https://github.com/adafruit/Adafruit_nRF52_Arduino) contains the official libraries and tools for working with the nRF52 series.
+- **Codec2 Documentation**: Learn more about the [Codec2 audio codec](https://www.rowetel.com/?page_id=452) used in this project.
+
+## Contributing
+
+Contributions are welcome! If you find a bug or want to add a new feature, feel free to open an issue or submit a pull request. Please ensure your code adheres to the project's coding standards.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
