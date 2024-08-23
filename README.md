@@ -30,6 +30,13 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 - **RadioLib Library**: For LoRa communication
 - **Codec2 Library**: For audio encoding/decoding
 - **Adafruit GFX Library**: Required for display functionality
+- **AceButton Library**: For handling button presses
+- **PCF8563 Library**: For RTC if used in your project
+- **SerialFlash Library**: For interacting with external flash memory
+- **TinyGPSPlus Library**: For GPS modules, if applicable
+- **SoftSPI Library**: For software-based SPI communication
+- **Button2 Library**: Optional, depending on your button handling needs
+- **SPI.h** and **Wire.h**: Standard Arduino libraries for SPI and I2C communication
 
 ## Setup Instructions
 
@@ -70,6 +77,8 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
      - SerialFlash
      - SoftSPI
      - TinyGPSPlus
+     - SPI.h (usually pre-installed with Arduino IDE)
+     - Wire.h (usually pre-installed with Arduino IDE)
 
 5. **Connect the T-Echo Board**:
    - Connect your T-Echo board to your computer via USB.
@@ -133,6 +142,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Adafruit** for providing robust hardware and software libraries for the NRF52840.
 - **RadioLib** for comprehensive LoRa communication support.
 - **Codec2** for the open-source audio codec.
+- **LilyGO** for the T-Echo hardware platform.
 
 ## Troubleshooting
 
@@ -142,5 +152,26 @@ If you encounter any issues:
 - **Verify wiring connections**, particularly for SPI and I2S peripherals.
 - **Check the serial monitor for debugging messages** during setup and operation.
 - **Consult the documentation** for the respective libraries and hardware modules.
+- **DFU Mode**: If the board does not appear to respond when trying to upload new firmware, double-click the reset button to enter DFU mode and try uploading again.
 
 For further assistance, feel free to open an issue in the repository or contact the project maintainers.
+
+## Additional Notes
+
+- **NFC Functionality**: The NFC feature is not supported when using the Adafruit_nRF52_Arduino environment. To use NFC, you must switch to using the nRF5-SDK. Be aware that doing so will overwrite the pre-installed bootloader on your T-Echo.
+- **Flash Memory Variants**: The T-Echo board may come with either the MX25R1635FZUIL0 or ZD25WQ16B flash memory chip. Ensure you account for the specific chip variant in your code if flash memory is used.
+- **Using nRF5-SDK**: If you intend to use the nRF5-SDK, remember to check the pin configurations and manage the bootloader accordingly. Instructions for burning a new bootloader can be found in the official T-Echo documentation.
+
+## Related Resources
+
+- **T-Echo Official Documentation**: Visit the [T-Echo GitHub repository](https://github.com/Xinyuan-LilyGO/LilyGo-T-Echo) for detailed hardware documentation and additional resources.
+- **Adafruit nRF52 Libraries**: The [Adafruit GitHub repository](https://github.com/adafruit/Adafruit_nRF52_Arduino) contains the official libraries and tools for working with the nRF52 series.
+- **Codec2 Documentation**: Learn more about the [Codec2 audio codec](https://www.rowetel.com/?page_id=452) used in this project.
+
+## Contributing
+
+Contributions are welcome! If you find a bug or want to add a new feature, feel free to open an issue or submit a pull request. Please ensure your code adheres to the project's coding standards.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
