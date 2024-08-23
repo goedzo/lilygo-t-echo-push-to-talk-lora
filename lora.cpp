@@ -1,4 +1,6 @@
 #include "lora.h"
+#include "settings.h"  // Include settings.h to use global variables
+
 #include <RadioLib.h>
 
 SX1262 radio = new Module(/*CS=*/10, /*DIO1=*/2, /*NRST=*/3, /*BUSY=*/9);

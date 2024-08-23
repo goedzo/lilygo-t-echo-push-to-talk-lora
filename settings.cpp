@@ -2,104 +2,71 @@
 #include "display.h"
 #include "app_modes.h"
 #include <RTCZero.h>
-#include <AceButton.h>
 
-using namespace ace_button;
+RTCZero rtc;  // Real-time clock instance
 
-// RTC object
-RTCZero rtc;
-
-// Button objects
-AceButton modeButton(MODE_PIN);
-AceButton actionButton(ACTION_PIN);
+// Global variables defined here and declared as extern in settings.h
+char channels[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+int channel_idx = 0;
+int volume_level = 5;
+int bitrate_idx = 0;
 
 uint8_t time_setting_mode = 0;  // 0 = hours, 1 = minutes, 2 = seconds
 uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = time
-bool in_settings_mode = false;
-
-// Volume, Channel, and Bitrate settings
-int volume_level = 5;            // Example range from 1 to 10
-int channel_idx = 0;             // Index for current channel
-char channels[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-int bitrate_idx = 0;             // Example bitrate index (this can map to specific bitrate values)
-
-void handleEvent(AceButton*, uint8_t, uint8_t);
+bool in_settings_mode = false;  // Indicates whether the device is in settings mode
 
 void setupSettings() {
-    pinMode(MODE_PIN, INPUT_PULLUP);
-    pinMode(ACTION_PIN, INPUT_PULLUP);
-
     // Initialize the RTC
     rtc.begin();
-
-    // Initialize buttons
-    ButtonConfig* config = ButtonConfig::getSystemButtonConfig();
-    config->setEventHandler(handleEvent);
-
-    modeButton.init(MODE_PIN);
-    actionButton.init(ACTION_PIN);
 }
 
-void handleEvent(AceButton* button, uint8_t eventType, uint8_t buttonState) {
-    if (button->getPin() == MODE_PIN) {
-        if (eventType == AceButton::kEventLongPressed) {
-            in_settings_mode = !in_settings_mode;
-            if (in_settings_mode) {
-                setting_idx = 0;  // Start with bitrate
-                updDisp(1, "Entered Settings");
-            } else {
-                updDisp(1, "Exited Settings");
-            }
-        } else if (eventType == AceButton::kEventPressed && in_settings_mode) {
-            // Cycle through different settings (bitrate, volume, channel, time)
-            setting_idx = (setting_idx + 1) % 4;
-            displayCurrentSetting();
+void toggleSettingsMode() {
+    in_settings_mode = !in_settings_mode;
+    if (in_settings_mode) {
+        setting_idx = 0;  // Start with bitrate
+        updDisp(1, "Entered Settings");
+    } else {
+        updDisp(1, "Exited Settings");
+    }
+}
+
+void cycleTimeSettingMode() {
+    // Switch between setting hours, minutes, and seconds
+    time_setting_mode = (time_setting_mode + 1) % 3;
+    displayCurrentTimeSetting();
+}
+
+void updateCurrentSetting() {
+    // Update the current setting based on which setting is selected
+    if (setting_idx == 0) {
+        bitrate_idx = (bitrate_idx + 1) % 4;  // Cycle through bitrate options
+        updModeAndChannelDisplay();
+        updDisp(1, "Bitrate Set");
+    } else if (setting_idx == 1) {
+        volume_level = (volume_level % 10) + 1;  // Cycle through volume levels (1-10)
+        updDisp(1, "Volume Set");
+    } else if (setting_idx == 2) {
+        updChannel();  // Cycle through channels
+    } else if (setting_idx == 3) {
+        // Adjust time settings
+        if (time_setting_mode == 0) {
+            int hour = rtc.getHours();
+            rtc.setHours((hour + 1) % 24);
+        } else if (time_setting_mode == 1) {
+            int minute = rtc.getMinutes();
+            rtc.setMinutes((minute + 1) % 60);
+        } else if (time_setting_mode == 2) {
+            int second = rtc.getSeconds();
+            rtc.setSeconds((second + 1) % 60);
         }
-    } else if (button->getPin() == ACTION_PIN) {
-        if (in_settings_mode) {
-            if (eventType == AceButton::kEventLongPressed && setting_idx == 3) {
-                // Switch between hours, minutes, and seconds in time setting
-                time_setting_mode = (time_setting_mode + 1) % 3;
-                displayCurrentTimeSetting();
-            } else if (eventType == AceButton::kEventPressed) {
-                // Increment the current setting
-                if (setting_idx == 0) {
-                    // Cycle bitrate index (example range from 0 to 3)
-                    bitrate_idx = (bitrate_idx + 1) % 4;
-                    // Update the bitrate display
-                    updMode();
-                    updDisp(1, "Bitrate Set");
-                } else if (setting_idx == 1) {
-                    // Cycle volume level (example range from 1 to 10)
-                    volume_level = (volume_level % 10) + 1;
-                    updDisp(1, "Volume Set");
-                } else if (setting_idx == 2) {
-                    // Cycle through channels
-                    channel_idx = (channel_idx + 1) % 26;  // Assuming 26 channels A-Z
-                    updChannel();
-                } else if (setting_idx == 3) {
-                    // Adjust the time
-                    if (time_setting_mode == 0) {
-                        int hour = rtc.getHours();
-                        rtc.setHours((hour + 1) % 24);
-                    } else if (time_setting_mode == 1) {
-                        int minute = rtc.getMinutes();
-                        rtc.setMinutes((minute + 1) % 60);
-                    } else if (time_setting_mode == 2) {
-                        int second = rtc.getSeconds();
-                        rtc.setSeconds((second + 1) % 60);
-                    }
-                    displayCurrentTimeSetting();
-                }
-            }
-        }
+        displayCurrentTimeSetting();
     }
 }
 
 void displayCurrentSetting() {
+    // Display the current setting being adjusted
     if (setting_idx == 0) {
         updDisp(1, "Setting Bitrate:");
-        // Display current bitrate (assuming you have an array or function to get the bitrate value from the index)
         char bitrate_str[20];
         snprintf(bitrate_str, sizeof(bitrate_str), "Bitrate: %d bps", getBitrateFromIndex(bitrate_idx));
         updDisp(2, bitrate_str);
@@ -119,7 +86,8 @@ void displayCurrentSetting() {
 }
 
 void displayCurrentTimeSetting() {
-    char time_str[9];  // HH:MM:SS
+    // Display the current time being set
+    char time_str[9];  // Format: HH:MM:SS
     snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", rtc.getHours(), rtc.getMinutes(), rtc.getSeconds());
 
     if (time_setting_mode == 0) {
