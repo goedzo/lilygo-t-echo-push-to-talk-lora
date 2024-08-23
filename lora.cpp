@@ -1,22 +1,19 @@
-#include <LoRa.h>
 #include "lora.h"
+#include <RadioLib.h>
 
-// Pin configuration for NRF52840
-#define LORA_SCK 29
-#define LORA_MISO 28
-#define LORA_MOSI 27
-#define LORA_CS 26
-#define LORA_RST 25
-#define LORA_IRQ 24
-#define LORA_BUSY 23
-
-// Create a Radio object
-SX1262 radio = new Module(LORA_CS, LORA_IRQ, LORA_RST, LORA_BUSY);
+SX1262 radio = new Module(/*CS=*/10, /*DIO1=*/2, /*NRST=*/3, /*BUSY=*/9);
 
 void setupLoRa() {
+    Serial.begin(9600);
+    while (!Serial);
+
+    Serial.print(F("[SX1262] Initializing ... "));
+
     int state = radio.begin();
-    if (state != RADIOLIB_ERR_NONE) {
-        Serial.print(F("Failed to initialize LoRa module, code: "));
+    if (state == RADIOLIB_ERR_NONE) {
+        Serial.println(F("success!"));
+    } else {
+        Serial.print(F("failed, code "));
         Serial.println(state);
         while (true);
     }
