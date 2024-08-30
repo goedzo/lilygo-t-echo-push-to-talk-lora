@@ -1,6 +1,7 @@
 #include "settings.h"
 #include "display.h"
 #include "app_modes.h"
+#include "lora.h"
 #include <RTCZero.h>
 
 RTCZero rtc;  // Real-time clock instance
@@ -12,9 +13,8 @@ int volume_level = 5;
 int bitrate_idx = 0;
 int spreading_factor = 7;  // Default spreading factor SF7
 
-
 uint8_t time_setting_mode = 0;  // 0 = hours, 1 = minutes, 2 = seconds
-uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = time
+uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = time, 4 = spreading factor
 bool in_settings_mode = false;  // Indicates whether the device is in settings mode
 
 void setupSettings() {
@@ -29,7 +29,21 @@ void toggleSettingsMode() {
         updDisp(1, "Entered Settings");
     } else {
         updDisp(1, "Exited Settings");
+        setupLoRa();
     }
+}
+
+void cycleSettings() {
+    // Increment the setting index
+    setting_idx++;
+    
+    // Wrap around if it exceeds the number of settings
+    if (setting_idx > 4) {  // Adjust based on the number of settings you have
+        setting_idx = 0;
+    }
+    
+    // Display the current setting
+    displayCurrentSetting();
 }
 
 void cycleTimeSettingMode() {

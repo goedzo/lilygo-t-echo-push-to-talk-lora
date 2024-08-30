@@ -43,11 +43,14 @@ void setupAppModes() {
 void handleEvent(AceButton* button, uint8_t eventType, uint8_t buttonState) {
     if (button->getPin() == MODE_PIN) {
         if (eventType == AceButton::kEventLongPressed) {
-            // Long press enters settings mode
+            // Long press enters or exits settings mode
             toggleSettingsMode();
         } else if (eventType == AceButton::kEventPressed) {
-            // Single click cycles through modes
-            if (!in_settings_mode) {
+            if (in_settings_mode) {
+                // Cycle through different settings when in settings mode
+                cycleSettings();
+            } else {
+                // Single click cycles through modes
                 updMode();
             }
         }
