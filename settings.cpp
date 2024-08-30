@@ -10,6 +10,8 @@ char channels[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 int channel_idx = 0;
 int volume_level = 5;
 int bitrate_idx = 0;
+int spreading_factor = 7;  // Default spreading factor SF7
+
 
 uint8_t time_setting_mode = 0;  // 0 = hours, 1 = minutes, 2 = seconds
 uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = time
@@ -48,7 +50,6 @@ void updateCurrentSetting() {
     } else if (setting_idx == 2) {
         updChannel();  // Cycle through channels
     } else if (setting_idx == 3) {
-        // Adjust time settings
         if (time_setting_mode == 0) {
             int hour = rtc.getHours();
             rtc.setHours((hour + 1) % 24);
@@ -60,6 +61,11 @@ void updateCurrentSetting() {
             rtc.setSeconds((second + 1) % 60);
         }
         displayCurrentTimeSetting();
+    } else if (setting_idx == 4) {
+        spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1; // Cycle between SF6 and SF12
+        char buf[20];
+        snprintf(buf, sizeof(buf), "SF Set to: %d", spreading_factor);
+        updDisp(1, buf);
     }
 }
 
@@ -82,6 +88,11 @@ void displayCurrentSetting() {
         updDisp(2, channel_str);
     } else if (setting_idx == 3) {
         displayCurrentTimeSetting();  // Reuse the function to display current time setting
+    } else if (setting_idx == 4) {
+        updDisp(1, "Setting Spreading Factor:");
+        char sf_str[20];
+        snprintf(sf_str, sizeof(sf_str), "SF: %d", spreading_factor);
+        updDisp(2, sf_str);
     }
 }
 

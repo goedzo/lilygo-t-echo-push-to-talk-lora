@@ -20,6 +20,16 @@ void setupLoRa() {
         while (true);
     }
 
+    // Set the spreading factor using the configurable setting
+    state = radio.setSpreadingFactor(spreading_factor);  // Apply the selected spreading factor
+    if (state == RADIOLIB_ERR_NONE) {
+        Serial.print(F("Spreading factor set to SF"));
+        Serial.println(spreading_factor);
+    } else {
+        Serial.print(F("Failed to set spreading factor, code "));
+        Serial.println(state);
+    }
+
     // Set output power to 22 dBm (valid range is -17 to 22 dBm)
     if (radio.setOutputPower(22) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
         Serial.println(F("Selected output power is invalid for this module!"));

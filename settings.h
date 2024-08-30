@@ -6,6 +6,7 @@ extern char channels[];
 extern int channel_idx;
 extern int volume_level;
 extern int bitrate_idx;
+extern int spreading_factor;
 
 extern uint8_t time_setting_mode;  // 0 = hours, 1 = minutes, 2 = seconds
 extern uint8_t setting_idx;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = time
