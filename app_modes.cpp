@@ -29,8 +29,8 @@ int current_message_line = 0;
 
 // Button objects
 // Define the pin numbers
-#define MODE_PIN  0  // Button 1 (connected to RST pin, typically GPIO0 or another equivalent)
-#define ACTION_PIN  10  // Button 2 (connected to P1.10)
+#define MODE_PIN 11  // Button 1 connected to P0.11 (Touch-capable pin)
+#define ACTION_PIN 10  // Button 2 connected to P1.10
 AceButton modeButton(MODE_PIN);
 AceButton actionButton(ACTION_PIN);
 
