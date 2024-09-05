@@ -25,10 +25,6 @@ CODEC2* codec;
 // Test message counter
 int test_message_counter = 0;
 
-// Message display buffer
-char message_lines[10][30];
-int current_message_line = 0;
-
 // Button objects
 // Define the pin numbers
 #define MODE_PIN 11  // Button 1 connected to P0.11 (Touch-capable pin)
@@ -125,12 +121,11 @@ void handlePacket() {
 
         if (current_mode == RAW) {
             // Display raw message in the message buffer
-            strncpy(message_lines[current_message_line], (char*)pkt_buf, sizeof(message_lines[current_message_line]) - 1);
-            current_message_line = (current_message_line + 1) % 10;
+            updDisp(5, (char*)pkt_buf);
             updateMessageDisplay();
         } else if (current_mode == PTT && strncmp((char*)pkt_buf, expected_ptt_header, 3) == 0) {
             uint8_t rcv_mode = pkt_buf[3];
-            if (rcv_mode < sizeof(bitrate_modes) / sizeof(bitrate_modes[0])) {
+            if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
                 codec = codec2_create(bitrate_modes[rcv_mode]);
                 codec2_decode(codec, raw_buf, pkt_buf + 4);
                 playAudio(raw_buf, RAW_SIZE);
@@ -140,8 +135,7 @@ void handlePacket() {
             }
         } else if (current_mode == TXT && strncmp((char*)pkt_buf, expected_txt_header, 3) == 0) {
             // Display text message in the message buffer
-            strncpy(message_lines[current_message_line], (char*)pkt_buf + 3, sizeof(message_lines[current_message_line]) - 1);
-            current_message_line = (current_message_line + 1) % 10;
+            updDisp(5, (char*)pkt_buf);
             updateMessageDisplay();
         }
     }
@@ -169,11 +163,4 @@ void updChannel() {
     // Cycle through channels using the global channel_idx from settings.h
     channel_idx = (channel_idx + 1) % 26;  // Assuming 26 channels A-Z
     updModeAndChannelDisplay();
-}
-
-void updModeAndChannelDisplay() {
-    // Update the display with the current mode and channel
-    char buf[30];
-    snprintf(buf, sizeof(buf), "chn:%c Bitrate: %d bps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
-    updDisp(0, buf);
 }

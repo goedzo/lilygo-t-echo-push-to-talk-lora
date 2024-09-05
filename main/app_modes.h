@@ -10,6 +10,5 @@ void sendTestMessage();  // Sends a test message in TST mode
 void handlePacket();  // Handles received packets
 void updMode();  // Cycles through the operation modes
 void updChannel();  // Cycles through the channels
-void updModeAndChannelDisplay();  // Updates the display with the current mode and channel
 
 #endif

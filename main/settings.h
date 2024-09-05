@@ -2,16 +2,17 @@
 #define SETTINGS_H
 #include <codec2.h>
 #include <stdint.h>
-
+#include <cstddef>
 
 
 // Global variables for settings
 extern char channels[];
 extern int channel_idx;
 extern int volume_level;
-
-int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_1600, CODEC2_MODE_1400, CODEC2_MODE_1200, CODEC2_MODE_700};
 extern int bitrate_idx;
+
+extern const int bitrate_modes[];
+extern const size_t num_bitrate_modes;
 
 extern int spreading_factor;
 

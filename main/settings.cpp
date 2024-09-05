@@ -15,6 +15,9 @@ int volume_level = 5;
 int bitrate_idx = 0;
 int spreading_factor = 7;  // Default spreading factor SF7
 
+const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_1600, CODEC2_MODE_1400, CODEC2_MODE_1200, CODEC2_MODE_700};
+const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
+
 uint8_t time_setting_mode = 0;  // 0 = hours, 1 = minutes, 2 = seconds
 uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = time, 4 = spreading factor
 bool in_settings_mode = false;  // Indicates whether the device is in settings mode

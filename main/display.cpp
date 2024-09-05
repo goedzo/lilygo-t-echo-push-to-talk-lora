@@ -75,7 +75,7 @@ void drawModeIcon(OperationMode mode) {
 }
 
 void updDisp(uint8_t line, const char* msg) {
-    if (line < 4 && strcmp(disp_buf[line], msg) != 0) {  
+    if (line < 10 && strcmp(disp_buf[line], msg) != 0) {  
         strncpy(disp_buf[line], msg, sizeof(disp_buf[line]) - 1);
         disp_buf[line][sizeof(disp_buf[line]) - 1] = '\0'; 
 
