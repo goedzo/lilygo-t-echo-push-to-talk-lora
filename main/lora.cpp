@@ -1,10 +1,17 @@
+#include "utilities.h"
 #include <stdint.h>
 #include "settings.h"  // Include settings.h to use global variables
 
 #include <RadioLib.h>
 #include "lora.h"
 
-SX1262 radio = new Module(/*CS=*/10, /*DIO1=*/2, /*NRST=*/3, /*BUSY=*/9);
+
+
+// Maak eerst een Module-object aan met de juiste pinconfiguratie
+Module module = Module(/*CS=*/10, /*DIO1=*/2, /*NRST=*/3, /*BUSY=*/9);
+
+// Geef het Module-object door aan de SX1262 constructor
+SX1262 radio = SX1262(&module);
 
 void setupLoRa() {
     Serial.begin(9600);
@@ -12,17 +19,18 @@ void setupLoRa() {
 
     Serial.print(F("[SX1262] Initializing ... "));
 
-    int state = radio.begin();
+    // Initializeer de radio
+    int state = radio.begin(868.0);  // Stel de juiste frequentie in
     if (state == RADIOLIB_ERR_NONE) {
         Serial.println(F("success!"));
     } else {
         Serial.print(F("failed, code "));
         Serial.println(state);
-        while (true);
+        while (true);  // Stop met uitvoeren als de initialisatie faalt
     }
 
-    // Set the spreading factor using the configurable setting
-    state = radio.setSpreadingFactor(spreading_factor);  // Apply the selected spreading factor
+    // Stel de spreading factor in met de opgegeven waarde
+    state = radio.setSpreadingFactor(spreading_factor);
     if (state == RADIOLIB_ERR_NONE) {
         Serial.print(F("Spreading factor set to SF"));
         Serial.println(spreading_factor);
@@ -31,13 +39,13 @@ void setupLoRa() {
         Serial.println(state);
     }
 
-    // Set output power to 22 dBm (valid range is -17 to 22 dBm)
+    // Stel het zendvermogen in (tussen -17 en 22 dBm)
     if (radio.setOutputPower(22) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
         Serial.println(F("Selected output power is invalid for this module!"));
         while (true);
     }
 
-    // Set overcurrent protection limit to 80 mA (valid range is 45 to 240 mA)
+    // Stel de stroomlimiet in (tussen 45 en 240 mA)
     if (radio.setCurrentLimit(80) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
         Serial.println(F("Selected current limit is invalid for this module!"));
         while (true);

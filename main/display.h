@@ -9,5 +9,6 @@ void drawModeIcon(OperationMode mode);
 void updDisp(uint8_t line, const char* msg);
 void updateMessageDisplay();
 void updModeAndChannelDisplay();
+void enableBacklight(bool en);
 
 #endif

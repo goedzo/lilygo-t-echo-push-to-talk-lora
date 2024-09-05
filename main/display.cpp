@@ -1,7 +1,10 @@
+#include "utilities.h"
 #include <stdint.h>
 #include "settings.h"
 #include "app_modes.h"
-#include <GxEPD2_BW.h>
+#include <GxIO/GxIO_SPI/GxIO_SPI.h>
+#include <GxIO/GxIO.h>
+#include <GxDEPG0150BN/GxDEPG0150BN.h>  // 1.54" b/w 
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include "display.h"
 
@@ -46,7 +49,11 @@ const uint16_t ptt_icon[16] = {
 };
 
 // E-Paper display initialization
-GxEPD2_BW<GxEPD2_154, GxEPD2_154::HEIGHT> disp(GxEPD2_154(/*CS=*/29, /*DC=*/27, /*RST=*/30, /*BUSY=*/31));
+SPIClass        *dispPort  = nullptr;
+SPIClass        *rfPort    = nullptr;
+GxIO_Class      *io        = nullptr;
+GxEPD_Class     *display   = nullptr;
+
 
 // Display buffer for each line (Top line, middle, bottom, and errors)
 char disp_buf[4][24] = {
@@ -61,16 +68,37 @@ char message_lines[10][24] = {""};
 int current_message_line = 0;
 
 void setupDisplay() {
-    disp.init();
-    disp.setRotation(1);
-    disp.setTextColor(GxEPD_BLACK);
+
+    dispPort = new SPIClass(
+        /*SPIPORT*/NRF_SPIM2,
+        /*MISO*/ ePaper_Miso,
+        /*SCLK*/ePaper_Sclk,
+        /*MOSI*/ePaper_Mosi);
+
+    io = new GxIO_Class(
+        *dispPort,
+        /*CS*/ ePaper_Cs,
+        /*DC*/ ePaper_Dc,
+        /*RST*/ePaper_Rst);
+
+    display = new GxEPD_Class(
+        *io,
+        /*RST*/ ePaper_Rst,
+        /*BUSY*/ ePaper_Busy);
+
+    dispPort->begin();
+    display->init(/*115200*/);
+    display->setRotation(2);
+    display->fillScreen(GxEPD_WHITE);
+    display->setTextColor(GxEPD_BLACK);
+    display->setFont(&FreeMonoBold9pt7b);
 }
 
 void drawModeIcon(OperationMode mode) {
     if (mode == PTT) {
-        disp.drawBitmap(0, 0, (const uint8_t *)ptt_icon, 16, 16, GxEPD_BLACK);
+        //display->drawBitmap(0, 0, (const uint8_t *)ptt_icon, 16, 16, GxEPD_BLACK);
     } else if (mode == TXT) {
-        disp.drawBitmap(0, 0, (const uint8_t *)txt_icon, 16, 16, GxEPD_BLACK);
+        //display->drawBitmap(0, 0, (const uint8_t *)txt_icon, 16, 16, GxEPD_BLACK);
     }
 }
 
@@ -80,67 +108,59 @@ void updDisp(uint8_t line, const char* msg) {
         disp_buf[line][sizeof(disp_buf[line]) - 1] = '\0'; 
 
         Serial.println(msg);
+        display->fillScreen(GxEPD_WHITE);
 
-        disp.setFullWindow();
-        disp.firstPage();
-        do {
-            disp.fillScreen(GxEPD_WHITE);
-            drawModeIcon(current_mode);
+        drawModeIcon(current_mode);
 
-            for (uint8_t i = 0; i < 4; i++) {
-                if (i == 0) {
-                    disp.setCursor(20, 16);
-                } else {
-                    disp.setCursor(0, 32 + i * 16);
-                }
-                disp.setTextColor(GxEPD_BLACK);
-                disp.setFont(&FreeMonoBold9pt7b);
-                disp.print(disp_buf[i]);
+        for (uint8_t i = 0; i < 4; i++) {
+            if (i == 0) {
+                display->setCursor(20, 16);
+            } else {
+                display->setCursor(0, 32 + i * 16);
             }
+            display->setTextColor(GxEPD_BLACK);
+            display->setFont(&FreeMonoBold9pt7b);
+            display->print(disp_buf[i]);
+        }
 
-        } while (disp.nextPage());
     }
 }
 
 void updateMessageDisplay() {
-    disp.setFullWindow();
-    disp.firstPage();
-    do {
-        disp.fillScreen(GxEPD_WHITE);
-        disp.setTextColor(GxEPD_BLACK);
-        disp.setFont(&FreeMonoBold9pt7b);
+    display->fillScreen(GxEPD_WHITE);
+    display->setTextColor(GxEPD_BLACK);
+    display->setFont(&FreeMonoBold9pt7b);
 
-        for (int i = 0; i < 10; i++) {
-            disp.setCursor(0, 40 + i * 16);
-            disp.print(message_lines[i]);
-        }
-    } while (disp.nextPage());
+    for (int i = 0; i < 10; i++) {
+        display->setCursor(0, 40 + i * 16);
+        display->print(message_lines[i]);
+    }
 }
 
 void updModeAndChannelDisplay() {
-    disp.setFullWindow();
-    disp.firstPage();
-    do {
-        disp.fillScreen(GxEPD_WHITE);
-        drawModeIcon(current_mode);
+    display->fillScreen(GxEPD_WHITE);
+    drawModeIcon(current_mode);
 
-        disp.setCursor(20, 16);
-        disp.setTextColor(GxEPD_BLACK);
-        disp.setFont(&FreeMonoBold9pt7b);
+    display->setCursor(20, 16);
+    display->setTextColor(GxEPD_BLACK);
+    display->setFont(&FreeMonoBold9pt7b);
 
-        char buf[30];
-        snprintf(buf, sizeof(buf), "chn:%c Bitrate: %d bps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
-        disp.print(buf);
+    char buf[30];
+    snprintf(buf, sizeof(buf), "chn:%c Bitrate: %d bps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
+    display->print(buf);
 
-        for (uint8_t i = 1; i < 4; i++) {
-            disp.setCursor(0, 32 + i * 40);
-            disp.print(disp_buf[i]);
-        }
-
-    } while (disp.nextPage());
+    for (uint8_t i = 1; i < 4; i++) {
+        display->setCursor(0, 32 + i * 40);
+        display->print(disp_buf[i]);
+    }
 }
 
 void showError(const char* error_msg) {
     // Display error message on the bottom line
     updDisp(3, error_msg);
+}
+
+void enableBacklight(bool en)
+{
+    digitalWrite(ePaper_Backlight, en);
 }
