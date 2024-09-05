@@ -1,10 +1,12 @@
-#include "settings.h"
 #include "display.h"
 #include "app_modes.h"
 #include "lora.h"
-#include <RTCZero.h>
+#include <Wire.h>
+#include <PCF8563.h>
+#include "settings.h"
 
-RTCZero rtc;  // Real-time clock instance
+PCF8563Class pcf8563;  // Real-time clock instance
+
 
 // Global variables defined here and declared as extern in settings.h
 char channels[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -18,8 +20,9 @@ uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = tim
 bool in_settings_mode = false;  // Indicates whether the device is in settings mode
 
 void setupSettings() {
-    // Initialize the RTC
-    rtc.begin();
+    // Initialize the PCF8563 RTC
+    Wire.begin();  // Start I2C
+    pcf8563.startClock();
 }
 
 void toggleSettingsMode() {
@@ -55,7 +58,7 @@ void cycleTimeSettingMode() {
 void updateCurrentSetting() {
     // Update the current setting based on which setting is selected
     if (setting_idx == 0) {
-        bitrate_idx = (bitrate_idx + 1) % 4;  // Cycle through bitrate options
+        bitrate_idx = (bitrate_idx + 1) % 6;  // Cycle through bitrate options
         updModeAndChannelDisplay();
         updDisp(1, "Bitrate Set");
     } else if (setting_idx == 1) {
@@ -64,16 +67,17 @@ void updateCurrentSetting() {
     } else if (setting_idx == 2) {
         updChannel();  // Cycle through channels
     } else if (setting_idx == 3) {
+        time_t now = pcf8563.getEpoch();
+        struct tm* timeinfo = localtime(&now);
         if (time_setting_mode == 0) {
-            int hour = rtc.getHours();
-            rtc.setHours((hour + 1) % 24);
+            timeinfo->tm_hour = (timeinfo->tm_hour + 1) % 24;
         } else if (time_setting_mode == 1) {
-            int minute = rtc.getMinutes();
-            rtc.setMinutes((minute + 1) % 60);
+            timeinfo->tm_min = (timeinfo->tm_min + 1) % 60;
         } else if (time_setting_mode == 2) {
-            int second = rtc.getSeconds();
-            rtc.setSeconds((second + 1) % 60);
+            timeinfo->tm_sec = (timeinfo->tm_sec + 1) % 60;
         }
+        time_t newEpoch = mktime(timeinfo);
+        pcf8563.setEpoch(newEpoch);
         displayCurrentTimeSetting();
     } else if (setting_idx == 4) {
         spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1; // Cycle between SF6 and SF12
@@ -111,9 +115,13 @@ void displayCurrentSetting() {
 }
 
 void displayCurrentTimeSetting() {
+    // Get the current time from PCF8563
+    time_t now = pcf8563.getEpoch();
+    struct tm* timeinfo = localtime(&now);
+    
     // Display the current time being set
     char time_str[9];  // Format: HH:MM:SS
-    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", rtc.getHours(), rtc.getMinutes(), rtc.getSeconds());
+    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
 
     if (time_setting_mode == 0) {
         updDisp(1, "Setting Hour:");
@@ -125,13 +133,17 @@ void displayCurrentTimeSetting() {
     updDisp(2, time_str);  // Display the current time value
 }
 
+
+
 // Example function to map the bitrate index to actual bitrate value (bps)
 int getBitrateFromIndex(int index) {
     switch (index) {
-        case 0: return 2400;
-        case 1: return 4800;
-        case 2: return 9600;
-        case 3: return 19200;
-        default: return 2400;
+        case 0: return 3200;
+        case 1: return 2400;
+        case 2: return 1600;
+        case 3: return 1400;
+        case 4: return 1200;
+        case 5: return 700;
+        default: return 3200;
     }
 }

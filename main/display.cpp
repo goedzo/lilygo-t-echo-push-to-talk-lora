@@ -1,11 +1,12 @@
-#include "display.h"
-#include "app_modes.h"
+#include <stdint.h>
 #include "settings.h"
+#include "app_modes.h"
 #include <GxEPD2_BW.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
+#include "display.h"
 
 // Define the 16x16 pixel icon for "TXT" mode
-const uint8_t txt_icon[16] = {
+const uint16_t txt_icon[16] = {
     0b0000000000000000,
     0b0000110000110000,
     0b0001111001111000,
@@ -25,7 +26,7 @@ const uint8_t txt_icon[16] = {
 };
 
 // Define the 16x16 pixel icon for "PTT" mode
-const uint8_t ptt_icon[16] = {
+const uint16_t ptt_icon[16] = {
     0b0000000000000000,
     0b0000000000000000,
     0b0000000011111111,

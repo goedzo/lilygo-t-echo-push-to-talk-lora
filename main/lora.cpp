@@ -1,7 +1,8 @@
-#include "lora.h"
+#include <stdint.h>
 #include "settings.h"  // Include settings.h to use global variables
 
 #include <RadioLib.h>
+#include "lora.h"
 
 SX1262 radio = new Module(/*CS=*/10, /*DIO1=*/2, /*NRST=*/3, /*BUSY=*/9);
 
@@ -46,15 +47,23 @@ void setupLoRa() {
 }
 
 void sendPacket(uint8_t* pkt_buf, uint16_t len) {
-    radio.beginPacket();
-    radio.write(pkt_buf, len);
-    radio.endPacket();
+    int state = radio.transmit(pkt_buf, len);
+    if (state == RADIOLIB_ERR_NONE) {
+        Serial.println(F("Transmission successful!"));
+    } else {
+        Serial.print(F("Transmission failed, code "));
+        Serial.println(state);
+    }
 }
 
 int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
-    int pkt_size = radio.parsePacket();
-    if (pkt_size > 0) {
-        radio.readBytes(pkt_buf, pkt_size < max_len ? pkt_size : max_len);
+    int state = radio.receive(pkt_buf, max_len);
+    if (state == RADIOLIB_ERR_NONE) {
+        Serial.println(F("Received packet successfully!"));
+        return max_len;  // Of de werkelijke grootte van het ontvangen pakket
+    } else {
+        Serial.print(F("Receive failed, code "));
+        Serial.println(state);
+        return 0;
     }
-    return pkt_size;
 }

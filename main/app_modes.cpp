@@ -1,9 +1,11 @@
-#include "app_modes.h"
+#include <AceButton.h>
+#include <codec2.h>
+
 #include "display.h"
 #include "lora.h"
 #include "audio.h"
 #include "settings.h"
-#include <AceButton.h>
+#include "app_modes.h"
 
 using namespace ace_button;
 
@@ -15,10 +17,10 @@ OperationMode current_mode = PTT;
 
 // Buffers
 int16_t raw_buf[RAW_SIZE];
-uint8_t pkt_buf[MAX_PKT];
+unsigned char pkt_buf[MAX_PKT];
 
 // Codec2 instance
-void* codec;
+CODEC2* codec;
 
 // Test message counter
 int test_message_counter = 0;
@@ -43,7 +45,7 @@ void setupAppModes() {
     actionButton.init(ACTION_PIN);
 }
 
-void handleEvent(AceButton* button, uint8_t eventType, uint8_t buttonState) {
+void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState) {
     if (button->getPin() == MODE_PIN) {
         if (eventType == AceButton::kEventLongPressed) {
             // Long press enters or exits settings mode
@@ -79,14 +81,20 @@ void handleAppModes() {
 }
 
 void sendAudio() {
+    codec = codec2_create(bitrate_modes[bitrate_idx]);
+    int bits_per_frame = codec2_bits_per_frame(codec);
+    int enc_size = (bits_per_frame + 7) / 8;
     while (digitalRead(ACTION_PIN) == LOW) {
         capAudio(raw_buf, RAW_SIZE);
-        uint16_t enc_size = codec2_encode(codec, pkt_buf + 4, raw_buf);  
+        codec2_encode(codec, pkt_buf, raw_buf);  
 
-        snprintf((char*)pkt_buf, 4, "PT%c", channels[channel_idx]);
+        memmove(pkt_buf + 4, pkt_buf, enc_size); //Move the binary data 4 bytes, so the header can be added
+        pkt_buf[0] = 'P';
+        pkt_buf[1] = 'T';
+        pkt_buf[2] = channels[channel_idx];  // Kanaal toevoegen
+        pkt_buf[3] = bitrate_idx;  // Bitrate index toevoegen als byte
         sendPacket(pkt_buf, enc_size + 4);
         updDisp(1, "Transmitting...");
-
         handlePacket();  // Allow receiving packets during transmission
     }
 }
@@ -122,8 +130,8 @@ void handlePacket() {
             updateMessageDisplay();
         } else if (current_mode == PTT && strncmp((char*)pkt_buf, expected_ptt_header, 3) == 0) {
             uint8_t rcv_mode = pkt_buf[3];
-            if (rcv_mode < sizeof(modes) / sizeof(modes[0])) {
-                codec = codec2_create(modes[rcv_mode]);
+            if (rcv_mode < sizeof(bitrate_modes) / sizeof(bitrate_modes[0])) {
+                codec = codec2_create(bitrate_modes[rcv_mode]);
                 codec2_decode(codec, raw_buf, pkt_buf + 4);
                 playAudio(raw_buf, RAW_SIZE);
                 updDisp(1, "Receiving...");
