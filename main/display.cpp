@@ -6,6 +6,7 @@
 #include <GxIO/GxIO.h>
 #include <GxDEPG0150BN/GxDEPG0150BN.h>  // 1.54" b/w 
 #include <Fonts/FreeMonoBold9pt7b.h>
+#include <Fonts/FreeMonoBold12pt7b.h>
 #include "display.h"
 
 // Define the 16x16 pixel icon for "TXT" mode
@@ -67,6 +68,12 @@ char disp_buf[4][24] = {
 char message_lines[10][24] = {""};
 int current_message_line = 0;
 
+void printline(const char* msg) {
+    Serial.println(msg);
+    Serial.println("\n");
+    display->print(msg);
+}
+
 void setupDisplay() {
 
     dispPort = new SPIClass(
@@ -88,10 +95,11 @@ void setupDisplay() {
 
     dispPort->begin();
     display->init(/*115200*/);
-    display->setRotation(2);
+    display->setRotation(3);
     display->fillScreen(GxEPD_WHITE);
     display->setTextColor(GxEPD_BLACK);
     display->setFont(&FreeMonoBold9pt7b);
+    display->update();
 }
 
 void drawModeIcon(OperationMode mode) {
@@ -108,7 +116,6 @@ void updDisp(uint8_t line, const char* msg) {
         disp_buf[line][sizeof(disp_buf[line]) - 1] = '\0'; 
 
         Serial.println(msg);
-        display->fillScreen(GxEPD_WHITE);
 
         drawModeIcon(current_mode);
 
@@ -120,25 +127,27 @@ void updDisp(uint8_t line, const char* msg) {
             }
             display->setTextColor(GxEPD_BLACK);
             display->setFont(&FreeMonoBold9pt7b);
-            display->print(disp_buf[i]);
+            printline(disp_buf[i]);
         }
 
     }
 }
 
 void updateMessageDisplay() {
-    display->fillScreen(GxEPD_WHITE);
-    display->setTextColor(GxEPD_BLACK);
-    display->setFont(&FreeMonoBold9pt7b);
+    //display->fillScreen(GxEPD_WHITE);
+    //display->setTextColor(GxEPD_BLACK);
+    //display->setFont(&FreeMonoBold9pt7b);
+    //display->setFont(&FreeMonoBold12pt7b);
 
     for (int i = 0; i < 10; i++) {
         display->setCursor(0, 40 + i * 16);
-        display->print(message_lines[i]);
+        printline(message_lines[i]);
     }
+    //display->update();
+    display->updateWindow(0, 0, 200, 200,true);
 }
 
 void updModeAndChannelDisplay() {
-    display->fillScreen(GxEPD_WHITE);
     drawModeIcon(current_mode);
 
     display->setCursor(20, 16);
@@ -146,18 +155,20 @@ void updModeAndChannelDisplay() {
     display->setFont(&FreeMonoBold9pt7b);
 
     char buf[30];
-    snprintf(buf, sizeof(buf), "chn:%c Bitrate: %d bps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
-    display->print(buf);
+    snprintf(buf, sizeof(buf), "chn:%c - %d bps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
+    printline(buf);
 
     for (uint8_t i = 1; i < 4; i++) {
         display->setCursor(0, 32 + i * 40);
-        display->print(disp_buf[i]);
+        printline(disp_buf[i]);
     }
+    updateMessageDisplay();
 }
 
 void showError(const char* error_msg) {
     // Display error message on the bottom line
     updDisp(3, error_msg);
+    updateMessageDisplay();
 }
 
 void enableBacklight(bool en)

@@ -1,5 +1,6 @@
 #include <AceButton.h>
 #include <codec2.h>
+#include "utilities.h"
 
 #include "display.h"
 #include "lora.h"
@@ -9,7 +10,7 @@
 
 using namespace ace_button;
 
-OperationMode current_mode = PTT;
+OperationMode current_mode = RAW;
 
 // Buffer sizes and other constants
 #define RAW_SIZE 160  // Adjust as necessary
@@ -27,8 +28,8 @@ int test_message_counter = 0;
 
 // Button objects
 // Define the pin numbers
-#define MODE_PIN 11  // Button 1 connected to P0.11 (Touch-capable pin)
-#define ACTION_PIN 10  // Button 2 connected to P1.10
+#define MODE_PIN _PINNUM(0,11)  // Button 1 connected to P0.11 (Touch-capable pin)
+#define ACTION_PIN _PINNUM(1,10)  // Button 2 connected to P1.10
 AceButton modeButton(MODE_PIN);
 AceButton actionButton(ACTION_PIN);
 
