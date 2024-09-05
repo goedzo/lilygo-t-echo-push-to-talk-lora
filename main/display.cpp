@@ -79,6 +79,8 @@ void updDisp(uint8_t line, const char* msg) {
         strncpy(disp_buf[line], msg, sizeof(disp_buf[line]) - 1);
         disp_buf[line][sizeof(disp_buf[line]) - 1] = '\0'; 
 
+        Serial.println(msg);
+
         disp.setFullWindow();
         disp.firstPage();
         do {

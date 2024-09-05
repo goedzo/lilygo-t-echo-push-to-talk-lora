@@ -16,7 +16,7 @@ OperationMode current_mode = PTT;
 #define MAX_PKT 255   // Maximum packet size
 
 // Buffers
-int16_t raw_buf[RAW_SIZE];
+short raw_buf[RAW_SIZE];
 unsigned char pkt_buf[MAX_PKT];
 
 // Codec2 instance

@@ -1,12 +1,17 @@
+#include "utilities.h"
 #include "display.h"
 #include "app_modes.h"
 #include "lora.h"
 #include <Wire.h>
-#include <PCF8563.h>
+#include <pcf8563.h>
 #include "settings.h"
+#include <time.h>  // Include time.h for time manipulation
 
-PCF8563Class pcf8563;  // Real-time clock instance
-
+PCF8563_Class rtc;  // Real-time clock instance
+volatile bool rtcInterrupt = false;
+void rtcInterruptCb() {
+    rtcInterrupt = true;
+}
 
 // Global variables defined here and declared as extern in settings.h
 char channels[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -23,11 +28,39 @@ uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = tim
 bool in_settings_mode = false;  // Indicates whether the device is in settings mode
 
 void setupSettings() {
-    // Initialize the PCF8563 RTC
-    Wire.begin();  // Start I2C
-    pcf8563.startClock();
-}
+    SerialMon.print("[PCF8563] Initializing ...  ");
 
+    // Set the RTC interrupt pin as input and attach an interrupt handler
+    pinMode(RTC_Int_Pin, INPUT);
+    attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
+
+    // Start I2C communication
+    Wire.begin();
+
+    // Retry mechanism to handle potential communication issues
+    int retry = 3;
+    int ret = 0;
+    do {
+        // Start communication with the PCF8563 (or HYM8563)
+        Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);
+        ret = Wire.endTransmission();
+        delay(200);  // Delay between retries
+    } while (ret != 0 && retry-- > 0);  // Retry until successful or retries exhausted
+
+    // Check if the communication was successful
+    if (ret != 0) {
+        SerialMon.println("failed");
+        return;
+    }
+    SerialMon.println("success");
+
+    // Initialize the RTC
+    rtc.begin(Wire);
+    
+    // Disable any existing alarms and set an initial time (optional)
+    rtc.disableAlarm();
+    rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Set initial time if necessary
+}
 void toggleSettingsMode() {
     in_settings_mode = !in_settings_mode;
     if (in_settings_mode) {
@@ -70,17 +103,15 @@ void updateCurrentSetting() {
     } else if (setting_idx == 2) {
         updChannel();  // Cycle through channels
     } else if (setting_idx == 3) {
-        time_t now = pcf8563.getEpoch();
-        struct tm* timeinfo = localtime(&now);
+        RTC_Date dateTime = rtc.getDateTime();
         if (time_setting_mode == 0) {
-            timeinfo->tm_hour = (timeinfo->tm_hour + 1) % 24;
+            dateTime.hour = (dateTime.hour + 1) % 24;
         } else if (time_setting_mode == 1) {
-            timeinfo->tm_min = (timeinfo->tm_min + 1) % 60;
+            dateTime.minute = (dateTime.minute + 1) % 60;
         } else if (time_setting_mode == 2) {
-            timeinfo->tm_sec = (timeinfo->tm_sec + 1) % 60;
+            dateTime.second = (dateTime.second + 1) % 60;
         }
-        time_t newEpoch = mktime(timeinfo);
-        pcf8563.setEpoch(newEpoch);
+        rtc.setDateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour, dateTime.minute, dateTime.second);
         displayCurrentTimeSetting();
     } else if (setting_idx == 4) {
         spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1; // Cycle between SF6 and SF12
@@ -119,12 +150,11 @@ void displayCurrentSetting() {
 
 void displayCurrentTimeSetting() {
     // Get the current time from PCF8563
-    time_t now = pcf8563.getEpoch();
-    struct tm* timeinfo = localtime(&now);
+    RTC_Date dateTime = rtc.getDateTime();
     
     // Display the current time being set
     char time_str[9];  // Format: HH:MM:SS
-    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", dateTime.hour, dateTime.minute, dateTime.second);
 
     if (time_setting_mode == 0) {
         updDisp(1, "Setting Hour:");
@@ -135,8 +165,6 @@ void displayCurrentTimeSetting() {
     }
     updDisp(2, time_str);  // Display the current time value
 }
-
-
 
 // Example function to map the bitrate index to actual bitrate value (bps)
 int getBitrateFromIndex(int index) {

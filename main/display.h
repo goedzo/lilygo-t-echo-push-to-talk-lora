@@ -3,7 +3,6 @@
 
 #include "settings.h"
 #include <GxEPD2_BW.h>
-#include <Fonts/FreeMonoBold9pt7b.h>
 
 void setupDisplay();
 void drawModeIcon(OperationMode mode);
