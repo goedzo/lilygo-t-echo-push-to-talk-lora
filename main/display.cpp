@@ -108,11 +108,30 @@ void setupDisplay() {
     display->setFont(&FreeMonoBold9pt7b); // Set default font
 }
 
-void drawModeIcon(OperationMode mode) {
-    if (mode == PTT) {
-        display->drawBitmap(0, 0, (const uint8_t *)ptt_icon, 16, 16, GxEPD_BLACK);
-    } else if (mode == TXT) {
-        display->drawBitmap(0, 0, (const uint8_t *)txt_icon, 16, 16, GxEPD_BLACK);
+void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {
+    for (int i = 0; i < size; i++) {
+        uint16_t val = originalIcon[i];
+        uint8_t highByte = (val >> 8) & 0xFF;  // Extract the high byte (first 8 bits)
+        uint8_t lowByte = val & 0xFF;          // Extract the low byte (last 8 bits)
+        
+        // Swap the high and low bytes and store in the swapped icon array
+        swappedIcon[i] = (lowByte << 8) | highByte;
+    }
+}
+
+
+
+void drawModeIcon(const char* mode) {
+    uint16_t swappedIcon[16]; // Create a temporary buffer for the swapped icon
+    //Clear the icon first
+    display->fillRect(0, disp_top_margin, 16, 16, GxEPD_WHITE);
+
+    if (mode == "PTT") {
+        swapIconBytes(ptt_icon, swappedIcon, 16);  // Swap the bytes of the PTT icon
+        display->drawBitmap(0, disp_top_margin, (const uint8_t *)swappedIcon, 16, 16, GxEPD_BLACK);
+    } else if (mode == "TXT") {
+        swapIconBytes(txt_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
+        display->drawBitmap(0, disp_top_margin, (const uint8_t *)swappedIcon, 16, 16, GxEPD_BLACK);
     }
 }
 
@@ -163,6 +182,10 @@ void updModeAndChannelDisplay() {
     char buf[30];
     snprintf(buf, sizeof(buf), "chn:%c %dbps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
     updDisp(0, buf);
+    char displayString[20];
+    snprintf(displayString, sizeof(displayString), "Mode: %s", current_mode);
+    // Display the current mode name
+    updDisp(1, displayString);
 }
 
 void showError(const char* error_msg) {

@@ -10,7 +10,11 @@
 
 using namespace ace_button;
 
-OperationMode current_mode = RAW;
+// Define an array of mode names as strings
+const char* modes[] = { "RAW","PTT", "TXT", "TST"};
+const int numModes = sizeof(modes) / sizeof(modes[0]);
+int modeIndex = 0;
+const char* current_mode=modes[modeIndex];
 
 // Buffer sizes and other constants
 #define RAW_SIZE 160  // Adjust as necessary
@@ -64,10 +68,7 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
             }
         }
     } else if (button->getPin() == TOUCH_PIN && in_settings_mode) {
-        if (eventType == AceButton::kEventLongPressed && setting_idx == 3) {
-            // Switch between hours, minutes, and seconds in time setting
-            cycleTimeSettingMode();
-        } else if (eventType == AceButton::kEventPressed) {
+        if (eventType == AceButton::kEventPressed) {
             // Increment the current setting
             updateCurrentSetting();
         }
@@ -80,11 +81,11 @@ void handleAppModes() {
 
     /*
 
-    if (current_mode == PTT) {
+    if (current_mode == "PTT") {
         sendAudio();
-    } else if (current_mode == TST) {
+    } else if (current_mode == "TST") {
         sendTestMessage();
-    } else if (current_mode == TXT || current_mode == RAW) {
+    } else if (current_mode == "TXT" || current_mode == "RAW") {
         handlePacket();
     }
     */
@@ -133,10 +134,10 @@ void handlePacket() {
         char expected_txt_header[4];
         snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[channel_idx]);
 
-        if (current_mode == RAW) {
+        if (current_mode == "RAW") {
             // Display raw message in the message buffer
             updDisp(7, (char*)pkt_buf);
-        } else if (current_mode == PTT && strncmp((char*)pkt_buf, expected_ptt_header, 3) == 0) {
+        } else if (current_mode == "PTT" && strncmp((char*)pkt_buf, expected_ptt_header, 3) == 0) {
             uint8_t rcv_mode = pkt_buf[3];
             if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
                 codec = codec2_create(bitrate_modes[rcv_mode]);
@@ -146,28 +147,19 @@ void handlePacket() {
             } else {
                 updDisp(2, "Invalid mode received");
             }
-        } else if (current_mode == TXT && strncmp((char*)pkt_buf, expected_txt_header, 3) == 0) {
+        } else if (current_mode == "TXT" && strncmp((char*)pkt_buf, expected_txt_header, 3) == 0) {
             // Display text message in the message buffer
             updDisp(7, (char*)pkt_buf);
         }
     }
 }
 
+// Function to cycle through modes
 void updMode() {
-    // Cycle through operation modes
-    if (current_mode == PTT) {
-        current_mode = TXT;
-        updDisp(1, "Mode: TXT");
-    } else if (current_mode == TXT) {
-        current_mode = TST;
-        updDisp(1, "Mode: TST");
-    } else if (current_mode == TST) {
-        current_mode = RAW;
-        updDisp(1, "Mode: RAW");
-    } else if (current_mode == RAW) {
-        current_mode = PTT;
-        updDisp(1, "Mode: PTT");
-    }
+    // Increment the mode index and wrap around if necessary
+    modeIndex = (modeIndex + 1) % numModes;
+    current_mode=modes[modeIndex];
+    // Update the mode and channel display
     updModeAndChannelDisplay();
 }
 

@@ -23,8 +23,7 @@ int spreading_factor = 7;  // Default spreading factor SF7
 const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_1600, CODEC2_MODE_1400, CODEC2_MODE_1200, CODEC2_MODE_700};
 const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
 
-uint8_t time_setting_mode = 0;  // 0 = hours, 1 = minutes, 2 = seconds
-uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = time, 4 = spreading factor
+uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = hours, 4 = minutes, 5 = seconds, 6 = spreading factor
 bool in_settings_mode = false;  // Indicates whether the device is in settings mode
 
 void setupSettings() {
@@ -61,6 +60,7 @@ void setupSettings() {
     rtc.disableAlarm();
     rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Set initial time if necessary
 }
+
 void toggleSettingsMode() {
     in_settings_mode = !in_settings_mode;
     if (in_settings_mode) {
@@ -73,11 +73,10 @@ void toggleSettingsMode() {
 }
 
 void cycleSettings() {
-    // Increment the setting index
     setting_idx++;
     
-    // Wrap around if it exceeds the number of settings
-    if (setting_idx > 4) {  // Adjust based on the number of settings you have
+    // Wrap around if it exceeds the number of settings, now including hours, minutes, and seconds
+    if (setting_idx > 6) {  // 0 = bitrate, 1 = volume, 2 = channel, 3 = hours, 4 = minutes, 5 = seconds, 6 = spreading factor
         setting_idx = 0;
     }
     
@@ -85,14 +84,7 @@ void cycleSettings() {
     displayCurrentSetting();
 }
 
-void cycleTimeSettingMode() {
-    // Switch between setting hours, minutes, and seconds
-    time_setting_mode = (time_setting_mode + 1) % 3;
-    displayCurrentTimeSetting();
-}
-
 void updateCurrentSetting() {
-    // Update the current setting based on which setting is selected
     if (setting_idx == 0) {
         bitrate_idx = (bitrate_idx + 1) % 6;  // Cycle through bitrate options
         updModeAndChannelDisplay();
@@ -102,46 +94,54 @@ void updateCurrentSetting() {
         updDisp(1, "Volume Set");
     } else if (setting_idx == 2) {
         updChannel();  // Cycle through channels
-    } else if (setting_idx == 3) {
+    } else if (setting_idx >= 3 && setting_idx <= 5) {  // Time settings (hours, minutes, seconds)
         RTC_Date dateTime = rtc.getDateTime();
-        if (time_setting_mode == 0) {
-            dateTime.hour = (dateTime.hour + 1) % 24;
-        } else if (time_setting_mode == 1) {
-            dateTime.minute = (dateTime.minute + 1) % 60;
-        } else if (time_setting_mode == 2) {
-            dateTime.second = (dateTime.second + 1) % 60;
+        if (setting_idx == 3) {
+            dateTime.hour = (dateTime.hour + 1) % 24;  // Increment hours
+        } else if (setting_idx == 4) {
+            dateTime.minute = (dateTime.minute + 1) % 60;  // Increment minutes
+        } else if (setting_idx == 5) {
+            dateTime.second = (dateTime.second + 1) % 60;  // Increment seconds
         }
         rtc.setDateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour, dateTime.minute, dateTime.second);
-        displayCurrentTimeSetting();
-    } else if (setting_idx == 4) {
-        spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1; // Cycle between SF6 and SF12
+        displayCurrentTimeSetting();  // Update the display with the new time
+    } else if (setting_idx == 6) {
+        spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1;  // Cycle between SF6 and SF12
         char buf[20];
         snprintf(buf, sizeof(buf), "SF Set to: %d", spreading_factor);
         updDisp(1, buf);
     }
+    //Show the new changed setting
+    displayCurrentSetting();
 }
 
 void displayCurrentSetting() {
-    // Display the current setting being adjusted
     if (setting_idx == 0) {
-        updDisp(1, "Setting Bitrate:");
+        updDisp(1, "Bitrate:");
         char bitrate_str[20];
         snprintf(bitrate_str, sizeof(bitrate_str), "Bitrate: %d bps", getBitrateFromIndex(bitrate_idx));
         updDisp(2, bitrate_str);
     } else if (setting_idx == 1) {
-        updDisp(1, "Setting Volume:");
+        updDisp(1, "Volume:");
         char volume_str[20];
         snprintf(volume_str, sizeof(volume_str), "Volume: %d", volume_level);
         updDisp(2, volume_str);
     } else if (setting_idx == 2) {
-        updDisp(1, "Setting Channel:");
+        updDisp(1, "Channel:");
         char channel_str[20];
         snprintf(channel_str, sizeof(channel_str), "Channel: %c", channels[channel_idx]);
         updDisp(2, channel_str);
     } else if (setting_idx == 3) {
-        displayCurrentTimeSetting();  // Reuse the function to display current time setting
+        updDisp(1, "Setting Hour:");
+        displayCurrentTimeSetting();
     } else if (setting_idx == 4) {
-        updDisp(1, "Setting Spreading Factor:");
+        updDisp(1, "Setting Minute:");
+        displayCurrentTimeSetting();
+    } else if (setting_idx == 5) {
+        updDisp(1, "Setting Second:");
+        displayCurrentTimeSetting();
+    } else if (setting_idx == 6) {
+        updDisp(1, "Spreading Factor:");
         char sf_str[20];
         snprintf(sf_str, sizeof(sf_str), "SF: %d", spreading_factor);
         updDisp(2, sf_str);
@@ -156,11 +156,11 @@ void displayCurrentTimeSetting() {
     char time_str[9];  // Format: HH:MM:SS
     snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", dateTime.hour, dateTime.minute, dateTime.second);
 
-    if (time_setting_mode == 0) {
+    if (setting_idx == 3) {
         updDisp(1, "Setting Hour:");
-    } else if (time_setting_mode == 1) {
+    } else if (setting_idx == 4) {
         updDisp(1, "Setting Minute:");
-    } else if (time_setting_mode == 2) {
+    } else if (setting_idx == 5) {
         updDisp(1, "Setting Second:");
     }
     updDisp(2, time_str);  // Display the current time value
