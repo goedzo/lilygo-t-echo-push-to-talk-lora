@@ -1,33 +1,56 @@
 #include "utilities.h"
+#include <SPI.h>
+#include <GxEPD.h>
+#include <GxDEPG0150BN/GxDEPG0150BN.h>  // 1.54" b/w
+#include <RadioLib.h>
+
 #include <stdint.h>
 #include "settings.h"  // Include settings.h to use global variables
-
-#include <RadioLib.h>
+#include "display.h"
 #include "lora.h"
 
 
 
-// Maak eerst een Module-object aan met de juiste pinconfiguratie
-Module module = Module(/*CS=*/10, /*DIO1=*/2, /*NRST=*/3, /*BUSY=*/9);
 
-// Geef het Module-object door aan de SX1262 constructor
-SX1262 radio = SX1262(&module);
+SX1262 radio = nullptr;       //SX1262
+SPIClass        *rfPort    = nullptr;
 
-void setupLoRa() {
-    Serial.begin(9600);
-    while (!Serial);
 
-    Serial.print(F("[SX1262] Initializing ... "));
+bool setupLoRa() {
+    rfPort = new SPIClass(
+        /*SPIPORT*/NRF_SPIM3,
+        /*MISO*/ LoRa_Miso,
+        /*SCLK*/LoRa_Sclk,
+        /*MOSI*/LoRa_Mosi);
+    rfPort->begin();
 
-    // Initializeer de radio
-    int state = radio.begin(868.0);  // Stel de juiste frequentie in
-    if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("success!"));
-    } else {
-        Serial.print(F("failed, code "));
-        Serial.println(state);
-        while (true);  // Stop met uitvoeren als de initialisatie faalt
+    SPISettings spiSettings;
+
+    radio = new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *rfPort, spiSettings);
+
+    SerialMon.print("[SX1262] Initializing ...  ");
+    // carrier frequency:           868.0 MHz
+    // bandwidth:                   125.0 kHz
+    // spreading factor:            9
+    // coding rate:                 7
+    // sync word:                   0x12 (private network)
+    // output power:                14 dBm
+    // current limit:               60 mA
+    // preamble length:             8 symbols
+    // TCXO voltage:                1.6 V (set to 0 to not use TCXO)
+    // regulator:                   DC-DC (set to true to use LDO)
+    // CRC:                         enabled
+    int state = radio.begin(868.0);
+    if (state != ERROR_NONE) {
+        SerialMon.print(("failed, code "));
+        SerialMon.println(state);
+
+        char buf[30];
+        snprintf(buf, sizeof(buf), "Lora failed to init: %d", state);
+        showError(buf);
+        return false;
     }
+
 
     // Stel de spreading factor in met de opgegeven waarde
     state = radio.setSpreadingFactor(spreading_factor);
@@ -42,16 +65,17 @@ void setupLoRa() {
     // Stel het zendvermogen in (tussen -17 en 22 dBm)
     if (radio.setOutputPower(22) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
         Serial.println(F("Selected output power is invalid for this module!"));
-        while (true);
+        return false;
     }
 
     // Stel de stroomlimiet in (tussen 45 en 240 mA)
     if (radio.setCurrentLimit(80) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
         Serial.println(F("Selected current limit is invalid for this module!"));
-        while (true);
+        return false;
     }
 
     Serial.println(F("LoRa setup completed successfully!"));
+    return true;
 }
 
 void sendPacket(uint8_t* pkt_buf, uint16_t len) {

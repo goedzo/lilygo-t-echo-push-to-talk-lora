@@ -7,6 +7,10 @@
 //#include <GxGDEH0154D67/GxGDEH0154D67.h>  // 1.54" b/w
 #include <GxDEPG0150BN/GxDEPG0150BN.h>  // 1.54" b/w 
 
+#include <Fonts/FreeMonoBold9pt7b.h>
+#include <Fonts/FreeMonoBold12pt7b.h>
+
+
 #include GxEPD_BitmapExamples
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
@@ -25,24 +29,34 @@ void boardInit();
 uint32_t        blinkMillis = 0;
 uint8_t rgb = 0;
 
+int count=0;
+
 void setup()
 {
     Serial.begin(115200);
+    //while (!Serial);
+
     delay(200);
     boardInit();
+    updDisp(5, "Booting...");
+
+
     delay(200);
     //LilyGo_logo();
 
+    updDisp(5, "Init lora...");
+    setupLoRa();
 
-    Serial.println("Booting...\n");
-    Serial.println("Init display\n");
-    Serial.println("Init lora\n");
-    //setupLoRa();
     //setupI2S();
+    updDisp(5, "Init settings...");
     Serial.println("Init settings\n");
-    updModeAndChannelDisplay();
-    //setupSettings();
+    setupSettings();
+
+    updDisp(5, "Setup ok!");
+
+    //updDisp(1, "Setup app modes");
     //setupAppModes();
+    updModeAndChannelDisplay();
 }
 
 void loop()
@@ -71,6 +85,19 @@ void loop()
         }
         rgb++;
         rgb %= 3;
+
+        count++;
+
+        if(count==600000) {
+          count=0;
+        }
+        char buf[50];
+        snprintf(buf, sizeof(buf), "Counter 3: %d", count);
+        updDisp(3, buf);
+        snprintf(buf, sizeof(buf), "Counter 4: %d", count);
+        updDisp(4, buf);
+        snprintf(buf, sizeof(buf), "Counter 5: %d", count);
+        updDisp(5, buf);
     }
 }
 
