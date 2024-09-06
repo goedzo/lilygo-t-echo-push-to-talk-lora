@@ -59,7 +59,7 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
    - After installation, select `Nordic nRF52840 (PCA10056)` from the board list.
 
 4. **Copy Required Libraries**:
-   - Copy all the folders from the `lib` directory in this project to your Arduino libraries directory:
+   - Copy all the folders from the `libraries` directory in this project to your Arduino libraries directory:
      ```
      C:\Users\<YourName>\Documents\Arduino\libraries
      ```
