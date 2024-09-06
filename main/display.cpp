@@ -15,44 +15,124 @@
 // Define the 16x16 pixel icon for "TXT" mode
 const uint16_t txt_icon[16] = {
     // Your bitmap data for TXT mode
-    0b0000000000000000,
-    0b0000110000110000,
-    0b0001111001111000,
-    0b0011001111001100,
-    0b0110000110000110,
-    0b0111111111111110,
-    0b1100000110000011,
-    0b1100000110000011,
-    0b0000000110000011,
-    0b0001111111111110,
-    0b0011000110000110,
-    0b0110000110000110,
-    0b0110000110000110,
-    0b0111000110001110,
-    0b0000000000000000,
+    0b1111111111111111,
+    0b1000000000000001,
+    0b1011111111111101,
+    0b1000111111110001,
+    0b1000001111000001,
+    0b1000000000000001,
+    0b1000000000000001,
+    0b1000000000000001,
+    0b1000000000000001,
+    0b1000000000000001,
+    0b1000000000000001,
+    0b1000000000000001,
+    0b1000000000000001,
+    0b1000000000000001,
+    0b1111111111111111,
     0b0000000000000000
 };
 
 // Define the 16x16 pixel icon for "PTT" mode
 const uint16_t ptt_icon[16] = {
     // Your bitmap data for PTT mode
+    0b0000001111000000,
+    0b0000011111100000,
+    0b0000111111110000,
+    0b0000110000110000,
+    0b0000110000110000,
+    0b0000110000110000,
+    0b0011111111111100,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0011111111111100,
+    0b0000000000000000
+};
+
+// Icon 10: Checkmark
+const uint16_t settings_icon[16] = {
     0b0000000000000000,
-    0b0000000000000000,
-    0b0000000011111111,
-    0b0000111111111111,
+    0b0000000000000001,
+    0b0000000000000011,
+    0b0000000000000111,
+    0b0000000000001110,
+    0b0000000000011100,
+    0b0000000000111000,
+    0b0000000001110000,
+    0b1000000011100000,
+    0b1100000111000000,
+    0b1110001110000000,
+    0b0111011100000000,
+    0b0011111000000000,
+    0b0001110000000000,
+    0b0000100000000000,
+    0b0000000000000000
+};
+
+// Icon 2: Spiral
+const uint16_t test_icon[16] = {
     0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b0000111111111111,
-    0b0000000011111111,
-    0b0000000000001111,
-    0b0000000000000000,
+    0b1000000000000001,
+    0b1011111111111101,
+    0b1010000000000101,
+    0b1010111111110101,
+    0b1010100000000101,
+    0b1010101111110101,
+    0b1010101000000101,
+    0b1010101011111101,
+    0b1010101010000101,
+    0b1010101010110101,
+    0b1010101010100101,
+    0b1010101010101101,
+    0b1010101010101001,
+    0b1010101010101011,
+    0b1111111111111111
+};
+
+const uint16_t raw_icon[16] = {
+    0b0000001111000000,
+    0b0000111111110000,
+    0b0001111111111000,
+    0b0011110000111100,
+    0b0011100000011100,
+    0b0011100000011100,
+    0b0011110000111100,
+    0b0001111111111000,
+    0b0000111111110000,
+    0b0000001111000000,
+    0b0000000001000000,
+    0b0000000011000000,
+    0b0000000110000000,
+    0b0000000100000000,
     0b0000000000000000,
     0b0000000000000000
 };
+
+// Black Icon
+const uint16_t black_icon[16] = {
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+    0b1111111111111111,
+};
+
 
 // E-Paper display initialization
 SPIClass        *dispPort  = nullptr;
@@ -125,14 +205,27 @@ void drawModeIcon(const char* mode) {
     uint16_t swappedIcon[16]; // Create a temporary buffer for the swapped icon
     //Clear the icon first
     display->fillRect(0, disp_top_margin, 16, 16, GxEPD_WHITE);
+    swapIconBytes(black_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
 
     if (mode == "PTT") {
         swapIconBytes(ptt_icon, swappedIcon, 16);  // Swap the bytes of the PTT icon
-        display->drawBitmap(0, disp_top_margin, (const uint8_t *)swappedIcon, 16, 16, GxEPD_BLACK);
     } else if (mode == "TXT") {
         swapIconBytes(txt_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
-        display->drawBitmap(0, disp_top_margin, (const uint8_t *)swappedIcon, 16, 16, GxEPD_BLACK);
+    } else if (mode == "RAW") {
+        swapIconBytes(raw_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
     }
+    } else if (mode == "TST") {
+        swapIconBytes(test_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
+    }
+
+
+
+    if(in_settings_mode) {
+      swapIconBytes(settings_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
+    }
+
+    //Always draw an icon
+    display->drawBitmap(0, disp_top_margin, (const uint8_t *)swappedIcon, 16, 16, GxEPD_BLACK);
 }
 
 void updDisp(uint8_t line, const char* msg, bool updateScreen) {
@@ -179,13 +272,17 @@ void clearScreen(){
 
 void updModeAndChannelDisplay() {
     drawModeIcon(current_mode);
+    if (!in_settings_mode) {
+        char displayString[20];
+        snprintf(displayString, sizeof(displayString), "Mode: %s", current_mode);
+        // Display the current mode name
+        updDisp(1, displayString,true);
+    }
     char buf[30];
     snprintf(buf, sizeof(buf), "chn:%c %dbps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
-    updDisp(0, buf);
-    char displayString[20];
-    snprintf(displayString, sizeof(displayString), "Mode: %s", current_mode);
-    // Display the current mode name
-    updDisp(1, displayString);
+    updDisp(0, buf,true);
+
+
 }
 
 void showError(const char* error_msg) {

@@ -69,6 +69,9 @@ void toggleSettingsMode() {
     } else {
         updDisp(1, "Exited Settings");
         setupLoRa();
+        //Refresh the screen
+        clearScreen();
+        updModeAndChannelDisplay();
     }
 }
 
@@ -88,10 +91,10 @@ void updateCurrentSetting() {
     if (setting_idx == 0) {
         bitrate_idx = (bitrate_idx + 1) % 6;  // Cycle through bitrate options
         updModeAndChannelDisplay();
-        updDisp(1, "Bitrate Set");
+        updDisp(1, "Bitrate Set",false);
     } else if (setting_idx == 1) {
         volume_level = (volume_level % 10) + 1;  // Cycle through volume levels (1-10)
-        updDisp(1, "Volume Set");
+        updDisp(1, "Volume Set",false);
     } else if (setting_idx == 2) {
         updChannel();  // Cycle through channels
     } else if (setting_idx >= 3 && setting_idx <= 5) {  // Time settings (hours, minutes, seconds)
@@ -109,7 +112,7 @@ void updateCurrentSetting() {
         spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1;  // Cycle between SF6 and SF12
         char buf[20];
         snprintf(buf, sizeof(buf), "SF Set to: %d", spreading_factor);
-        updDisp(1, buf);
+        updDisp(1, buf,false);
     }
     //Show the new changed setting
     displayCurrentSetting();
@@ -117,31 +120,31 @@ void updateCurrentSetting() {
 
 void displayCurrentSetting() {
     if (setting_idx == 0) {
-        updDisp(1, "Bitrate:");
+        updDisp(1, "Bitrate:",false);
         char bitrate_str[20];
         snprintf(bitrate_str, sizeof(bitrate_str), "Bitrate: %d bps", getBitrateFromIndex(bitrate_idx));
         updDisp(2, bitrate_str);
     } else if (setting_idx == 1) {
-        updDisp(1, "Volume:");
+        updDisp(1, "Volume:",false);
         char volume_str[20];
         snprintf(volume_str, sizeof(volume_str), "Volume: %d", volume_level);
         updDisp(2, volume_str);
     } else if (setting_idx == 2) {
-        updDisp(1, "Channel:");
+        updDisp(1, "Channel:",false);
         char channel_str[20];
         snprintf(channel_str, sizeof(channel_str), "Channel: %c", channels[channel_idx]);
         updDisp(2, channel_str);
     } else if (setting_idx == 3) {
-        updDisp(1, "Setting Hour:");
+        updDisp(1, "Setting Hour:",false);
         displayCurrentTimeSetting();
     } else if (setting_idx == 4) {
-        updDisp(1, "Setting Minute:");
+        updDisp(1, "Setting Minute:",false);
         displayCurrentTimeSetting();
     } else if (setting_idx == 5) {
-        updDisp(1, "Setting Second:");
+        updDisp(1, "Setting Second:",false);
         displayCurrentTimeSetting();
     } else if (setting_idx == 6) {
-        updDisp(1, "Spreading Factor:");
+        updDisp(1, "Spreading Factor:",false);
         char sf_str[20];
         snprintf(sf_str, sizeof(sf_str), "SF: %d", spreading_factor);
         updDisp(2, sf_str);
