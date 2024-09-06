@@ -122,8 +122,7 @@ void handlePacket() {
 
         if (current_mode == RAW) {
             // Display raw message in the message buffer
-            updDisp(5, (char*)pkt_buf);
-            updateMessageDisplay();
+            updDisp(7, (char*)pkt_buf);
         } else if (current_mode == PTT && strncmp((char*)pkt_buf, expected_ptt_header, 3) == 0) {
             uint8_t rcv_mode = pkt_buf[3];
             if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
@@ -136,8 +135,7 @@ void handlePacket() {
             }
         } else if (current_mode == TXT && strncmp((char*)pkt_buf, expected_txt_header, 3) == 0) {
             // Display text message in the message buffer
-            updDisp(5, (char*)pkt_buf);
-            updateMessageDisplay();
+            updDisp(7, (char*)pkt_buf);
         }
     }
 }
