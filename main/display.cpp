@@ -78,8 +78,8 @@ char disp_buf[20][24] = {
 int displayLines=sizeof(disp_buf) / sizeof(disp_buf[0]);
 
 void printline(const char* msg) {
-    Serial.println(msg);
-    Serial.println("\n");
+    //Serial.println(msg);
+    //Serial.println("\n");
     display->print(msg);
 }
 
@@ -121,7 +121,7 @@ void updDisp(uint8_t line, const char* msg, bool updateScreen) {
         strncpy(disp_buf[line], msg, sizeof(disp_buf[line]) - 1);
         disp_buf[line][sizeof(disp_buf[line]) - 1] = '\0'; 
 
-        Serial.println(msg);
+        //Serial.println(msg);
 
         drawModeIcon(current_mode);  // Draw the mode icon
 

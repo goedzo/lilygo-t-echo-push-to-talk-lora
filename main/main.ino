@@ -47,10 +47,12 @@ void setup()
     Serial.println("Init settings\n");
     setupSettings();
 
+    updDisp(5, "Setup app modes");
+    setupAppModes();
+
     updDisp(5, "Setup ok!");
 
-    //updDisp(1, "Setup app modes");
-    //setupAppModes();
+
     clearScreen();
     updModeAndChannelDisplay();
 
@@ -58,7 +60,7 @@ void setup()
 
 void loop()
 {
-    //handleAppModes();
+    handleAppModes();
     if (millis() - blinkMillis > 1000) {
         blinkMillis = millis();
         switch (rgb) {
@@ -90,7 +92,7 @@ void loop()
         }
         char buf[50];
         snprintf(buf, sizeof(buf), "Idlecount: %d", count);
-        updDisp(11, buf,true);
+        //updDisp(11, buf,true);
     }
 }
 

@@ -28,21 +28,28 @@ int test_message_counter = 0;
 
 // Button objects
 // Define the pin numbers
-#define MODE_PIN _PINNUM(0,11)  // Button 1 connected to P0.11 (Touch-capable pin)
-#define ACTION_PIN _PINNUM(1,10)  // Button 2 connected to P1.10
+#define MODE_PIN _PINNUM(1,10)  // Button 1 connected to P1.10
+#define TOUCH_PIN _PINNUM(0,11)  // Button 2 connected to P0.11 (Touch-capable pin)
 AceButton modeButton(MODE_PIN);
-AceButton actionButton(ACTION_PIN);
+AceButton touchButton(TOUCH_PIN);
 
 void setupAppModes() {
     // Initialize buttons
     ButtonConfig* config = ButtonConfig::getSystemButtonConfig();
     config->setEventHandler(handleEvent);
+    config->setLongPressDelay(1000);  // Set long press delay to 1 second
+    config->setFeature(ButtonConfig::kFeatureLongPress);  // Enable long press detection
+    config->setClickDelay(300);  
 
     modeButton.init(MODE_PIN);
-    actionButton.init(ACTION_PIN);
+    touchButton.init(TOUCH_PIN);
 }
 
 void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState) {
+    Serial.println("Button pressed");
+    Serial.println(eventType);
+    Serial.println(button->getPin());
+
     if (button->getPin() == MODE_PIN) {
         if (eventType == AceButton::kEventLongPressed) {
             // Long press enters or exits settings mode
@@ -56,7 +63,7 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
                 updMode();
             }
         }
-    } else if (button->getPin() == ACTION_PIN && in_settings_mode) {
+    } else if (button->getPin() == TOUCH_PIN && in_settings_mode) {
         if (eventType == AceButton::kEventLongPressed && setting_idx == 3) {
             // Switch between hours, minutes, and seconds in time setting
             cycleTimeSettingMode();
@@ -68,6 +75,11 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
 }
 
 void handleAppModes() {
+    modeButton.check();
+    touchButton.check();
+
+    /*
+
     if (current_mode == PTT) {
         sendAudio();
     } else if (current_mode == TST) {
@@ -75,13 +87,14 @@ void handleAppModes() {
     } else if (current_mode == TXT || current_mode == RAW) {
         handlePacket();
     }
+    */
 }
 
 void sendAudio() {
     codec = codec2_create(bitrate_modes[bitrate_idx]);
     int bits_per_frame = codec2_bits_per_frame(codec);
     int enc_size = (bits_per_frame + 7) / 8;
-    while (digitalRead(ACTION_PIN) == LOW) {
+    while (digitalRead(TOUCH_PIN) == LOW) {
         capAudio(raw_buf, RAW_SIZE);
         codec2_encode(codec, pkt_buf, raw_buf);  
 
