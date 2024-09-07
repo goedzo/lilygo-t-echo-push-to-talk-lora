@@ -9,9 +9,6 @@
 #include "display.h"
 #include "lora.h"
 
-
-
-
 SX1262 radio = nullptr;       //SX1262
 SPIClass        *rfPort    = nullptr;
 
@@ -74,6 +71,10 @@ bool setupLoRa() {
         return false;
     }
 
+
+    // Start non-blocking receive
+    radio.startReceive();
+
     Serial.println(F("LoRa setup completed successfully!"));
     return true;
 }
@@ -86,16 +87,51 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
         Serial.print(F("Transmission failed, code "));
         Serial.println(state);
     }
+    //Allow receiving of messages
+    radio.startReceive();
 }
 
 int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
-    int state = radio.receive(pkt_buf, max_len);
-    if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("Received packet successfully!"));
-        return max_len;  // Of de werkelijke grootte van het ontvangen pakket
-    } else {
-        Serial.print(F("Receive failed, code "));
-        Serial.println(state);
+
+    // Get the length of the received packet
+    uint16_t packet_len = radio.getPacketLength(false);
+    
+    if(packet_len==0) {
         return 0;
     }
+
+    if (packet_len > max_len) {
+        // Prevent buffer overflow if the packet is larger than the provided buffer
+        packet_len = max_len;
+    }
+
+    //Let's check the IRQ status to make sure all data is actually received
+    uint16_t irqStatus = radio.getIrqStatus();
+    if (irqStatus & RADIOLIB_SX126X_IRQ_RX_DONE) {
+        // Read the data into the buffer
+        int state = radio.readData(pkt_buf, packet_len);
+
+        if (state == RADIOLIB_ERR_NONE) {
+            // After receiving, re-enable receive mode
+            radio.startReceive();
+            return packet_len;  // Of de werkelijke grootte van het ontvangen pakket
+        } else {
+            if (state == RADIOLIB_ERR_RX_TIMEOUT ) {
+                //This is OK, no data was received
+            }
+            else {
+                Serial.print(F("Receive failed, code "));
+                char buf[50];
+                snprintf(buf, sizeof(buf), "Lora Receive Error: %d", state);
+                showError(buf);
+                Serial.println(state);
+            }
+            return 0;
+        }
+    }
+    else {
+      return 0;
+    }
 }
+
+

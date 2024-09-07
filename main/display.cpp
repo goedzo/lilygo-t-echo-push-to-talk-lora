@@ -205,7 +205,9 @@ void drawModeIcon(const char* mode) {
     uint16_t swappedIcon[16]; // Create a temporary buffer for the swapped icon
     //Clear the icon first
     display->fillRect(0, disp_top_margin, 16, 16, GxEPD_WHITE);
-    swapIconBytes(black_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
+
+    //This is a default icon in when no icon is set
+    swapIconBytes(black_icon, swappedIcon, 16);  // Swap the bytes of the black icon
 
     if (mode == "PTT") {
         swapIconBytes(ptt_icon, swappedIcon, 16);  // Swap the bytes of the PTT icon
@@ -213,13 +215,11 @@ void drawModeIcon(const char* mode) {
         swapIconBytes(txt_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
     } else if (mode == "RAW") {
         swapIconBytes(raw_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
-    }
     } else if (mode == "TST") {
         swapIconBytes(test_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
     }
 
-
-
+    //If we are in settings, override the current icon
     if(in_settings_mode) {
       swapIconBytes(settings_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
     }
@@ -279,7 +279,13 @@ void updModeAndChannelDisplay() {
         updDisp(1, displayString,true);
     }
     char buf[30];
-    snprintf(buf, sizeof(buf), "chn:%c %dbps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
+    if(current_mode=="PTT") {
+        snprintf(buf, sizeof(buf), "chn:%c %dbps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
+    }
+    else {
+        snprintf(buf, sizeof(buf), "chn:%c spf:%d", channels[channel_idx], spreading_factor);
+    }
+
     updDisp(0, buf,true);
 
 

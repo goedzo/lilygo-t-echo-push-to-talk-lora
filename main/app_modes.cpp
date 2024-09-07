@@ -16,13 +16,20 @@ const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 0;
 const char* current_mode=modes[modeIndex];
 
+uint32_t        appmodeTimer = 0;
+int pckt_count=0;
+
+
 // Buffer sizes and other constants
 #define RAW_SIZE 160  // Adjust as necessary
 #define MAX_PKT 255   // Maximum packet size
 
 // Buffers
 short raw_buf[RAW_SIZE];
-unsigned char pkt_buf[MAX_PKT];
+//This is used for sending LORA messages
+unsigned char send_pkt_buf[MAX_PKT];
+//This buffer receives LORA messages
+unsigned char rcv_pkt_buf[MAX_PKT];
 
 // Codec2 instance
 CODEC2* codec;
@@ -41,7 +48,7 @@ void setupAppModes() {
     // Initialize buttons
     ButtonConfig* config = ButtonConfig::getSystemButtonConfig();
     config->setEventHandler(handleEvent);
-    config->setLongPressDelay(1000);  // Set long press delay to 1 second
+    config->setLongPressDelay(1500);  // Set long press delay to 1 second
     config->setFeature(ButtonConfig::kFeatureLongPress);  // Enable long press detection
     config->setClickDelay(300);  
 
@@ -79,16 +86,18 @@ void handleAppModes() {
     modeButton.check();
     touchButton.check();
 
-    /*
-
-    if (current_mode == "PTT") {
-        sendAudio();
-    } else if (current_mode == "TST") {
-        sendTestMessage();
-    } else if (current_mode == "TXT" || current_mode == "RAW") {
-        handlePacket();
+    if (!in_settings_mode) {
+        if (current_mode == "PTT") {
+            //sendAudio();
+        } else if (current_mode == "TST") {
+            sendTestMessage();
+            //Allow receiving of messages
+            handlePacket();
+        } else if (current_mode == "TXT" || current_mode == "RAW") {
+            handlePacket();
+        }
     }
-    */
+
 }
 
 void sendAudio() {
@@ -97,36 +106,49 @@ void sendAudio() {
     int enc_size = (bits_per_frame + 7) / 8;
     while (digitalRead(TOUCH_PIN) == LOW) {
         capAudio(raw_buf, RAW_SIZE);
-        codec2_encode(codec, pkt_buf, raw_buf);  
+        codec2_encode(codec, send_pkt_buf, raw_buf);  
 
-        memmove(pkt_buf + 4, pkt_buf, enc_size); //Move the binary data 4 bytes, so the header can be added
-        pkt_buf[0] = 'P';
-        pkt_buf[1] = 'T';
-        pkt_buf[2] = channels[channel_idx];  // Kanaal toevoegen
-        pkt_buf[3] = bitrate_idx;  // Bitrate index toevoegen als byte
-        sendPacket(pkt_buf, enc_size + 4);
+        memmove(send_pkt_buf + 4, send_pkt_buf, enc_size); //Move the binary data 4 bytes, so the header can be added
+        send_pkt_buf[0] = 'P';
+        send_pkt_buf[1] = 'T';
+        send_pkt_buf[2] = channels[channel_idx];  // Kanaal toevoegen
+        send_pkt_buf[3] = bitrate_idx;  // Bitrate index toevoegen als byte
+        sendPacket(send_pkt_buf, enc_size + 4);
         updDisp(1, "Transmitting...");
         handlePacket();  // Allow receiving packets during transmission
+
+        //Allow buttonpresses
+        modeButton.check();
+        touchButton.check();
+
+
     }
 }
 
 void sendTestMessage() {
-    char test_msg[20];
-    snprintf(test_msg, sizeof(test_msg), "test%d", ++test_message_counter);
+    //Only do this every 1 seconds
+    if (millis() - appmodeTimer > 2000) {
+      appmodeTimer = millis();
 
-    snprintf((char*)pkt_buf, 4, "TX%c", channels[channel_idx]);
-    strcpy((char*)pkt_buf + 3, test_msg);
-    sendPacket(pkt_buf, strlen(test_msg) + 3);
+      char test_msg[20];
+      snprintf(test_msg, sizeof(test_msg), "test%d", ++test_message_counter);
 
-    char display_msg[30];
-    snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
-    updDisp(1, display_msg);
+      snprintf((char*)send_pkt_buf, 4, "TX%c", channels[channel_idx]);
+      strcpy((char*)send_pkt_buf + 3, test_msg);
+      sendPacket(send_pkt_buf, strlen(test_msg) + 3);
+
+      char display_msg[30];
+      snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
+      updDisp(4, display_msg);
+
+    }
+
 }
 
 void handlePacket() {
-    int pkt_size = receivePacket(pkt_buf, MAX_PKT);
+    int pkt_size = receivePacket(rcv_pkt_buf, MAX_PKT);
     if (pkt_size) {
-        pkt_buf[pkt_size] = '\0';
+        rcv_pkt_buf[pkt_size] = '\0';
 
         char expected_ptt_header[4];
         snprintf(expected_ptt_header, sizeof(expected_ptt_header), "PT%c", channels[channel_idx]);
@@ -134,22 +156,28 @@ void handlePacket() {
         char expected_txt_header[4];
         snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[channel_idx]);
 
-        if (current_mode == "RAW") {
+        if (current_mode == "RAW" || current_mode == "TST") {
             // Display raw message in the message buffer
-            updDisp(7, (char*)pkt_buf);
-        } else if (current_mode == "PTT" && strncmp((char*)pkt_buf, expected_ptt_header, 3) == 0) {
-            uint8_t rcv_mode = pkt_buf[3];
+            pckt_count++;
+            char buf[50];
+            snprintf(buf, sizeof(buf), "Pckt Cnt: %d", pckt_count);
+            updDisp(5, buf,false);
+            snprintf(buf, sizeof(buf), "Pckt Len: %d", pkt_size);
+            updDisp(6, buf,false);
+            updDisp(7, (char*)rcv_pkt_buf,true);
+        } else if (current_mode == "PTT" && strncmp((char*)rcv_pkt_buf, expected_ptt_header, 3) == 0) {
+            uint8_t rcv_mode = rcv_pkt_buf[3];
             if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
                 codec = codec2_create(bitrate_modes[rcv_mode]);
-                codec2_decode(codec, raw_buf, pkt_buf + 4);
+                codec2_decode(codec, raw_buf, rcv_pkt_buf + 4);
                 playAudio(raw_buf, RAW_SIZE);
-                updDisp(1, "Receiving...");
+                updDisp(1, "Receiving...",false);
             } else {
-                updDisp(2, "Invalid mode received");
+                updDisp(2, "Invalid mode received",true);
             }
-        } else if (current_mode == "TXT" && strncmp((char*)pkt_buf, expected_txt_header, 3) == 0) {
+        } else if (current_mode == "TXT" && strncmp((char*)rcv_pkt_buf, expected_txt_header, 3) == 0) {
             // Display text message in the message buffer
-            updDisp(7, (char*)pkt_buf);
+            updDisp(7, (char*)rcv_pkt_buf,true);
         }
     }
 }
@@ -160,7 +188,11 @@ void updMode() {
     modeIndex = (modeIndex + 1) % numModes;
     current_mode=modes[modeIndex];
     // Update the mode and channel display
+    clearScreen();
     updModeAndChannelDisplay();
+    //Make sure we keep receiving messages
+    setupLoRa();
+
 }
 
 void updChannel() {

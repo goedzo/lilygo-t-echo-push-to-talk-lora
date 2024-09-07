@@ -17,8 +17,8 @@ void rtcInterruptCb() {
 char channels[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 int channel_idx = 0;
 int volume_level = 5;
-int bitrate_idx = 0;
-int spreading_factor = 7;  // Default spreading factor SF7
+int bitrate_idx = 2;
+int spreading_factor = 9;  // Default spreading factor SF9
 
 const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_1600, CODEC2_MODE_1400, CODEC2_MODE_1200, CODEC2_MODE_700};
 const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
