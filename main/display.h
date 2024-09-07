@@ -15,6 +15,7 @@ extern int disp_width;
 
 void setupDisplay();
 void drawModeIcon(const char* mode);
+void drawIcon(const uint16_t* icon_data,int x, int y,int height, int width, uint16_t bg_color, uint16_t icon_color);
 void updDisp(uint8_t line, const char* msg, bool updateScreen = true);
 void updModeAndChannelDisplay();
 void enableBacklight(bool en);

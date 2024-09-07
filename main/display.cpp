@@ -134,6 +134,149 @@ const uint16_t black_icon[16] = {
 };
 
 
+
+// Icon 46: Battery 100% Full (6 lines of vertical stripes)
+const uint16_t bat100_icon[16] = {
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b1000000000000011,
+    0b1010101010101011,
+    0b1010101010101011,
+    0b1010101010101011,
+    0b1000000000000011,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000
+};
+
+// Icon 47: Battery 80% Full (5 lines of vertical stripes)
+const uint16_t bat800_icon[16] = {
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b1000000000000011,
+    0b1000101010101011,
+    0b1000101010101011,
+    0b1000101010101011,
+    0b1000000000000011,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000
+};
+
+// Icon 48: Battery 60% Full (4 lines of vertical stripes)
+const uint16_t bat60_icon[16] = {
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b1000000000000011,
+    0b1000001010101011,
+    0b1000001010101011,
+    0b1000001010101011,
+    0b1000000000000011,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000
+};
+
+// Icon 49: Battery 40% Full (3 lines of vertical stripes)
+const uint16_t bat40_icon[16] = {
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b1000000000000011,
+    0b1000000010101011,
+    0b1000000010101011,
+    0b1000000010101011,
+    0b1000000000000011,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000
+};
+
+// Icon 50: Battery 20% Full (2 lines of vertical stripes)
+const uint16_t bat20_icon[16] = {
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b1000000000000011,
+    0b1000000000101011,
+    0b1000000000101011,
+    0b1000000000101011,
+    0b1000000000000011,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000
+};
+
+
+// Icon 50: Battery 10% Full (1 lines of vertical stripes)
+const uint16_t bat10_icon[16] = {
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b1000000000000011,
+    0b1000000000001011,
+    0b1000000000001011,
+    0b1000000000001011,
+    0b1000000000000011,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000
+};
+
+// Icon 51: Battery Empty (0 lines, just the frame)
+const uint16_t bat0_icon[16] = {
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b1000000000000011,
+    0b1000000000000011,
+    0b1000000000000011,
+    0b1000000000000011,
+    0b1000000000000011,
+    0b0111111111111110,
+    0b0111111111111110,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000
+};
+
+
 // E-Paper display initialization
 SPIClass        *dispPort  = nullptr;
 GxIO_Class      *io        = nullptr;
@@ -201,31 +344,44 @@ void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size
 
 
 
-void drawModeIcon(const char* mode) {
-    uint16_t swappedIcon[16]; // Create a temporary buffer for the swapped icon
+void drawIcon(const uint16_t* icon_data,int x, int y,int height, int width, uint16_t bg_color, uint16_t icon_color) {
     //Clear the icon first
-    display->fillRect(0, disp_top_margin, 16, 16, GxEPD_WHITE);
-
+    display->fillRect(x, y, height, width, bg_color);
+    uint16_t swappedIcon[height]; // Create a temporary buffer for the swapped icon
     //This is a default icon in when no icon is set
-    swapIconBytes(black_icon, swappedIcon, 16);  // Swap the bytes of the black icon
+    swapIconBytes(icon_data, swappedIcon, width);  // Swap the bytes of the black icon
+    display->drawBitmap(x, y, (const uint8_t *)swappedIcon, height, width, icon_color);
 
-    if (mode == "PTT") {
-        swapIconBytes(ptt_icon, swappedIcon, 16);  // Swap the bytes of the PTT icon
-    } else if (mode == "TXT") {
-        swapIconBytes(txt_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
-    } else if (mode == "RAW") {
-        swapIconBytes(raw_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
-    } else if (mode == "TST") {
-        swapIconBytes(test_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
-    }
+}
 
+void drawModeIcon(const char* mode) {
     //If we are in settings, override the current icon
+    bool icon_drawn=false;
     if(in_settings_mode) {
-      swapIconBytes(settings_icon, swappedIcon, 16);  // Swap the bytes of the TXT icon
+        drawIcon(settings_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+        icon_drawn=true;
+    }
+    else {
+        if (mode == "PTT") {
+            drawIcon(ptt_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn=true;
+        } else if (mode == "TXT") {
+            drawIcon(txt_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn=true;
+        } else if (mode == "RAW") {
+            drawIcon(raw_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn=true;
+        } else if (mode == "TST") {
+            drawIcon(test_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn=true;
+        }
+
     }
 
-    //Always draw an icon
-    display->drawBitmap(0, disp_top_margin, (const uint8_t *)swappedIcon, 16, 16, GxEPD_BLACK);
+    if(!icon_drawn) {
+      //We are missing an icon for this mode, so make a black icon to show it
+      drawIcon(black_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    }
 }
 
 void updDisp(uint8_t line, const char* msg, bool updateScreen) {
