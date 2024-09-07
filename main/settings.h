@@ -6,15 +6,16 @@
 #include <cstddef>
 #include <pcf8563.h>
 
-// Enum for settings
+// Enum for settings note that the first must be =0!
 enum Setting {
-    BITRATE = 0,
-    VOLUME,
+    SPREADING_FACTOR=0,
     CHANNEL,
+    BITRATE,
+    BACKLIGHT,
+    VOLUME,
     HOURS,
     MINUTES,
     SECONDS,
-    SPREADING_FACTOR,
     NUM_SETTINGS  // Total number of settings
 };
 
@@ -26,11 +27,13 @@ struct DeviceSettings {
     int volume_level;
     int channel_idx;
     int spreading_factor;
+    bool backlight;
 
     // Time-related settings
     int hours;
     int minutes;
     int seconds;
+
 
     // Methods to increment or cycle settings
     void nextBitrate();
@@ -60,6 +63,7 @@ void displayBitrate();
 void displayVolume();
 void displayChannel();
 void displaySpreadingFactor();
+void displayBacklight();
 int getBitrateFromIndex(int index);
 
 #endif // SETTINGS_H

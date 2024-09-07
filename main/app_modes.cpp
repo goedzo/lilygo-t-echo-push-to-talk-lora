@@ -79,6 +79,10 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
             // Increment the current setting
             updateCurrentSetting();
         }
+    } else if (button->getPin() == TOUCH_PIN && !in_settings_mode) {
+        if (eventType == AceButton::kEventPressed) {
+            // We pressed the touch pin while not in settings
+        }
     }
 }
 
@@ -127,6 +131,12 @@ void sendAudio() {
 
 void sendTestMessage() {
     //Only do this every 1 seconds
+
+    if(digitalRead(TOUCH_PIN) == LOW) {
+      //Let's reset the counters
+      test_message_counter=0;
+    }
+
     if (millis() - appmodeTimer > 2000) {
       appmodeTimer = millis();
 
@@ -157,6 +167,11 @@ void handlePacket() {
         snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[deviceSettings.channel_idx]);
 
         if (current_mode == "RAW" || current_mode == "TST") {
+            if(digitalRead(TOUCH_PIN) == LOW) {
+              //Let's reset the counters
+              pckt_count=0;
+            }
+
             // Display raw message in the message buffer
             pckt_count++;
             char buf[50];

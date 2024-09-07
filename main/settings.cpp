@@ -19,6 +19,7 @@ DeviceSettings deviceSettings = {
     .volume_level = 5,            // Default volume level
     .channel_idx = 0,             // Default channel index
     .spreading_factor = 9,        // Default spreading factor (SF9)
+    .backlight = true,
     .hours = 0,
     .minutes = 0,
     .seconds = 0
@@ -89,7 +90,8 @@ void toggleSettingsMode() {
     in_settings_mode = !in_settings_mode;
     if (in_settings_mode) {
         setting_idx = 0;  // Start with bitrate
-        updDisp(1, "Entered Settings");
+        updDisp(1, "Entered Settings",true);
+        displayCurrentSetting();
     } else {
         updDisp(1, "Exited Settings");
         setupLoRa();
@@ -107,18 +109,28 @@ void updateCurrentSetting() {
     RTC_Date dateTime = rtc.getDateTime();
 
     switch (setting_idx) {
+        case SPREADING_FACTOR:
+            deviceSettings.nextSpreadingFactor();
+            char buf[20];
+            snprintf(buf, sizeof(buf), "SF Set to: %d", deviceSettings.spreading_factor);
+            updDisp(1, buf, false);
+            break;
+        case CHANNEL:
+            deviceSettings.nextChannel();
+            updChannel();
+            break;
         case BITRATE:
             deviceSettings.nextBitrate();
             updModeAndChannelDisplay();
             updDisp(1, "Bitrate Set", false);
             break;
+        case BACKLIGHT:
+            deviceSettings.backlight=!deviceSettings.backlight;
+            enableBacklight(deviceSettings.backlight);
+            break;
         case VOLUME:
             deviceSettings.nextVolume();
             updDisp(1, "Volume Set", false);
-            break;
-        case CHANNEL:
-            deviceSettings.nextChannel();
-            updChannel();
             break;
         case HOURS:
         case MINUTES:
@@ -127,37 +139,39 @@ void updateCurrentSetting() {
             rtc.setDateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour, dateTime.minute, dateTime.second);
             displayCurrentTimeSetting();
             break;
-        case SPREADING_FACTOR:
-            deviceSettings.nextSpreadingFactor();
-            char buf[20];
-            snprintf(buf, sizeof(buf), "SF Set to: %d", deviceSettings.spreading_factor);
-            updDisp(1, buf, false);
-            break;
     }
     displayCurrentSetting();
 }
 
 void displayCurrentSetting() {
     switch (setting_idx) {
-        case BITRATE:
-            displayBitrate();
-            break;
-        case VOLUME:
-            displayVolume();
+        case SPREADING_FACTOR:
+            displaySpreadingFactor();
             break;
         case CHANNEL:
             displayChannel();
+            break;
+        case BITRATE:
+            displayBitrate();
+            break;
+        case BACKLIGHT:
+            displayBacklight();
+            break;
+        case VOLUME:
+            displayVolume();
             break;
         case HOURS:
         case MINUTES:
         case SECONDS:
             displayCurrentTimeSetting();
             break;
-        case SPREADING_FACTOR:
-            displaySpreadingFactor();
-            break;
     }
 }
+
+void displayBacklight() {
+    updDisp(1, "Backlight:", true);
+}
+
 
 void displayBitrate() {
     updDisp(1, "Bitrate:", false);

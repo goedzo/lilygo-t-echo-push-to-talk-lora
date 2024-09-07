@@ -159,7 +159,7 @@ const uint16_t bat100_icon[16] = {
 };
 
 // Icon 47: Battery 80% Full (5 lines of vertical stripes)
-const uint16_t bat800_icon[16] = {
+const uint16_t bat80_icon[16] = {
     0b0000000000000000,
     0b0000000000000000,
     0b0000000000000000,
@@ -431,6 +431,28 @@ void clearScreen(){
 
 void printStatusIcons(){
   uint8_t batteryPercentage = getBatteryPercentage();
+  if(batteryPercentage>90) {
+    drawIcon(bat100_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>80) {
+    drawIcon(bat80_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>60) {
+    drawIcon(bat60_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>40) {
+    drawIcon(bat40_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>20) {
+    drawIcon(bat20_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>10) {
+    drawIcon(bat10_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>3) {
+    drawIcon(bat0_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+  }
+
 }
 
 void updModeAndChannelDisplay() {

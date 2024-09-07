@@ -86,6 +86,11 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     } else {
         Serial.print(F("Transmission failed, code "));
         Serial.println(state);
+        char buf[50];
+        snprintf(buf, sizeof(buf), "Lora Sent Error: %d", state);
+        showError(buf);
+
+
     }
     //Allow receiving of messages
     radio.startReceive();
