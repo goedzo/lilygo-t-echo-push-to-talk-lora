@@ -2,6 +2,9 @@
 #include <stdint.h>
 #include "settings.h"
 #include "app_modes.h"
+#include "battery.h"
+
+
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
 #include <GxIO/GxIO.h>
 #include <GxDEPG0150BN/GxDEPG0150BN.h>  // 1.54" b/w 
@@ -426,8 +429,13 @@ void clearScreen(){
 }
 
 
+void printStatusIcons(){
+  uint8_t batteryPercentage = getBatteryPercentage();
+}
+
 void updModeAndChannelDisplay() {
     drawModeIcon(current_mode);
+    printStatusIcons();
     if (!in_settings_mode) {
         char displayString[20];
         snprintf(displayString, sizeof(displayString), "Mode: %s", current_mode);
