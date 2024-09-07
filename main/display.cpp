@@ -436,10 +436,10 @@ void updModeAndChannelDisplay() {
     }
     char buf[30];
     if(current_mode=="PTT") {
-        snprintf(buf, sizeof(buf), "chn:%c %dbps", channels[channel_idx], getBitrateFromIndex(bitrate_idx));
+        snprintf(buf, sizeof(buf), "chn:%c %dbps", channels[deviceSettings.channel_idx], getBitrateFromIndex(deviceSettings.bitrate_idx));
     }
     else {
-        snprintf(buf, sizeof(buf), "chn:%c spf:%d", channels[channel_idx], spreading_factor);
+        snprintf(buf, sizeof(buf), "chn:%c spf:%d", channels[deviceSettings.channel_idx], deviceSettings.spreading_factor);
     }
 
     updDisp(0, buf,true);

@@ -50,10 +50,10 @@ bool setupLoRa() {
 
 
     // Stel de spreading factor in met de opgegeven waarde
-    state = radio.setSpreadingFactor(spreading_factor);
+    state = radio.setSpreadingFactor(deviceSettings.spreading_factor);
     if (state == RADIOLIB_ERR_NONE) {
         Serial.print(F("Spreading factor set to SF"));
-        Serial.println(spreading_factor);
+        Serial.println(deviceSettings.spreading_factor);
     } else {
         Serial.print(F("Failed to set spreading factor, code "));
         Serial.println(state);

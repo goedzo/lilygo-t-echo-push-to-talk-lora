@@ -101,7 +101,7 @@ void handleAppModes() {
 }
 
 void sendAudio() {
-    codec = codec2_create(bitrate_modes[bitrate_idx]);
+    codec = codec2_create(bitrate_modes[deviceSettings.bitrate_idx]);
     int bits_per_frame = codec2_bits_per_frame(codec);
     int enc_size = (bits_per_frame + 7) / 8;
     while (digitalRead(TOUCH_PIN) == LOW) {
@@ -111,8 +111,8 @@ void sendAudio() {
         memmove(send_pkt_buf + 4, send_pkt_buf, enc_size); //Move the binary data 4 bytes, so the header can be added
         send_pkt_buf[0] = 'P';
         send_pkt_buf[1] = 'T';
-        send_pkt_buf[2] = channels[channel_idx];  // Kanaal toevoegen
-        send_pkt_buf[3] = bitrate_idx;  // Bitrate index toevoegen als byte
+        send_pkt_buf[2] = channels[deviceSettings.channel_idx];  // Kanaal toevoegen
+        send_pkt_buf[3] = deviceSettings.bitrate_idx;  // Bitrate index toevoegen als byte
         sendPacket(send_pkt_buf, enc_size + 4);
         updDisp(1, "Transmitting...");
         handlePacket();  // Allow receiving packets during transmission
@@ -133,7 +133,7 @@ void sendTestMessage() {
       char test_msg[20];
       snprintf(test_msg, sizeof(test_msg), "test%d", ++test_message_counter);
 
-      snprintf((char*)send_pkt_buf, 4, "TX%c", channels[channel_idx]);
+      snprintf((char*)send_pkt_buf, 4, "TX%c", channels[deviceSettings.channel_idx]);
       strcpy((char*)send_pkt_buf + 3, test_msg);
       sendPacket(send_pkt_buf, strlen(test_msg) + 3);
 
@@ -151,10 +151,10 @@ void handlePacket() {
         rcv_pkt_buf[pkt_size] = '\0';
 
         char expected_ptt_header[4];
-        snprintf(expected_ptt_header, sizeof(expected_ptt_header), "PT%c", channels[channel_idx]);
+        snprintf(expected_ptt_header, sizeof(expected_ptt_header), "PT%c", channels[deviceSettings.channel_idx]);
 
         char expected_txt_header[4];
-        snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[channel_idx]);
+        snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[deviceSettings.channel_idx]);
 
         if (current_mode == "RAW" || current_mode == "TST") {
             // Display raw message in the message buffer
@@ -196,7 +196,5 @@ void updMode() {
 }
 
 void updChannel() {
-    // Cycle through channels using the global channel_idx from settings.h
-    channel_idx = (channel_idx + 1) % 26;  // Assuming 26 channels A-Z
     updModeAndChannelDisplay();
 }

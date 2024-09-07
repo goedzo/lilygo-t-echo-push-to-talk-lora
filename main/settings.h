@@ -1,29 +1,65 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
+
 #include <codec2.h>
 #include <stdint.h>
 #include <cstddef>
+#include <pcf8563.h>
 
-// Global variables for settings
-extern char channels[];
-extern int channel_idx;
-extern int volume_level;
-extern int bitrate_idx;
+// Enum for settings
+enum Setting {
+    BITRATE = 0,
+    VOLUME,
+    CHANNEL,
+    HOURS,
+    MINUTES,
+    SECONDS,
+    SPREADING_FACTOR,
+    NUM_SETTINGS  // Total number of settings
+};
 
-extern const int bitrate_modes[];
-extern const size_t num_bitrate_modes;
 
-extern int spreading_factor;
 
-extern uint8_t setting_idx;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = hours, 4 = minutes, 5 = seconds, 6 = spreading factor
-extern bool in_settings_mode;      // Indicates whether the device is in settings mode
+// Struct for device settings
+struct DeviceSettings {
+    int bitrate_idx;
+    int volume_level;
+    int channel_idx;
+    int spreading_factor;
 
+    // Time-related settings
+    int hours;
+    int minutes;
+    int seconds;
+
+    // Methods to increment or cycle settings
+    void nextBitrate();
+    void nextVolume();
+    void nextChannel();
+    void incrementTime(int idx, RTC_Date& dateTime);
+    void nextSpreadingFactor();
+};
+
+// External declarations for global variables
+extern DeviceSettings deviceSettings;  // Instance of DeviceSettings struct
+extern char channels[];                // List of channels (e.g., A-Z)
+extern const int bitrate_modes[];      // Array of bitrate modes
+extern const size_t num_bitrate_modes; // Number of bitrate modes
+
+extern uint8_t setting_idx;  // Index for the current setting (using the Setting enum)
+extern bool in_settings_mode; // Flag indicating whether the device is in settings mode
+
+// Function prototypes
 void setupSettings();
 void toggleSettingsMode();
-void cycleSettings();  // Updated function to cycle through settings
+void cycleSettings();
 void updateCurrentSetting();
 void displayCurrentSetting();
 void displayCurrentTimeSetting();
+void displayBitrate();
+void displayVolume();
+void displayChannel();
+void displaySpreadingFactor();
 int getBitrateFromIndex(int index);
 
 #endif // SETTINGS_H

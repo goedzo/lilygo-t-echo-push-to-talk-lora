@@ -13,52 +13,76 @@ void rtcInterruptCb() {
     rtcInterrupt = true;
 }
 
-// Global variables defined here and declared as extern in settings.h
+// Define the instance of the DeviceSettings struct with default values
+DeviceSettings deviceSettings = {
+    .bitrate_idx = 2,             // Default to index 2
+    .volume_level = 5,            // Default volume level
+    .channel_idx = 0,             // Default channel index
+    .spreading_factor = 9,        // Default spreading factor (SF9)
+    .hours = 0,
+    .minutes = 0,
+    .seconds = 0
+};
+
+// Implementing the methods defined in DeviceSettings struct
+void DeviceSettings::nextBitrate() {
+    bitrate_idx = (bitrate_idx + 1) % 6;
+}
+
+void DeviceSettings::nextVolume() {
+    volume_level = (volume_level % 10) + 1;
+}
+
+void DeviceSettings::nextChannel() {
+    channel_idx = (channel_idx + 1) % 26;  // Assuming 26 channels A-Z
+}
+
+void DeviceSettings::incrementTime(int idx, RTC_Date& dateTime) {
+    if (idx == HOURS) {
+        dateTime.hour = (dateTime.hour + 1) % 24;
+    } else if (idx == MINUTES) {
+        dateTime.minute = (dateTime.minute + 1) % 60;
+    } else if (idx == SECONDS) {
+        dateTime.second = (dateTime.second + 1) % 60;
+    }
+}
+
+void DeviceSettings::nextSpreadingFactor() {
+    spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1;
+}
+
+// Global variables
 char channels[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-int channel_idx = 0;
-int volume_level = 5;
-int bitrate_idx = 2;
-int spreading_factor = 9;  // Default spreading factor SF9
+uint8_t setting_idx = 0;
+bool in_settings_mode = false;
 
 const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_1600, CODEC2_MODE_1400, CODEC2_MODE_1200, CODEC2_MODE_700};
 const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
 
-uint8_t setting_idx = 0;        // 0 = bitrate, 1 = volume, 2 = channel, 3 = hours, 4 = minutes, 5 = seconds, 6 = spreading factor
-bool in_settings_mode = false;  // Indicates whether the device is in settings mode
-
 void setupSettings() {
     SerialMon.print("[PCF8563] Initializing ...  ");
 
-    // Set the RTC interrupt pin as input and attach an interrupt handler
     pinMode(RTC_Int_Pin, INPUT);
     attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
 
-    // Start I2C communication
     Wire.begin();
 
-    // Retry mechanism to handle potential communication issues
-    int retry = 3;
-    int ret = 0;
+    int retry = 3, ret = 0;
     do {
-        // Start communication with the PCF8563 (or HYM8563)
         Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);
         ret = Wire.endTransmission();
-        delay(200);  // Delay between retries
-    } while (ret != 0 && retry-- > 0);  // Retry until successful or retries exhausted
+        delay(200);
+    } while (ret != 0 && retry-- > 0);
 
-    // Check if the communication was successful
     if (ret != 0) {
         SerialMon.println("failed");
         return;
     }
     SerialMon.println("success");
 
-    // Initialize the RTC
     rtc.begin(Wire);
-    
-    // Disable any existing alarms and set an initial time (optional)
     rtc.disableAlarm();
-    rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Set initial time if necessary
+    rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Optional initial time setting
 }
 
 void toggleSettingsMode() {
@@ -69,104 +93,113 @@ void toggleSettingsMode() {
     } else {
         updDisp(1, "Exited Settings");
         setupLoRa();
-        //Refresh the screen
         clearScreen();
         updModeAndChannelDisplay();
     }
 }
 
 void cycleSettings() {
-    setting_idx++;
-    
-    // Wrap around if it exceeds the number of settings, now including hours, minutes, and seconds
-    if (setting_idx > 6) {  // 0 = bitrate, 1 = volume, 2 = channel, 3 = hours, 4 = minutes, 5 = seconds, 6 = spreading factor
-        setting_idx = 0;
-    }
-    
-    // Display the current setting
+    setting_idx = (setting_idx + 1) % NUM_SETTINGS;
     displayCurrentSetting();
 }
 
 void updateCurrentSetting() {
-    if (setting_idx == 0) {
-        bitrate_idx = (bitrate_idx + 1) % 6;  // Cycle through bitrate options
-        updModeAndChannelDisplay();
-        updDisp(1, "Bitrate Set",false);
-    } else if (setting_idx == 1) {
-        volume_level = (volume_level % 10) + 1;  // Cycle through volume levels (1-10)
-        updDisp(1, "Volume Set",false);
-    } else if (setting_idx == 2) {
-        updChannel();  // Cycle through channels
-    } else if (setting_idx >= 3 && setting_idx <= 5) {  // Time settings (hours, minutes, seconds)
-        RTC_Date dateTime = rtc.getDateTime();
-        if (setting_idx == 3) {
-            dateTime.hour = (dateTime.hour + 1) % 24;  // Increment hours
-        } else if (setting_idx == 4) {
-            dateTime.minute = (dateTime.minute + 1) % 60;  // Increment minutes
-        } else if (setting_idx == 5) {
-            dateTime.second = (dateTime.second + 1) % 60;  // Increment seconds
-        }
-        rtc.setDateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour, dateTime.minute, dateTime.second);
-        displayCurrentTimeSetting();  // Update the display with the new time
-    } else if (setting_idx == 6) {
-        spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1;  // Cycle between SF6 and SF12
-        char buf[20];
-        snprintf(buf, sizeof(buf), "SF Set to: %d", spreading_factor);
-        updDisp(1, buf,false);
+    RTC_Date dateTime = rtc.getDateTime();
+
+    switch (setting_idx) {
+        case BITRATE:
+            deviceSettings.nextBitrate();
+            updModeAndChannelDisplay();
+            updDisp(1, "Bitrate Set", false);
+            break;
+        case VOLUME:
+            deviceSettings.nextVolume();
+            updDisp(1, "Volume Set", false);
+            break;
+        case CHANNEL:
+            deviceSettings.nextChannel();
+            updChannel();
+            break;
+        case HOURS:
+        case MINUTES:
+        case SECONDS:
+            deviceSettings.incrementTime(setting_idx, dateTime);
+            rtc.setDateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour, dateTime.minute, dateTime.second);
+            displayCurrentTimeSetting();
+            break;
+        case SPREADING_FACTOR:
+            deviceSettings.nextSpreadingFactor();
+            char buf[20];
+            snprintf(buf, sizeof(buf), "SF Set to: %d", deviceSettings.spreading_factor);
+            updDisp(1, buf, false);
+            break;
     }
-    //Show the new changed setting
     displayCurrentSetting();
 }
 
 void displayCurrentSetting() {
-    if (setting_idx == 0) {
-        updDisp(1, "Bitrate:",false);
-        char bitrate_str[20];
-        snprintf(bitrate_str, sizeof(bitrate_str), "Bitrate: %d bps", getBitrateFromIndex(bitrate_idx));
-        updDisp(2, bitrate_str);
-    } else if (setting_idx == 1) {
-        updDisp(1, "Volume:",false);
-        char volume_str[20];
-        snprintf(volume_str, sizeof(volume_str), "Volume: %d", volume_level);
-        updDisp(2, volume_str);
-    } else if (setting_idx == 2) {
-        updDisp(1, "Channel:",false);
-        char channel_str[20];
-        snprintf(channel_str, sizeof(channel_str), "Channel: %c", channels[channel_idx]);
-        updDisp(2, channel_str);
-    } else if (setting_idx == 3) {
-        updDisp(1, "Setting Hour:",false);
-        displayCurrentTimeSetting();
-    } else if (setting_idx == 4) {
-        updDisp(1, "Setting Minute:",false);
-        displayCurrentTimeSetting();
-    } else if (setting_idx == 5) {
-        updDisp(1, "Setting Second:",false);
-        displayCurrentTimeSetting();
-    } else if (setting_idx == 6) {
-        updDisp(1, "Spreading Factor:",false);
-        char sf_str[20];
-        snprintf(sf_str, sizeof(sf_str), "SF: %d", spreading_factor);
-        updDisp(2, sf_str);
+    switch (setting_idx) {
+        case BITRATE:
+            displayBitrate();
+            break;
+        case VOLUME:
+            displayVolume();
+            break;
+        case CHANNEL:
+            displayChannel();
+            break;
+        case HOURS:
+        case MINUTES:
+        case SECONDS:
+            displayCurrentTimeSetting();
+            break;
+        case SPREADING_FACTOR:
+            displaySpreadingFactor();
+            break;
     }
 }
 
+void displayBitrate() {
+    updDisp(1, "Bitrate:", false);
+    char bitrate_str[20];
+    snprintf(bitrate_str, sizeof(bitrate_str), "Bitrate: %d bps", getBitrateFromIndex(deviceSettings.bitrate_idx));
+    updDisp(2, bitrate_str);
+}
+
+void displayVolume() {
+    updDisp(1, "Volume:", false);
+    char volume_str[20];
+    snprintf(volume_str, sizeof(volume_str), "Volume: %d", deviceSettings.volume_level);
+    updDisp(2, volume_str);
+}
+
+void displayChannel() {
+    updDisp(1, "Channel:", false);
+    char channel_str[20];
+    snprintf(channel_str, sizeof(channel_str), "Channel: %c", channels[deviceSettings.channel_idx]);
+    updDisp(2, channel_str);
+}
+
+void displaySpreadingFactor() {
+    updDisp(1, "Spreading Factor:", false);
+    char sf_str[20];
+    snprintf(sf_str, sizeof(sf_str), "SF: %d", deviceSettings.spreading_factor);
+    updDisp(2, sf_str);
+}
+
 void displayCurrentTimeSetting() {
-    // Get the current time from PCF8563
     RTC_Date dateTime = rtc.getDateTime();
-    
-    // Display the current time being set
     char time_str[9];  // Format: HH:MM:SS
     snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", dateTime.hour, dateTime.minute, dateTime.second);
 
-    if (setting_idx == 3) {
+    if (setting_idx == HOURS) {
         updDisp(1, "Setting Hour:");
-    } else if (setting_idx == 4) {
+    } else if (setting_idx == MINUTES) {
         updDisp(1, "Setting Minute:");
-    } else if (setting_idx == 5) {
+    } else if (setting_idx == SECONDS) {
         updDisp(1, "Setting Second:");
     }
-    updDisp(2, time_str);  // Display the current time value
+    updDisp(2, time_str);
 }
 
 // Example function to map the bitrate index to actual bitrate value (bps)
