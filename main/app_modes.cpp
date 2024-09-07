@@ -161,6 +161,7 @@ void handlePacket() {
     if (pkt_size) {
         rcv_pkt_buf[pkt_size] = '\0';  // Null-terminate the received packet
 
+        // Declare the expected headers at the start of the function
         char expected_ptt_header[4];
         snprintf(expected_ptt_header, sizeof(expected_ptt_header), "PT%c", channels[deviceSettings.channel_idx]);
 
@@ -168,6 +169,11 @@ void handlePacket() {
         snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[deviceSettings.channel_idx]);
 
         if (current_mode == "RAW" || current_mode == "TST") {
+            if (digitalRead(TOUCH_PIN) == LOW) {
+                // Reset packet counter if touch pin is pressed
+                pckt_count = 0;
+            }
+
             // Display raw message and increment packet counter
             pckt_count++;
             char buf[50];
@@ -186,7 +192,7 @@ void handlePacket() {
             char* contents = (char*)rcv_pkt_buf + 3;
 
             // Check if the message is "TXA", "TXB", etc. and contains a valid test message
-            if (strncmp(header, "TX", 2) == 0) {
+            if (strncmp(header, "TXA", 3) == 0 || strncmp(header, "TXB", 3) == 0) {
                 // Assume the format "test<number>" after the header
                 if (strncmp(contents, "test", 4) == 0) {
                     char* test_counter_str = contents + 4;  // Pointer to the part after "test"
@@ -194,15 +200,7 @@ void handlePacket() {
                     // Try to extract a numeric test counter
                     int test_counter = atoi(test_counter_str);
                     if (test_counter > 0) {
-
-                        if (current_mode == "RAW" )
-                            if (digitalRead(TOUCH_PIN) == LOW) {
-                                // Synch the packet counter
-                                pckt_count = test_counter;
-                            }
-                        }
-
-                        snprintf(buf, sizeof(buf), "TST Count: %d", test_counter);
+                        snprintf(buf, sizeof(buf), "Test Counter: %d", test_counter);
                         updDisp(8, buf, true);  // Display the counter
                     } else {
                         updDisp(8, "Invalid Test Counter", true);
