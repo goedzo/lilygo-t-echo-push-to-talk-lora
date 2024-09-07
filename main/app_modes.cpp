@@ -155,7 +155,82 @@ void sendTestMessage() {
 
 }
 
+
 void handlePacket() {
+    int pkt_size = receivePacket(rcv_pkt_buf, MAX_PKT);
+    if (pkt_size) {
+        rcv_pkt_buf[pkt_size] = '\0';  // Null-terminate the received packet
+
+        char expected_ptt_header[4];
+        snprintf(expected_ptt_header, sizeof(expected_ptt_header), "PT%c", channels[deviceSettings.channel_idx]);
+
+        char expected_txt_header[4];
+        snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[deviceSettings.channel_idx]);
+
+        if (current_mode == "RAW" || current_mode == "TST") {
+            // Display raw message and increment packet counter
+            pckt_count++;
+            char buf[50];
+            snprintf(buf, sizeof(buf), "Pckt Cnt: %d", pckt_count);
+            updDisp(5, buf, false);
+            snprintf(buf, sizeof(buf), "Pckt Len: %d", pkt_size);
+            updDisp(6, buf, false);
+            updDisp(7, (char*)rcv_pkt_buf, true);
+
+            // Extract the header (first 3 characters)
+            char header[4];
+            strncpy(header, (char*)rcv_pkt_buf, 3);
+            header[3] = '\0';  // Null-terminate the header
+
+            // Extract the contents (everything after the first 3 characters)
+            char* contents = (char*)rcv_pkt_buf + 3;
+
+            // Check if the message is "TXA", "TXB", etc. and contains a valid test message
+            if (strncmp(header, "TX", 2) == 0) {
+                // Assume the format "test<number>" after the header
+                if (strncmp(contents, "test", 4) == 0) {
+                    char* test_counter_str = contents + 4;  // Pointer to the part after "test"
+
+                    // Try to extract a numeric test counter
+                    int test_counter = atoi(test_counter_str);
+                    if (test_counter > 0) {
+
+                        if (current_mode == "RAW" )
+                            if (digitalRead(TOUCH_PIN) == LOW) {
+                                // Synch the packet counter
+                                pckt_count = test_counter;
+                            }
+                        }
+
+                        snprintf(buf, sizeof(buf), "TST Count: %d", test_counter);
+                        updDisp(8, buf, true);  // Display the counter
+                    } else {
+                        updDisp(8, "Invalid Test Counter", true);
+                    }
+                } else {
+                    updDisp(8, "Invalid Test Message", true);
+                }
+            }
+
+        } else if (current_mode == "PTT" && strncmp((char*)rcv_pkt_buf, expected_ptt_header, 3) == 0) {
+            uint8_t rcv_mode = rcv_pkt_buf[3];
+            if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
+                codec = codec2_create(bitrate_modes[rcv_mode]);
+                codec2_decode(codec, raw_buf, rcv_pkt_buf + 4);
+                playAudio(raw_buf, RAW_SIZE);
+                updDisp(1, "Receiving...", false);
+            } else {
+                updDisp(2, "Invalid mode received", true);
+            }
+        } else if (current_mode == "TXT" && strncmp((char*)rcv_pkt_buf, expected_txt_header, 3) == 0) {
+            // Display text message in the message buffer
+            updDisp(7, (char*)rcv_pkt_buf, true);
+        }
+    }
+}
+
+
+void handlePacket_old() {
     int pkt_size = receivePacket(rcv_pkt_buf, MAX_PKT);
     if (pkt_size) {
         rcv_pkt_buf[pkt_size] = '\0';
