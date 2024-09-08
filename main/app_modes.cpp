@@ -68,9 +68,9 @@ void setupAppModes() {
 }
 
 void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState) {
-    Serial.println("Button pressed");
-    Serial.println(eventType);
-    Serial.println(button->getPin());
+    //Serial.println("Button pressed");
+    //Serial.println(eventType);
+    //Serial.println(button->getPin());
 
     if (button->getPin() == MODE_PIN) {
         if (eventType == AceButton::kEventLongPressed) {
@@ -157,6 +157,9 @@ void handleAppModes() {
     modeButton.check();
     touchButton.check();
 
+    //Always allow receiving and sending messages;
+    checkLoraPacketComplete(); //If a message was received, it will call handlePacket();
+
     //Let's implement a power off, when the action button is pressed 5 seconds
     if(digitalRead(MODE_PIN) == LOW) {
       //Keep counting until 5 seconds
@@ -175,15 +178,13 @@ void handleAppModes() {
         if (current_mode == "PTT") {
             //sendAudio();
         } else if (current_mode == "TST") {
+            //Non blocking send
             sendTestMessage();
-            //Allow receiving of messages
-            handlePacket();
         } else if (current_mode == "TXT" || current_mode == "RAW") {
             if(digitalRead(TOUCH_PIN) == LOW) {
               //Let's synch the packet count to the last received test counter
               pckt_count=test_message_counter;
             }
-            handlePacket();
         }
     }
 
@@ -204,7 +205,7 @@ void sendAudio() {
         send_pkt_buf[3] = deviceSettings.bitrate_idx;  // Bitrate index toevoegen als byte
         sendPacket(send_pkt_buf, enc_size + 4);
         updDisp(1, "Transmitting...");
-        handlePacket();  // Allow receiving packets during transmission
+        checkLoraPacketComplete(); // Allow receiving packets during transmission
 
         //Allow buttonpresses
         modeButton.check();
@@ -317,7 +318,7 @@ void updMode() {
     clearScreen();
     updModeAndChannelDisplay();
     //Make sure we keep receiving messages
-    setupLoRa();
+    //setupLoRa();
 
 }
 

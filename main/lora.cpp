@@ -1,3 +1,4 @@
+#include "delay.h"
 #include "utilities.h"
 #include <SPI.h>
 #include <GxEPD.h>
@@ -13,6 +14,61 @@
 SX1262 radio = nullptr;       //SX1262
 SPIClass        *rfPort    = nullptr;
 
+// flag to indicate that a packet was sent or received
+volatile bool operationDone = false;
+// flag to indicate transmission or reception state
+bool transmitFlag = false;
+
+void setFlag(void) {
+  // we sent or received a packet, set the flag
+  operationDone = true;
+  //Serial.println("setFlag - Lora Action complete");
+}
+
+void checkLoraPacketComplete(){
+    if(operationDone) {
+        //Serial.println("checkLoraPacketComplete - Lora Action complete");
+        // reset flag
+        operationDone = false;
+        if(transmitFlag) {
+            transmitFlag = false;        
+
+            //Serial.println("SENT COMPLETE");
+            uint16_t irqStatus = radio.getIrqStatus();
+            if (irqStatus & RADIOLIB_SX126X_IRQ_TX_DONE) {
+              //Serial.println(F("Transmission successful!"));
+            }
+            else {
+              Serial.println(F("Transmission not done!!"));
+            }
+
+
+            int state = radio.finishTransmit();
+
+            if (state == RADIOLIB_ERR_NONE) {
+                // We have sent a package, so listen again
+            } 
+            else {
+              Serial.print(F("Sent failed, code "));
+              char buf[50];
+              snprintf(buf, sizeof(buf), "Sent Err: %d", state);
+              showError(buf);
+              Serial.println(state);
+            }
+
+            //Let's reset lora to get receiving again. There is a bug when using a spread factor >10, receiving stops working
+            radio.sleep(true);
+            radio.standby();
+            radio.startReceive(); //Start after processing, otherwise the packet is cleared before reading
+
+        }
+        else {
+            //Serial.println("RECEIVE COMPLETE");
+            handlePacket();
+            radio.startReceive(); //Start after processing, otherwise the packet is cleared before reading
+        }
+    }
+}
 
 bool setupLoRa() {
     rfPort = new SPIClass(
@@ -49,6 +105,12 @@ bool setupLoRa() {
         return false;
     }
 
+    // set the function that will be called
+    // when new packet is received
+    operationDone=false;
+    radio.setDio1Action(setFlag);
+
+
 
     // Stel de spreading factor in met de opgegeven waarde
     state = radio.setSpreadingFactor(deviceSettings.spreading_factor);
@@ -84,37 +146,21 @@ bool setupLoRa() {
 void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     // Start non-blocking transmission
     int state = radio.startTransmit(pkt_buf, len);
+    transmitFlag = true;
 
     if (state != RADIOLIB_ERR_NONE) {
         Serial.print(F("Transmission start failed, code "));
         Serial.println(state);
         char buf[50];
-        snprintf(buf, sizeof(buf), "Lora Start Transmit Error: %d", state);
+        snprintf(buf, sizeof(buf), "Lora Strt Trnsmt Err: %d", state);
         showError(buf);
+        //Let's reinitialize the radio
+        setupLoRa();
         return;
     }
-
-    Serial.println(F("Transmission started, waiting for completion..."));
-
-    // Polling for transmission completion (non-blocking)
-    while (true) {
-        uint16_t irqStatus = radio.getIrqStatus();
-
-        // Check if transmission has finished
-        if (irqStatus & RADIOLIB_SX126X_IRQ_TX_DONE) {
-            Serial.println(F("Transmission successful!"));
-
-
-            // Allow receiving of messages after transmission
-            radio.startReceive();
-
-            // Exit the loop once transmission is complete
-            break;
-        }
-        // Let's keep the app responsive while waiting for the transmission to end.
-        handleAppModes();
-    }
 }
+
+
 
 int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
 
@@ -137,8 +183,6 @@ int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
         int state = radio.readData(pkt_buf, packet_len);
 
         if (state == RADIOLIB_ERR_NONE) {
-            // After receiving, re-enable receive mode
-            radio.startReceive();
             return packet_len;  // Of de werkelijke grootte van het ontvangen pakket
         } else {
             if (state == RADIOLIB_ERR_RX_TIMEOUT ) {
