@@ -12,6 +12,11 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 - **RAW Mode**: Displays raw data packets received over LoRa without filtering.
 - **Test Mode**: Sends periodic test messages to verify communication.
 - **E-Paper Display**: Displays current mode, messages, and other relevant information on an e-paper display.
+- **Power-Off Function**: Hold the action button for 5 seconds to power off the device.
+- **Double-Click Action Button**: Quickly adjust the spreading factor (SPF) using the double-click action button.
+- **Battery Support**: Includes monitoring and display of battery status.
+- **Non-Blocking Send & Receive**: Improved performance through non-blocking packet transmission and reception.
+- **Packet Counter Synchronization**: Keeps track of the number of packets sent and received, improving communication reliability.
 
 ## Hardware Requirements
 
@@ -21,22 +26,33 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 - **Buttons**: Two buttons for mode switching and PTT action
 - **Audio Components**: Microphone and speaker (for voice communication)
 - **OTG Cable**: For connecting the microcontroller to an Android device (if using an Android development environment)
+- **Battery**: For mobile operation, with support for battery status monitoring
 
 ## Software Requirements
 
 - **Arduino IDE** (or **Arduino Studio** on Android)
 - **Adafruit nRF52 Board Package**
-- **GxEPD2 Library**: For controlling the e-paper display
-- **RadioLib Library**: For LoRa communication
-- **Codec2 Library**: For audio encoding/decoding
-- **Adafruit GFX Library**: Required for display functionality
-- **AceButton Library**: For handling button presses
-- **PCF8563 Library**: For RTC if used in your project
-- **SerialFlash Library**: For interacting with external flash memory
-- **TinyGPSPlus Library**: For GPS modules, if applicable
-- **SoftSPI Library**: For software-based SPI communication
-- **Button2 Library**: Optional, depending on your button handling needs
-- **SPI.h** and **Wire.h**: Standard Arduino libraries for SPI and I2C communication
+- **Required Libraries**:
+  - AceButton
+  - Adafruit_BME280_Library
+  - Adafruit_BusIO
+  - Adafruit_EPD
+  - Adafruit_GFX_Library
+  - Adafruit_Sensor
+  - Adafruit_Unified_Sensor
+  - Button2
+  - Codec2
+  - GxEPD
+  - GxEPD2
+  - MCCI_LoRaWAN_LMIC_library
+  - MPU9250
+  - PCF8563_Library
+  - RadioLib
+  - SdFat_-_Adafruit_Fork
+  - SerialFlash
+  - SoftSPI
+  - SoftSPIB
+  - TinyGPSPlus
 
 ## Setup Instructions
 
@@ -64,18 +80,25 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
      C:\Users\<YourName>\Documents\Arduino\libraries
      ```
    - The required libraries include:
-     - arduino-lmic
      - AceButton
      - Adafruit_BME280_Library
      - Adafruit_BusIO
      - Adafruit_EPD
-     - Adafruit-GFX-Library
+     - Adafruit_GFX_Library
+     - Adafruit_Sensor
+     - Adafruit_Unified_Sensor
      - Button2
+     - Codec2
      - GxEPD
+     - GxEPD2
+     - MCCI_LoRaWAN_LMIC_library
+     - MPU9250
      - PCF8563_Library
      - RadioLib
+     - SdFat_-_Adafruit_Fork
      - SerialFlash
      - SoftSPI
+     - SoftSPIB
      - TinyGPSPlus
      - SPI.h (usually pre-installed with Arduino IDE)
      - Wire.h (usually pre-installed with Arduino IDE)
@@ -109,7 +132,7 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 
 ### Precautions
 
-- **Library Files**: Ensure that the files in the `lib` directory are correctly placed in your Arduino libraries directory, as they include crucial dependencies.
+- **Library Files**: Ensure that the files in the `libraries` directory are correctly placed in your Arduino libraries directory, as they include crucial dependencies.
 - **Pin Compatibility**: The T-Echo pin assignments may not be directly compatible with the official SDK. Pay special attention to pin definitions if using the nRF5-SDK.
 - **Bootloader**: The T-Echo comes with the Adafruit_nRF52_Arduino bootloader pre-installed. Programming the board with the nRF5-SDK will overwrite this bootloader.
 - **NFC Functionality**: NFC is not supported in the Adafruit_nRF52_Arduino environment; use the nRF5-SDK if NFC functionality is required.
@@ -131,10 +154,10 @@ Configures and controls the LoRa communication module, including setting power a
 Handles audio capture and playback using the NRF52840's I2S interface, with Codec2 encoding/decoding.
 
 ### `settings.cpp`
-Manages user settings, including mode switching and configuration adjustments.
+Manages user settings, including mode switching and configuration adjustments. Refactored to store settings in a `DeviceSettings` struct.
 
 ### `app_modes.cpp`
-Implements the core logic for the different operational modes (PTT, TXT, TST, RAW). This includes handling button events for mode switching, managing audio transmission in PTT mode, sending test messages, and processing received LoRa packets. The functions also update the display to reflect the current mode and channel.
+Implements the core logic for the different operational modes (PTT, TXT, TST, RAW). Refactored to use an array of strings for mode management. This includes handling button events for mode switching, managing audio transmission in PTT mode, sending test messages, and processing received LoRa packets. The functions also update the display to reflect the current mode and channel.
 
 ## License
 
