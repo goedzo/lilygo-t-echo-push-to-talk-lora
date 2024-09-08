@@ -279,6 +279,26 @@ const uint16_t bat0_icon[16] = {
     0b0000000000000000
 };
 
+// Icon when powered off
+const uint16_t off_icon[16] = {
+    0b0000000110000000,
+    0b0000000110000000,
+    0b0001000110001000,
+    0b0011000110001100,
+    0b0110000110000110,
+    0b1100000110000011,
+    0b1100000110000011,
+    0b1100000000000011,
+    0b1100000000000011,
+    0b1100000000000011,
+    0b1100000000000011,
+    0b0110000000000110,
+    0b0011000000001100,
+    0b0001100000011000,
+    0b0000011111100000,
+    0b0000000000000000
+};
+
 
 // E-Paper display initialization
 SPIClass        *dispPort  = nullptr;
@@ -360,6 +380,13 @@ void drawIcon(const uint16_t* icon_data,int x, int y,int height, int width, uint
 void drawModeIcon(const char* mode) {
     //If we are in settings, override the current icon
     bool icon_drawn=false;
+
+    if(mode=="OFF") {
+        //We are powered down, so make sure to show the OFF_icon
+        drawIcon(off_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+        return;
+    }
+
     if(in_settings_mode) {
         drawIcon(settings_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
         icon_drawn=true;

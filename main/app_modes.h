@@ -18,5 +18,7 @@ void sendTestMessage();  // Sends a test message in TST mode
 void handlePacket();  // Handles received packets
 void updMode();  // Cycles through the operation modes
 void updChannel();  // Cycles through the channels
-
+void powerOff(); //Powers off the device
+void sleepAudio();
+void turnoffLed();
 #endif

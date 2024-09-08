@@ -13,6 +13,9 @@ extern int disp_window_offset;
 extern int disp_height;
 extern int disp_width;
 
+//Allow the power off icone be re-used
+extern const uint16_t off_icon[16];
+
 void setupDisplay();
 void drawModeIcon(const char* mode);
 void drawIcon(const uint16_t* icon_data,int x, int y,int height, int width, uint16_t bg_color, uint16_t icon_color);
@@ -21,5 +24,5 @@ void updModeAndChannelDisplay();
 void enableBacklight(bool en);
 void showError(const char* error_msg);
 void clearScreen();
-
+void sleepDisplay();
 #endif

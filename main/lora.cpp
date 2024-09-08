@@ -159,4 +159,14 @@ int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
     }
 }
 
-
+void sleepLoRa() {
+    // Put the LoRa module into sleep mode using RadioLib's sleep function
+    int state = radio.sleep();
+    if (state == RADIOLIB_ERR_NONE) {
+        Serial.println(F("LoRa module is now in sleep mode."));
+    } else {
+        char buf[50];
+        snprintf(buf, sizeof(buf), "LoRa Sleep Error: %d", state);
+        showError(buf);  // Show error for LoRa sleep failure
+    }
+}

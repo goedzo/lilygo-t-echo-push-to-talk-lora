@@ -19,6 +19,8 @@ const char* current_mode=modes[modeIndex];
 uint32_t        appmodeTimer = 0;
 int pckt_count=0;
 
+uint32_t        actionButtonTimer = 0;
+
 
 // Buffer sizes and other constants
 #define RAW_SIZE 160  // Adjust as necessary
@@ -36,6 +38,7 @@ CODEC2* codec;
 
 // Test message counter
 int test_message_counter = 0;
+
 
 // Button objects
 // Define the pin numbers
@@ -108,9 +111,65 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
     }
 }
 
+void powerOff() {
+    // Power Off display message
+    //Note that OFF is not part of the mode ENUM, to avoid it going there when switching modes
+    current_mode="OFF";
+    clearScreen();
+    drawIcon(off_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    updDisp(4, "Powered Off..", false);
+    updDisp(7, "Press reset button", false);
+    updDisp(8, "to turn on.", true);
+
+    //Make sure we turn of the backlight
+    enableBacklight(false);
+
+    // Step 1: Shut down peripherals
+    sleepLoRa();       // Put LoRa module to sleep
+    sleepAudio();      // Put audio subsystem to sleep (implement sleepAudio() for your specific setup)
+    turnoffLed();      // Turn off the LED
+    //sleepGPS();        // Put GPS to sleep if available
+    // Add other peripheral shutdowns as needed
+
+    // Step 2: Disable unnecessary GPIO pins
+    pinMode(MODE_PIN, INPUT);       // Set button pin to low power state
+    pinMode(TOUCH_PIN, INPUT);      // Set touch pin to low power state
+    // Set other pins to INPUT if needed to prevent power leakage
+
+
+    // Step 3: Shut down serial interfaces to save power
+    Serial.end();
+
+    // Step 4: Enter deep sleep mode (System OFF mode on nRF52840)
+    uint8_t sd_en;
+    (void)sd_softdevice_is_enabled(&sd_en);
+
+    if (sd_en) {
+        sd_power_system_off();  // Use softdevice to turn off the system
+    } else {
+        NRF_POWER->SYSTEMOFF = 1;  // Put nRF52840 into System OFF mode
+    }
+
+    // Note: The system will remain in this state until reset or a wake-up interrupt occurs.
+}
+
 void handleAppModes() {
     modeButton.check();
     touchButton.check();
+
+    //Let's implement a power off, when the action button is pressed 5 seconds
+    if(digitalRead(MODE_PIN) == LOW) {
+      //Keep counting until 5 seconds
+      if (millis() - actionButtonTimer > 5000) {
+        powerOff();
+      }
+
+    }
+    else if (digitalRead(MODE_PIN) == HIGH) {
+      //No button pressed
+      actionButtonTimer=millis();
+    }
+
 
     if (!in_settings_mode) {
         if (current_mode == "PTT") {
@@ -264,4 +323,21 @@ void updMode() {
 
 void updChannel() {
     updModeAndChannelDisplay();
+}
+
+void sleepAudio() {
+    // If using Codec2, disable or reset the codec instance
+    if (codec) {
+        codec2_destroy(codec);  // Release Codec2 resources
+        Serial.println(F("Audio codec is now disabled."));
+    }
+
+    // If using any DAC or external audio hardware, handle those here
+    // Example: pinMode(DAC_PIN, INPUT);  // Set DAC pin to a low-power state
+}
+
+void turnoffLed(){
+    digitalWrite(GreenLed_Pin, HIGH);
+    digitalWrite(RedLed_Pin, HIGH);
+    digitalWrite(BlueLed_Pin, HIGH);
 }

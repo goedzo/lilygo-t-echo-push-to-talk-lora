@@ -89,7 +89,8 @@ void setupSettings() {
 void toggleSettingsMode() {
     in_settings_mode = !in_settings_mode;
     if (in_settings_mode) {
-        setting_idx = 0;  // Start with bitrate
+        clearScreen();
+        setting_idx = 0;  // Start SPF
         updDisp(1, "Entered Settings",true);
         displayCurrentSetting();
     } else {
