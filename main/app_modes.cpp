@@ -48,9 +48,17 @@ void setupAppModes() {
     // Initialize buttons
     ButtonConfig* config = ButtonConfig::getSystemButtonConfig();
     config->setEventHandler(handleEvent);
-    config->setLongPressDelay(1500);  // Set long press delay to 1 second
     config->setFeature(ButtonConfig::kFeatureLongPress);  // Enable long press detection
-    config->setClickDelay(300);  
+    config->setFeature(ButtonConfig::kFeatureDoubleClick); // Enable double click detection
+    config->setFeature(ButtonConfig::kFeatureSuppressAfterClick);
+    config->setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
+
+    config->setClickDelay(125);  
+
+    /*
+    config->setLongPressDelay(1000);  // Set long press delay to 1 second
+    config->setDoubleClickDelay(300);
+    */
 
     modeButton.init(MODE_PIN);
     touchButton.init(TOUCH_PIN);
@@ -65,7 +73,19 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
         if (eventType == AceButton::kEventLongPressed) {
             // Long press enters or exits settings mode
             toggleSettingsMode();
-        } else if (eventType == AceButton::kEventPressed) {
+        } else if (eventType == AceButton::kEventDoubleClicked) {
+            // Double click, so quickly increase the SPF
+            deviceSettings.nextSpreadingFactor();
+            //Reset lora to use the new SPF
+            setupLoRa();
+            updModeAndChannelDisplay();
+        } else if (eventType == AceButton::kEventReleased) {
+            /** This version uses a Released event instead of a Clicked,
+            * while suppressing the Released after a DoubleClicked, and we ignore the
+            * Clicked event that we can't suppress. The disadvantage of this version is
+            * that if a user accidentally makes a normal Clicked event (a rapid
+            * Pressed/Released), nothing happens. Depending on the application,
+            * this may or may not be the desirable result.          */
             if (in_settings_mode) {
                 // Cycle through different settings when in settings mode
                 cycleSettings();
@@ -82,6 +102,8 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
     } else if (button->getPin() == TOUCH_PIN && !in_settings_mode) {
         if (eventType == AceButton::kEventPressed) {
             // We pressed the touch pin while not in settings
+            // Don't implement anything here, but use digitalRead in handleAppModes() 
+            //for better reading and better dealing with button handling performance
         }
     }
 }
@@ -178,7 +200,7 @@ void handlePacket() {
             char buf[50];
             snprintf(buf, sizeof(buf), "Pckt Len: %d", pkt_size);
             updDisp(4, buf, false);
-            snprintf(buf, sizeof(buf), "Pckt Cnt: %d", pckt_count);
+            snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
             updDisp(5, buf, false);
             // Extract the header (first 3 characters)
             char header[4];
