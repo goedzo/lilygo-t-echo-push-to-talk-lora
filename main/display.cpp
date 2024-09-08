@@ -452,6 +452,9 @@ void printStatusIcons(){
   else if (batteryPercentage>3) {
     drawIcon(bat0_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
   }
+  else if (batteryPercentage>0) {
+    drawIcon(bat0_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+  }
 
 }
 

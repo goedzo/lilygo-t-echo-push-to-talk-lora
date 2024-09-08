@@ -98,6 +98,10 @@ void handleAppModes() {
             //Allow receiving of messages
             handlePacket();
         } else if (current_mode == "TXT" || current_mode == "RAW") {
+            if(digitalRead(TOUCH_PIN) == LOW) {
+              //Let's synch the packet count to the last received test counter
+              pckt_count=test_message_counter;
+            }
             handlePacket();
         }
     }
@@ -169,20 +173,13 @@ void handlePacket() {
         snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[deviceSettings.channel_idx]);
 
         if (current_mode == "RAW" || current_mode == "TST") {
-            if (digitalRead(TOUCH_PIN) == LOW) {
-                // Reset packet counter if touch pin is pressed
-                pckt_count = 0;
-            }
-
             // Display raw message and increment packet counter
             pckt_count++;
             char buf[50];
+            snprintf(buf, sizeof(buf), "Pckt Len: %d", pkt_size);
+            updDisp(4, buf, false);
             snprintf(buf, sizeof(buf), "Pckt Cnt: %d", pckt_count);
             updDisp(5, buf, false);
-            snprintf(buf, sizeof(buf), "Pckt Len: %d", pkt_size);
-            updDisp(6, buf, false);
-            updDisp(7, (char*)rcv_pkt_buf, true);
-
             // Extract the header (first 3 characters)
             char header[4];
             strncpy(header, (char*)rcv_pkt_buf, 3);
@@ -192,7 +189,7 @@ void handlePacket() {
             char* contents = (char*)rcv_pkt_buf + 3;
 
             // Check if the message is "TXA", "TXB", etc. and contains a valid test message
-            if (strncmp(header, "TXA", 3) == 0 || strncmp(header, "TXB", 3) == 0) {
+            if (strncmp(header, "TX", 2) == 0) {
                 // Assume the format "test<number>" after the header
                 if (strncmp(contents, "test", 4) == 0) {
                     char* test_counter_str = contents + 4;  // Pointer to the part after "test"
@@ -200,15 +197,18 @@ void handlePacket() {
                     // Try to extract a numeric test counter
                     int test_counter = atoi(test_counter_str);
                     if (test_counter > 0) {
-                        snprintf(buf, sizeof(buf), "Test Counter: %d", test_counter);
-                        updDisp(8, buf, true);  // Display the counter
+                        test_message_counter=test_counter;
+                        snprintf(buf, sizeof(buf), "Test Cnt: %d", test_counter);
+                        updDisp(6, buf, false);  // Display the counter
                     } else {
-                        updDisp(8, "Invalid Test Counter", true);
+                        updDisp(6, "Invalid Test Counter", false);
                     }
                 } else {
-                    updDisp(8, "Invalid Test Message", true);
+                    updDisp(6, "", false);
                 }
             }
+            updDisp(7, (char*)rcv_pkt_buf, true);
+
 
         } else if (current_mode == "PTT" && strncmp((char*)rcv_pkt_buf, expected_ptt_header, 3) == 0) {
             uint8_t rcv_mode = rcv_pkt_buf[3];
