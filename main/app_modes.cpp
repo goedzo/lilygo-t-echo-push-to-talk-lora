@@ -249,49 +249,6 @@ void handlePacket() {
     }
 }
 
-
-void handlePacket_old() {
-    int pkt_size = receivePacket(rcv_pkt_buf, MAX_PKT);
-    if (pkt_size) {
-        rcv_pkt_buf[pkt_size] = '\0';
-
-        char expected_ptt_header[4];
-        snprintf(expected_ptt_header, sizeof(expected_ptt_header), "PT%c", channels[deviceSettings.channel_idx]);
-
-        char expected_txt_header[4];
-        snprintf(expected_txt_header, sizeof(expected_txt_header), "TX%c", channels[deviceSettings.channel_idx]);
-
-        if (current_mode == "RAW" || current_mode == "TST") {
-            if(digitalRead(TOUCH_PIN) == LOW) {
-              //Let's reset the counters
-              pckt_count=0;
-            }
-
-            // Display raw message in the message buffer
-            pckt_count++;
-            char buf[50];
-            snprintf(buf, sizeof(buf), "Pckt Cnt: %d", pckt_count);
-            updDisp(5, buf,false);
-            snprintf(buf, sizeof(buf), "Pckt Len: %d", pkt_size);
-            updDisp(6, buf,false);
-            updDisp(7, (char*)rcv_pkt_buf,true);
-        } else if (current_mode == "PTT" && strncmp((char*)rcv_pkt_buf, expected_ptt_header, 3) == 0) {
-            uint8_t rcv_mode = rcv_pkt_buf[3];
-            if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
-                codec = codec2_create(bitrate_modes[rcv_mode]);
-                codec2_decode(codec, raw_buf, rcv_pkt_buf + 4);
-                playAudio(raw_buf, RAW_SIZE);
-                updDisp(1, "Receiving...",false);
-            } else {
-                updDisp(2, "Invalid mode received",true);
-            }
-        } else if (current_mode == "TXT" && strncmp((char*)rcv_pkt_buf, expected_txt_header, 3) == 0) {
-            // Display text message in the message buffer
-            updDisp(7, (char*)rcv_pkt_buf,true);
-        }
-    }
-}
-
 // Function to cycle through modes
 void updMode() {
     // Increment the mode index and wrap around if necessary

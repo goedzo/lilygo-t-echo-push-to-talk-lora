@@ -481,8 +481,8 @@ void updModeAndChannelDisplay() {
 }
 
 void showError(const char* error_msg) {
-    // Display error message on the bottom line
-    updDisp(3, error_msg);
+    // Display error message on bottom line
+    updDisp(9, error_msg);
 }
 
 void enableBacklight(bool en) {

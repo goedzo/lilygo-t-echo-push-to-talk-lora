@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "settings.h"  // Include settings.h to use global variables
 #include "display.h"
+#include "app_modes.h"  // Include settings.h to use global variables
 #include "lora.h"
 
 SX1262 radio = nullptr;       //SX1262
@@ -79,21 +80,40 @@ bool setupLoRa() {
     return true;
 }
 
+
 void sendPacket(uint8_t* pkt_buf, uint16_t len) {
-    int state = radio.transmit(pkt_buf, len);
-    if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("Transmission successful!"));
-    } else {
-        Serial.print(F("Transmission failed, code "));
+    // Start non-blocking transmission
+    int state = radio.startTransmit(pkt_buf, len);
+
+    if (state != RADIOLIB_ERR_NONE) {
+        Serial.print(F("Transmission start failed, code "));
         Serial.println(state);
         char buf[50];
-        snprintf(buf, sizeof(buf), "Lora Sent Error: %d", state);
+        snprintf(buf, sizeof(buf), "Lora Start Transmit Error: %d", state);
         showError(buf);
-
-
+        return;
     }
-    //Allow receiving of messages
-    radio.startReceive();
+
+    Serial.println(F("Transmission started, waiting for completion..."));
+
+    // Polling for transmission completion (non-blocking)
+    while (true) {
+        uint16_t irqStatus = radio.getIrqStatus();
+
+        // Check if transmission has finished
+        if (irqStatus & RADIOLIB_SX126X_IRQ_TX_DONE) {
+            Serial.println(F("Transmission successful!"));
+
+
+            // Allow receiving of messages after transmission
+            radio.startReceive();
+
+            // Exit the loop once transmission is complete
+            break;
+        }
+        // Let's keep the app responsive while waiting for the transmission to end.
+        handleAppModes();
+    }
 }
 
 int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
@@ -127,7 +147,7 @@ int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
             else {
                 Serial.print(F("Receive failed, code "));
                 char buf[50];
-                snprintf(buf, sizeof(buf), "Lora Receive Error: %d", state);
+                snprintf(buf, sizeof(buf), "Receive Err: %d", state);
                 showError(buf);
                 Serial.println(state);
             }
