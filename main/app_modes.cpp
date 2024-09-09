@@ -2,6 +2,7 @@
 #include <codec2.h>
 #include "utilities.h"
 
+#include "gps.h"
 #include "display.h"
 #include "lora.h"
 #include "audio.h"
@@ -169,6 +170,9 @@ void handleAppModes() {
 
     //Always allow receiving and sending messages;
     checkLoraPacketComplete(); //If a message was received, it will call handlePacket();
+
+    //Update GPS location
+    loopGPS();
 
     //Let's implement a power off, when the action button is pressed 5 seconds
     if(digitalRead(MODE_PIN) == LOW) {

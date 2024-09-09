@@ -49,8 +49,11 @@ extern char channels[];                // List of channels (e.g., A-Z)
 extern const int bitrate_modes[];      // Array of bitrate modes
 extern const size_t num_bitrate_modes; // Number of bitrate modes
 
+extern PCF8563_Class rtc;              // Allow the RTC to be set from the GPS
+
 extern uint8_t setting_idx;  // Index for the current setting (using the Setting enum)
 extern bool in_settings_mode; // Flag indicating whether the device is in settings mode
+extern bool time_set;
 
 // Function prototypes
 void setupSettings();

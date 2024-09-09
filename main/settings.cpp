@@ -8,6 +8,7 @@
 #include <time.h>  // Include time.h for time manipulation
 
 PCF8563_Class rtc;  // Real-time clock instance
+bool time_set = false;
 volatile bool rtcInterrupt = false;
 void rtcInterruptCb() {
     rtcInterrupt = true;
@@ -39,6 +40,7 @@ void DeviceSettings::nextChannel() {
 }
 
 void DeviceSettings::incrementTime(int idx, RTC_Date& dateTime) {
+    time_set=true;
     if (idx == HOURS) {
         dateTime.hour = (dateTime.hour + 1) % 24;
     } else if (idx == MINUTES) {
@@ -83,7 +85,7 @@ void setupSettings() {
 
     rtc.begin(Wire);
     rtc.disableAlarm();
-    rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Optional initial time setting
+    //rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Optional initial time setting
 }
 
 void toggleSettingsMode() {

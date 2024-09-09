@@ -17,6 +17,7 @@
 #include <GxIO/GxIO.h>
 
 #include "display.h"
+#include "gps.h"
 #include "settings.h"
 #include "app_modes.h"
 #include "lora.h"
@@ -46,6 +47,10 @@ void setup()
     updDisp(5, "Init settings...");
     Serial.println("Init settings\n");
     setupSettings();
+
+    updDisp(5, "Init gps...");
+    Serial.println("Init settings\n");
+    setupGPS();
 
     updDisp(5, "Setup app modes");
     setupAppModes();

@@ -3,6 +3,7 @@
 #include "settings.h"
 #include "app_modes.h"
 #include "battery.h"
+#include "gps.h"
 
 
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
@@ -14,6 +15,17 @@
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include "display.h"
+
+int disp_top_margin = 12;   // The blank margin on top
+int disp_bottom_margin =3;
+int disp_right_margin = 2;
+int disp_font_height = 16;  // The height of a line in pixels
+int disp_icon_height = 16;
+int disp_icon_width = 16;
+int disp_window_offset = 11; // The correction for display->updateWindow to print the updated line.
+int disp_height = 200;      // The height of the display
+int disp_width = 200;       // The width of the display
+
 
 // Define the 16x16 pixel icon for "TXT" mode
 const uint16_t txt_icon[16] = {
@@ -300,6 +312,45 @@ const uint16_t off_icon[16] = {
 };
 
 
+const uint16_t gpsok_icon[16] = {
+    0b0000000000000000,
+    0b0000000011111000,
+    0b0000000000001100,
+    0b0011000111000110,
+    0b0010100001110010,
+    0b0010010000011011,
+    0b0010001110001001,
+    0b0010000101001000,
+    0b0010000011000000,
+    0b0010000001000000,
+    0b0001000000100000,
+    0b0001100000010000,
+    0b0001110000001000,
+    0b0011001111111000,
+    0b0010000010000000,
+    0b0111111110000000
+};
+
+const uint16_t gpsnofix_icon[16] = {
+    0b0000000001100011,
+    0b0000000000110110,
+    0b0000000000011100,
+    0b0011000000011100,
+    0b0000100000110110,
+    0b0010010001100011,
+    0b0000001010000000,
+    0b0010000101000000,
+    0b0000000010000000,
+    0b0010000001000000,
+    0b0001000000100000,
+    0b0000000000010000,
+    0b0001010000001000,
+    0b0010001101010000,
+    0b0010000010000000,
+    0b0101010110000000
+};
+
+
 // E-Paper display initialization
 SPIClass        *dispPort  = nullptr;
 GxIO_Class      *io        = nullptr;
@@ -307,11 +358,6 @@ GxEPD_Class     *display_v1   = nullptr;
 GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>* display = nullptr;
 
 
-int disp_top_margin = 12;   // The blank margin on top
-int disp_font_height = 16;  // The height of a line in pixels
-int disp_window_offset = 11; // The correction for display->updateWindow to print the updated line.
-int disp_height = 200;      // The height of the display
-int disp_width = 200;       // The width of the display
 
 // Display buffer for each line (Top line, middle, bottom, and errors)
 char disp_buf[20][24] = {
@@ -383,26 +429,26 @@ void drawModeIcon(const char* mode) {
 
     if(mode=="OFF") {
         //We are powered down, so make sure to show the OFF_icon
-        drawIcon(off_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+        drawIcon(off_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
         return;
     }
 
     if(in_settings_mode) {
-        drawIcon(settings_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+        drawIcon(settings_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
         icon_drawn=true;
     }
     else {
         if (mode == "PTT") {
-            drawIcon(ptt_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+            drawIcon(ptt_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
             icon_drawn=true;
         } else if (mode == "TXT") {
-            drawIcon(txt_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+            drawIcon(txt_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
             icon_drawn=true;
         } else if (mode == "RAW") {
-            drawIcon(raw_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+            drawIcon(raw_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
             icon_drawn=true;
         } else if (mode == "TST") {
-            drawIcon(test_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+            drawIcon(test_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
             icon_drawn=true;
         }
 
@@ -410,7 +456,7 @@ void drawModeIcon(const char* mode) {
 
     if(!icon_drawn) {
       //We are missing an icon for this mode, so make a black icon to show it
-      drawIcon(black_icon,0, disp_top_margin,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+      drawIcon(black_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
     }
 }
 
@@ -442,7 +488,7 @@ void updDisp(uint8_t line, const char* msg, bool updateScreen) {
         printline(disp_buf[line]);
         //Mark this line for reprinting
         if(updateScreen) {
-            display->displayWindow(0,0,200,200);
+            display->displayWindow(0,0,disp_width,disp_height);
         }
 
     }
@@ -459,28 +505,59 @@ void clearScreen(){
 void printStatusIcons(){
   uint8_t batteryPercentage = getBatteryPercentage();
   if(batteryPercentage>90) {
-    drawIcon(bat100_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    drawIcon(bat100_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
   }
   else if (batteryPercentage>80) {
-    drawIcon(bat80_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    drawIcon(bat80_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
   }
   else if (batteryPercentage>60) {
-    drawIcon(bat60_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    drawIcon(bat60_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
   }
   else if (batteryPercentage>40) {
-    drawIcon(bat40_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    drawIcon(bat40_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
   }
   else if (batteryPercentage>20) {
-    drawIcon(bat20_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    drawIcon(bat20_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
   }
   else if (batteryPercentage>10) {
-    drawIcon(bat10_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    drawIcon(bat10_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
   }
   else if (batteryPercentage>3) {
-    drawIcon(bat0_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
   }
   else if (batteryPercentage>0) {
-    drawIcon(bat0_icon,200-20, 200-20,16, 16, GxEPD_WHITE, GxEPD_BLACK);
+    drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+
+  if(gps_status==NO_GPS) {
+      //No GPS Module installed, so don't display any icon
+  }
+  else {
+    if(gps_status==GPS_ERROR) {
+        showError("GPS Hardware error");
+    }
+
+    if(gps_status==GPS_INIT || gps_status==GPS_TIME) {
+        //Show the No-Fix GPS Icon
+         drawIcon(gpsnofix_icon,disp_width-(3 * disp_icon_width)-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    }
+
+    if(gps_status==GPS_LOC) {
+         drawIcon(gpsok_icon,disp_width-(3 * disp_icon_width)-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    }
+
+    //Show the amount of GPS sattelies in view
+    display->fillRect(disp_width-(2 * disp_icon_width), disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset, 26, disp_font_height, GxEPD_WHITE); //Erase the current satellites, which can be >10
+    display->setCursor(disp_width-(2 * disp_icon_width)-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin);
+
+    // Set text color and font
+    display->setTextColor(GxEPD_BLACK);
+    display->setFont(&FreeMonoBold9pt7b);
+
+    // Print the new line
+    display->print(gps_satellites);
+
+
   }
 
 }

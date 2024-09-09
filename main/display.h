@@ -8,7 +8,9 @@
 extern GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>* display;
 
 extern int disp_top_margin;
+extern int disp_bottom_margin;
 extern int disp_font_height;
+extern int disp_icon_height;
 extern int disp_window_offset;
 extern int disp_height;
 extern int disp_width;
@@ -25,4 +27,5 @@ void enableBacklight(bool en);
 void showError(const char* error_msg);
 void clearScreen();
 void sleepDisplay();
+void printStatusIcons();
 #endif
