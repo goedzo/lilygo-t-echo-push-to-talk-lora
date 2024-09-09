@@ -31,7 +31,6 @@ void checkLoraPacketComplete(){
         // reset flag
         operationDone = false;
         if(transmitFlag) {
-            transmitFlag = false;        
 
             //Serial.println("SENT COMPLETE");
             uint16_t irqStatus = radio.getIrqStatus();
@@ -60,7 +59,7 @@ void checkLoraPacketComplete(){
             radio.sleep(true);
             radio.standby();
             radio.startReceive(); //Start after processing, otherwise the packet is cleared before reading
-
+            transmitFlag = false;        
         }
         else {
             //Serial.println("RECEIVE COMPLETE");
@@ -111,7 +110,6 @@ bool setupLoRa() {
     radio.setDio1Action(setFlag);
 
 
-
     // Stel de spreading factor in met de opgegeven waarde
     state = radio.setSpreadingFactor(deviceSettings.spreading_factor);
     if (state == RADIOLIB_ERR_NONE) {
@@ -121,6 +119,7 @@ bool setupLoRa() {
         Serial.print(F("Failed to set spreading factor, code "));
         Serial.println(state);
     }
+
 
     // Stel het zendvermogen in (tussen -17 en 22 dBm)
     if (radio.setOutputPower(22) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
