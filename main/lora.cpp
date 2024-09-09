@@ -11,8 +11,9 @@
 #include "app_modes.h"  // Include settings.h to use global variables
 #include "lora.h"
 
-SX1262 radio = nullptr;       //SX1262
-SPIClass        *rfPort    = nullptr;
+SX1262* radio = nullptr;
+SPIClass* rfPort = nullptr;
+
 
 // flag to indicate that a packet was sent or received
 volatile bool operationDone = false;
@@ -33,7 +34,7 @@ void checkLoraPacketComplete(){
         if(transmitFlag) {
 
             //Serial.println("SENT COMPLETE");
-            uint16_t irqStatus = radio.getIrqStatus();
+            uint16_t irqStatus = radio->getIrqStatus();
             if (irqStatus & RADIOLIB_SX126X_IRQ_TX_DONE) {
               //Serial.println(F("Transmission successful!"));
             }
@@ -42,7 +43,7 @@ void checkLoraPacketComplete(){
             }
 
 
-            int state = radio.finishTransmit();
+            int state = radio->finishTransmit();
 
             if (state == RADIOLIB_ERR_NONE) {
                 // We have sent a package, so listen again
@@ -56,91 +57,82 @@ void checkLoraPacketComplete(){
             }
 
             //Let's reset lora to get receiving again. There is a bug when using a spread factor >10, receiving stops working
-            radio.sleep(true);
-            radio.standby();
-            radio.startReceive(); //Start after processing, otherwise the packet is cleared before reading
+            radio->sleep(true);
+            radio->standby();
+            radio->startReceive(); //Start after processing, otherwise the packet is cleared before reading
             transmitFlag=false;        
         }
         else {
             //Serial.println("RECEIVE COMPLETE");
             handlePacket();
-            transmitFlag=false;
-            radio.startReceive(); //Start after processing, otherwise the packet is cleared before reading
+            radio->startReceive(); //Start after processing, otherwise the packet is cleared before reading
+            operationDone=false;
         }
     }
 }
 
 bool setupLoRa() {
-    rfPort = new SPIClass(
-        /*SPIPORT*/NRF_SPIM3,
-        /*MISO*/ LoRa_Miso,
-        /*SCLK*/LoRa_Sclk,
-        /*MOSI*/LoRa_Mosi);
-    rfPort->begin();
+  // Initialize SX1262 with default settings
+  Serial.print(F("Initializing Lora ... "));
 
-    SPISettings spiSettings;
+  rfPort = new SPIClass(
+      /*SPIPORT*/NRF_SPIM3,
+      /*MISO*/ LoRa_Miso,
+      /*SCLK*/LoRa_Sclk,
+      /*MOSI*/LoRa_Mosi);
+  rfPort->begin();
 
-    radio = new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *rfPort, spiSettings);
-    // radio = new SX1262(new Module(_PINNUM(0,24), _PINNUM(0,20), _PINNUM(0,25), _PINNUM(0,17), *rfPort, spiSettings));
+  SPISettings spiSettings;
+
+  // SX1262 has the following connections:
+  // NSS pin:   10
+  // DIO1 pin:  2
+  // NRST pin:  3
+  // BUSY pin:  9
+  radio = new SX1262(new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *rfPort, spiSettings));
+
+  int state = radio->begin();
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.println(F("success!"));
+  } else {
+    Serial.print(F("failed, code "));
+    Serial.println(state);
+    while (true);
+  }
+
+  // Set the function that will be called when new packet is received
+  radio->setDio1Action(setFlag);
+
+  state = radio->setSpreadingFactor(deviceSettings.spreading_factor);
+  if (state == RADIOLIB_ERR_NONE) {
+      Serial.print(F("Spreading factor set to SF"));
+      Serial.println(deviceSettings.spreading_factor);
+  } else {
+      Serial.print(F("Failed to set spreading factor, code "));
+      Serial.println(state);
+  }
+
+  if (radio->setOutputPower(22) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
+      Serial.println(F("Selected output power is invalid for this module!"));
+  }
+
+  // Stel de stroomlimiet in (tussen 45 en 240 mA)
+  if (radio->setCurrentLimit(80) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
+      Serial.println(F("Selected current limit is invalid for this module!"));
+  }
 
 
-    SerialMon.print("[SX1262] Initializing ...  ");
-    // carrier frequency:           868.0 MHz
-    // bandwidth:                   125.0 kHz
-    // spreading factor:            9
-    // coding rate:                 7
-    // sync word:                   0x12 (private network)
-    // output power:                14 dBm
-    // current limit:               60 mA
-    // preamble length:             8 symbols
-    // TCXO voltage:                1.6 V (set to 0 to not use TCXO)
-    // regulator:                   DC-DC (set to true to use LDO)
-    // CRC:                         enabled
-    int state = radio.begin(868.0);
-    if (state != ERROR_NONE) {
-        SerialMon.print(("failed, code "));
-        SerialMon.println(state);
-
-        char buf[30];
-        snprintf(buf, sizeof(buf), "Lora failed to init: %d", state);
-        showError(buf);
-        return false;
-    }
-
-    // set the function that will be called
-    // when new packet is received
-    operationDone=false;
-    radio.setDio1Action(setFlag);
-
-
-    // Stel de spreading factor in met de opgegeven waarde
-    state = radio.setSpreadingFactor(deviceSettings.spreading_factor);
+    // Start listening for LoRa packets on this node
+      Serial.println(F("LoRa setup completed successfully!"));
+      state = radio->startReceive();
     if (state == RADIOLIB_ERR_NONE) {
-        Serial.print(F("Spreading factor set to SF"));
-        Serial.println(deviceSettings.spreading_factor);
+      Serial.println(F("success!"));
     } else {
-        Serial.print(F("Failed to set spreading factor, code "));
-        Serial.println(state);
+      Serial.print(F("failed, code "));
+      Serial.println(state);
     }
 
 
-    // Stel het zendvermogen in (tussen -17 en 22 dBm)
-    if (radio.setOutputPower(22) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
-        Serial.println(F("Selected output power is invalid for this module!"));
-        return false;
-    }
-
-    // Stel de stroomlimiet in (tussen 45 en 240 mA)
-    if (radio.setCurrentLimit(80) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
-        Serial.println(F("Selected current limit is invalid for this module!"));
-        return false;
-    }
-
-
-    // Start non-blocking receive
-    radio.startReceive();
-
-    Serial.println(F("LoRa setup completed successfully!"));
     return true;
 }
 
@@ -154,7 +146,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     }
 
     // Start non-blocking transmission
-    int state = radio.startTransmit(pkt_buf, len);
+    int state = radio->startTransmit(pkt_buf, len);
     transmitFlag = true;
 
     if (state != RADIOLIB_ERR_NONE) {
@@ -174,7 +166,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
 int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
 
     // Get the length of the received packet
-    uint16_t packet_len = radio.getPacketLength(false);
+    uint16_t packet_len = radio->getPacketLength(false);
     
     if(packet_len==0) {
         return 0;
@@ -186,10 +178,10 @@ int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
     }
 
     //Let's check the IRQ status to make sure all data is actually received
-    uint16_t irqStatus = radio.getIrqStatus();
+    uint16_t irqStatus = radio->getIrqStatus();
     if (irqStatus & RADIOLIB_SX126X_IRQ_RX_DONE) {
         // Read the data into the buffer
-        int state = radio.readData(pkt_buf, packet_len);
+        int state = radio->readData(pkt_buf, packet_len);
 
         if (state == RADIOLIB_ERR_NONE) {
             return packet_len;  // Of de werkelijke grootte van het ontvangen pakket
@@ -214,7 +206,7 @@ int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
 
 void sleepLoRa() {
     // Put the LoRa module into sleep mode using RadioLib's sleep function
-    int state = radio.sleep();
+    int state = radio->sleep();
     if (state == RADIOLIB_ERR_NONE) {
         Serial.println(F("LoRa module is now in sleep mode."));
     } else {

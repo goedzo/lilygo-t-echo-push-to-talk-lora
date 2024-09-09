@@ -4,14 +4,6 @@
 #include <RadioLib.h>
 #include <SPI.h>
 
-#ifndef _PINNUM
-#define _PINNUM(port, pin)    ((port)*32 + (pin))
-#endif
-
-// Uncomment the following only on one
-// of the nodes to initiate the pings
-// #define INITIATING_NODE
-
 // External variables
 extern SX1262* p_radio;
 extern SPIClass* p_rfPort;

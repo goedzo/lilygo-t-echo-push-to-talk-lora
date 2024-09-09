@@ -42,6 +42,7 @@ void setup()
     boardInit();
     updDisp(4, "Booting...");
 
+
     updDisp(5, "Init lora...");
     setupLoRa();
 
@@ -58,8 +59,8 @@ void setup()
 
     updDisp(5, "Setup ok!");
 
-
     setupPingPong();
+
 
     clearScreen();
     updModeAndChannelDisplay();

@@ -281,8 +281,13 @@ void handlePacket() {
             if (current_mode == "RAW" || current_mode == "TST") {
                 pckt_count++;
                 char buf[50];
-                snprintf(buf, sizeof(buf), "Pckt Len: %d", pkt_size);
-                updDisp(4, buf, false);
+
+                char display_msg[30];
+                snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
+                updDisp(3, display_msg,false);
+                snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+                updDisp(4, display_msg,false);
+
                 snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
                 updDisp(5, buf, false);
 
@@ -318,7 +323,14 @@ void handlePacket() {
             }
         } else if (packet.type == "NULL") {
             // Handle unknown packet type and show the raw message
-            updDisp(2, "Unknwn pcket tpe", true);
+            updDisp(3, "Unknwn pcket tpe", true);
+
+            char display_msg[30];
+            snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
+            updDisp(4, display_msg,false);
+            snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+            updDisp(5, display_msg,false);
+
 
             char rawMessage[packet.rawLength * 4 + 1];  // Enough space for each byte as either ASCII or hex
             uint16_t index = 0;
@@ -350,7 +362,7 @@ void updMode() {
 
     if(current_mode=="PONG") {
         //We need to reinit the radio
-        setupLoRa();
+        setupPingPong();
     }
 
     // Update the mode and channel display

@@ -1,5 +1,6 @@
 #include "pingpong.h"
 #include "display.h"
+#include "utilities.h"
 
 // Initialize global variables
 SX1262* p_radio = nullptr;
@@ -18,12 +19,12 @@ void p_setFlag(void) {
 void setupPingPong() {
   // Initialize SX1262 with default settings
   Serial.print(F("[SX1262] Initializing Ping Pong ... "));
-  
+
   p_rfPort = new SPIClass(
       /*SPIPORT*/NRF_SPIM3,
-      /*MISO*/ _PINNUM(0,23),
-      /*SCLK*/_PINNUM(0,19),
-      /*MOSI*/_PINNUM(0,22));
+      /*MISO*/ LoRa_Miso,
+      /*SCLK*/LoRa_Sclk,
+      /*MOSI*/LoRa_Mosi);
   p_rfPort->begin();
 
   SPISettings spiSettings;
@@ -33,7 +34,7 @@ void setupPingPong() {
   // DIO1 pin:  2
   // NRST pin:  3
   // BUSY pin:  9
-  p_radio = new SX1262(new Module(_PINNUM(0,24), _PINNUM(0,20), _PINNUM(0,25), _PINNUM(0,17), *p_rfPort, spiSettings));
+  p_radio = new SX1262(new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *p_rfPort, spiSettings));
 
   int state = p_radio->begin();
   if (state == RADIOLIB_ERR_NONE) {
@@ -46,30 +47,41 @@ void setupPingPong() {
 
   // Set the function that will be called when new packet is received
   p_radio->setDio1Action(p_setFlag);
-  p_radio->setSpreadingFactor(12);
 
-  #if defined(INITIATING_NODE)
-    // Send the first packet on this node
-    Serial.print(F("[SX1262] Sending first packet ... "));
-    transmissionState = p_radio->startTransmit("Hello World!");
-    p_transmitFlag = true;
-  #else
-    // Start listening for LoRa packets on this node
-    Serial.print(F("[SX1262] Starting to listen ... "));
-    state = p_radio->startReceive();
-    if (state == RADIOLIB_ERR_NONE) {
-      Serial.println(F("success!"));
-    } else {
-      Serial.print(F("failed, code "));
+  state = p_radio->setSpreadingFactor(deviceSettings.spreading_factor);
+  if (state == RADIOLIB_ERR_NONE) {
+      Serial.print(F("Spreading factor set to SF"));
+      Serial.println(deviceSettings.spreading_factor);
+  } else {
+      Serial.print(F("Failed to set spreading factor, code "));
       Serial.println(state);
-      while (true);
-    }
-  #endif
+  }
+
+  if (p_radio->setOutputPower(22) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
+      Serial.println(F("Selected output power is invalid for this module!"));
+  }
+
+  // Stel de stroomlimiet in (tussen 45 en 240 mA)
+  if (p_radio->setCurrentLimit(80) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
+      Serial.println(F("Selected current limit is invalid for this module!"));
+  }
+
+
+  // Start listening for LoRa packets on this node
+  Serial.print(F("[SX1262] Starting to listen ... "));
+  state = p_radio->startReceive();
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.println(F("success!"));
+  } else {
+    Serial.print(F("failed, code "));
+    Serial.println(state);
+    while (true);
+  }
 }
 
 void pingpongStart() {
     Serial.print(F("[SX1262] Sending first packet ... "));
-    transmissionState = p_radio->startTransmit("Hello World!");
+    transmissionState = p_radio->startTransmit("Ping!");
     p_transmitFlag = true;
     updDisp(5, "ping",true);
 
@@ -124,9 +136,9 @@ void pingpongLoop() {
 
         char display_msg[30];
         snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", p_radio->getSNR() );
-        updDisp(6, display_msg);
+        updDisp(6, display_msg,false);
         snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", p_radio->getRSSI() );
-        updDisp(7, display_msg);
+        updDisp(7, display_msg,true);
 
 
       }
@@ -134,7 +146,7 @@ void pingpongLoop() {
       // Send another packet
       Serial.print(F("[SX1262] Sending another packet ... "));
       updDisp(5, "ping",true);
-      transmissionState = p_radio->startTransmit("Hello World!");
+      transmissionState = p_radio->startTransmit("Ping!");
       p_transmitFlag = true;
     }
   }
