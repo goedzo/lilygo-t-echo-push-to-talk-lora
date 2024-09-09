@@ -90,16 +90,16 @@ void loopGPS() {
             gps_location_age = gps->location.age();
             gps_status = GPS_LOC;  // GPS location found, update status
 
-            SerialMon.print(F("LOCATION   Lat="));
-            SerialMon.print(gps_latitude, 6);
-            SerialMon.print(F(" Long="));
-            SerialMon.println(gps_longitude, 6);
+            //SerialMon.print(F("LOCATION   Lat="));
+            //SerialMon.print(gps_latitude, 6);
+            //SerialMon.print(F(" Long="));
+            //SerialMon.println(gps_longitude, 6);
         }
 
         if (gps->altitude.isUpdated()) {
             gps_altitude = gps->altitude.meters();
-            SerialMon.print(F("altitude: "));
-            SerialMon.println(gps_altitude);
+            //SerialMon.print(F("altitude: "));
+            //SerialMon.println(gps_altitude);
         }
 
         if (gps->satellites.isUpdated()) {
@@ -110,8 +110,8 @@ void loopGPS() {
             }
 
             gps_satellites = gps->satellites.value();  // Update the satellite count
-            SerialMon.print(F("SATELLITES: "));
-            SerialMon.println(gps_satellites);
+            //SerialMon.print(F("SATELLITES: "));
+            //SerialMon.println(gps_satellites);
         }
 
         if (gps->date.isUpdated()) {
@@ -122,27 +122,27 @@ void loopGPS() {
         if (gps->time.isUpdated()) {
             gps_time_age = gps->time.age();
             gps_time_value = gps->time.value();
-            SerialMon.print(F("time: "));
-            SerialMon.println(gps_time_value);
+            //SerialMon.print(F("time: "));
+            //SerialMon.println(gps_time_value);
         }
 
         if (gps->speed.isUpdated()) {
             gps_speed_kmph = gps->speed.kmph();
             gps_speed_mps = gps->speed.mps();
-            SerialMon.print(F("speed: "));
-            SerialMon.println(gps_speed_kmph);
+            //SerialMon.print(F("speed: "));
+            //SerialMon.println(gps_speed_kmph);
         }
 
         if (gps->course.isUpdated()) {
             gps_course = gps->course.deg();
-            SerialMon.print(F("deg: "));
-            SerialMon.println(gps_course);
+            //SerialMon.print(F("deg: "));
+            //SerialMon.println(gps_course);
         }
 
         if (gps->hdop.isUpdated()) {
             gps_hdop = gps->hdop.value();
-            SerialMon.print(F("hdop: "));
-            SerialMon.println(gps_hdop);
+            //SerialMon.print(F("hdop: "));
+            //SerialMon.println(gps_hdop);
         }
 
         lastGPSUpdate = millis();

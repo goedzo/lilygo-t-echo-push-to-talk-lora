@@ -8,6 +8,7 @@
 #include "audio.h"
 #include "settings.h"
 #include "app_modes.h"
+#include "packet.h"
 
 using namespace ace_button;
 
@@ -255,8 +256,67 @@ void sendTestMessage() {
 
 }
 
-
 void handlePacket() {
+    int pkt_size = receivePacket(rcv_pkt_buf, MAX_PKT);
+    if (pkt_size) {
+        rcv_pkt_buf[pkt_size] = '\0';  // Null-terminate the received packet
+
+        Packet packet;
+
+        // Parse the packet using the current channel configuration
+        if (packet.parsePacket(rcv_pkt_buf, pkt_size, channels[deviceSettings.channel_idx])) {
+            if (current_mode == "RAW" || current_mode == "TST") {
+                pckt_count++;
+                char buf[50];
+                snprintf(buf, sizeof(buf), "Pckt Len: %d", pkt_size);
+                updDisp(4, buf, false);
+                snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
+                updDisp(5, buf, false);
+
+                if (packet.isTestMessage()) {
+                    snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
+                    updDisp(6, buf, false);
+                } else {
+                    updDisp(6, "", false);
+                }
+
+                updDisp(7, packet.content.c_str(), true);
+
+            } else if (current_mode == "PTT" && packet.type == "PTT") {
+                uint8_t rcv_mode = rcv_pkt_buf[3];
+                if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
+                    codec = codec2_create(bitrate_modes[rcv_mode]);
+                    codec2_decode(codec, raw_buf, rcv_pkt_buf + 4);
+                    playAudio(raw_buf, RAW_SIZE);
+                    updDisp(1, "Receiving...", false);
+                } else {
+                    updDisp(2, "Invalid mode received", true);
+                }
+
+            } else if (current_mode == "TXT" && packet.type == "TXT") {
+                updDisp(7, packet.content.c_str(), true);
+            }
+        } else if (packet.type == "NULL") {
+            // Handle unknown packet type and show the raw message
+            updDisp(2, "Unknwn pcket tpe", true);
+
+            char rawMessage[packet.rawLength * 4 + 1];  // Enough space for each byte as either ASCII or hex
+            uint16_t index = 0;
+            for (uint16_t i = 0; i < packet.rawLength; i++) {
+                if (isprint(packet.raw[i])) {
+                    rawMessage[index++] = packet.raw[i];  // Copy printable characters directly
+                } else {
+                    sprintf(rawMessage + index, "\\x%02X", packet.raw[i]);  // Convert non-printable byte to hex
+                    index += 4;  // Move index forward by 4 (for \xNN)
+                }
+            }
+            updDisp(7, rawMessage, true);  // Display the raw message in hexadecimal
+        }
+    }
+}
+
+
+void handlePacket_old() {
     int pkt_size = receivePacket(rcv_pkt_buf, MAX_PKT);
     if (pkt_size) {
         rcv_pkt_buf[pkt_size] = '\0';  // Null-terminate the received packet
