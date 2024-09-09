@@ -123,9 +123,9 @@ void pingpongLoop() {
         Serial.println(F(" dB"));
 
         char display_msg[30];
-        snprintf(display_msg, sizeof(display_msg), "SNR: %f  dB", p_radio->getSNR() );
+        snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", p_radio->getSNR() );
         updDisp(6, display_msg);
-        snprintf(display_msg, sizeof(display_msg), "RSSI: %f dBm", p_radio->getRSSI() );
+        snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", p_radio->getRSSI() );
         updDisp(7, display_msg);
 
 
