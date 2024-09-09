@@ -90,17 +90,10 @@ void toggleSettingsMode() {
     in_settings_mode = !in_settings_mode;
     if (in_settings_mode) {
         clearScreen();
-        setting_idx = NUM_SETTINGS;  // Start SPF
+        setting_idx = 0;  // Start SPF
         updDisp(1, "Entered Settings",true);
         displayCurrentSetting();
     } else {
-        //When leaving settings, the release of the button is still captured, so just move it back one
-        modeIndex = modeIndex--;
-        if(modeIndex<0) {
-            modeIndex = numModes;
-        }
-        current_mode=modes[modeIndex];
-
         updDisp(1, "Exited Settings");
         setupLoRa();
         clearScreen();

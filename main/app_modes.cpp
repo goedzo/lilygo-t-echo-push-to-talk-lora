@@ -20,7 +20,7 @@ uint32_t        appmodeTimer = 0;
 int pckt_count=0;
 
 uint32_t        actionButtonTimer = 0;
-
+bool ignore_next_button_press=false;
 
 // Buffer sizes and other constants
 #define RAW_SIZE 160  // Adjust as necessary
@@ -73,16 +73,11 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
     //Serial.println(button->getPin());
 
     if (button->getPin() == MODE_PIN) {
-        if (eventType == AceButton::kEventLongPressed) {
-            // Long press enters or exits settings mode
-            toggleSettingsMode();
-        } else if (eventType == AceButton::kEventDoubleClicked) {
-            // Double click, so quickly increase the SPF
-            deviceSettings.nextSpreadingFactor();
-            //Reset lora to use the new SPF
-            setupLoRa();
-            updModeAndChannelDisplay();
-        } else if (eventType == AceButton::kEventReleased) {
+        if (eventType == AceButton::kEventReleased) {
+            if(ignore_next_button_press) {
+                ignore_next_button_press=false;
+                return;
+            }
             /** This version uses a Released event instead of a Clicked,
             * while suppressing the Released after a DoubleClicked, and we ignore the
             * Clicked event that we can't suppress. The disadvantage of this version is
@@ -97,6 +92,21 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
                 updMode();
             }
         }
+        else if (eventType == AceButton::kEventDoubleClicked) {
+            // Double click, so quickly increase the SPF
+            deviceSettings.nextSpreadingFactor();
+            //Reset lora to use the new SPF
+            setupLoRa();
+            updModeAndChannelDisplay();
+            return;
+        } 
+        else if (eventType == AceButton::kEventLongPressed) {
+            // Long press enters or exits settings mode
+            ignore_next_button_press=true;
+            toggleSettingsMode();
+            return;
+        } 
+        
     } else if (button->getPin() == TOUCH_PIN && in_settings_mode) {
         if (eventType == AceButton::kEventPressed) {
             // Increment the current setting
