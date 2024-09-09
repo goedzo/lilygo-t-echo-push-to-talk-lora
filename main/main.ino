@@ -22,6 +22,7 @@
 #include "app_modes.h"
 #include "lora.h"
 #include "audio.h"
+#include "pingpong.h"
 
 
 void configVDD(void);
@@ -57,6 +58,8 @@ void setup()
 
     updDisp(5, "Setup ok!");
 
+
+    setupPingPong();
 
     clearScreen();
     updModeAndChannelDisplay();

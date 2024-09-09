@@ -9,11 +9,12 @@
 #include "settings.h"
 #include "app_modes.h"
 #include "packet.h"
+#include "pingpong.h"
 
 using namespace ace_button;
 
 // Define an array of mode names as strings
-const char* modes[] = { "RAW","PTT", "TXT", "TST"};
+const char* modes[] = { "PONG","RAW","PTT", "TXT", "TST"};
 const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 0;
 const char* current_mode=modes[modeIndex];
@@ -201,6 +202,14 @@ void handleAppModes() {
               pckt_count=test_message_counter;
             }
         }
+        else if (current_mode == "PONG") {
+            pingpongLoop();
+            if(digitalRead(TOUCH_PIN) == LOW) {
+              //We start on the buttonpress
+              updDisp(4, "Started pingpong",true);
+              pingpongStart();
+            }
+        }
     }
 
 }
@@ -241,16 +250,20 @@ void sendTestMessage() {
     if (millis() - appmodeTimer > 2000) {
       appmodeTimer = millis();
 
-      char test_msg[20];
+      char test_msg[50];
       snprintf(test_msg, sizeof(test_msg), "test%d", ++test_message_counter);
 
       snprintf((char*)send_pkt_buf, 4, "TX%c", channels[deviceSettings.channel_idx]);
       strcpy((char*)send_pkt_buf + 3, test_msg);
-      sendPacket(send_pkt_buf, strlen(test_msg) + 3);
+
 
       char display_msg[30];
       snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
       updDisp(4, display_msg);
+
+
+      sendPacket(send_pkt_buf, strlen(test_msg)+3);
+
 
     }
 
@@ -329,6 +342,17 @@ void updMode() {
     // Increment the mode index and wrap around if necessary
     modeIndex = (modeIndex + 1) % numModes;
     current_mode=modes[modeIndex];
+
+    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" ) {
+        //We need to reinit the radio
+        setupLoRa();
+    }
+
+    if(current_mode=="PONG") {
+        //We need to reinit the radio
+        setupLoRa();
+    }
+
     // Update the mode and channel display
     clearScreen();
     updModeAndChannelDisplay();

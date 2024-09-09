@@ -59,11 +59,12 @@ void checkLoraPacketComplete(){
             radio.sleep(true);
             radio.standby();
             radio.startReceive(); //Start after processing, otherwise the packet is cleared before reading
-            transmitFlag = false;        
+            transmitFlag=false;        
         }
         else {
             //Serial.println("RECEIVE COMPLETE");
             handlePacket();
+            transmitFlag=false;
             radio.startReceive(); //Start after processing, otherwise the packet is cleared before reading
         }
     }
@@ -80,6 +81,8 @@ bool setupLoRa() {
     SPISettings spiSettings;
 
     radio = new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *rfPort, spiSettings);
+    // radio = new SX1262(new Module(_PINNUM(0,24), _PINNUM(0,20), _PINNUM(0,25), _PINNUM(0,17), *rfPort, spiSettings));
+
 
     SerialMon.print("[SX1262] Initializing ...  ");
     // carrier frequency:           868.0 MHz
@@ -143,6 +146,13 @@ bool setupLoRa() {
 
 
 void sendPacket(uint8_t* pkt_buf, uint16_t len) {
+    if(transmitFlag) {
+        //We are already transmitting. Avoid flooding
+        char buf[50];
+        showError("Already in transmit, skipping");
+        return;
+    }
+
     // Start non-blocking transmission
     int state = radio.startTransmit(pkt_buf, len);
     transmitFlag = true;

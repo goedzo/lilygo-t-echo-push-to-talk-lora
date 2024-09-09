@@ -360,7 +360,7 @@ GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>* display = nullptr;
 
 
 // Display buffer for each line (Top line, middle, bottom, and errors)
-char disp_buf[20][24] = {
+char disp_buf[20][80] = {
     "",  // Top line with channel and bitrate
     "",  // Middle line
     "",  // Bottom line for errors
@@ -547,7 +547,7 @@ void printStatusIcons(){
     }
 
     //Show the amount of GPS sattelies in view
-    display->fillRect(disp_width-(2 * disp_icon_width), disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset, 26, disp_font_height, GxEPD_WHITE); //Erase the current satellites, which can be >10
+    display->fillRect(disp_width-(2 * disp_icon_width)-1, disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset, 26, disp_font_height, GxEPD_WHITE); //Erase the current satellites, which can be >10
     display->setCursor(disp_width-(2 * disp_icon_width)-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin);
 
     // Set text color and font
