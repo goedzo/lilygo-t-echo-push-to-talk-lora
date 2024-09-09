@@ -1,7 +1,7 @@
 #include "packet.h"
 #include <cstring>  // For strncpy and memcpy
 
-Packet::Packet() : type("NULL"), header(""), length(0), content(""), raw(nullptr), rawLength(0), testCounter(0) {}
+Packet::Packet() : type("NULL"), header(""), length(0), content(""), raw(nullptr), rawLength(0), channel('\0'), testCounter(0) {}
 
 Packet::~Packet() {
     // Free allocated memory for raw buffer
@@ -10,20 +10,15 @@ Packet::~Packet() {
     }
 }
 
-bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize, char channel) {
+bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
     if (bufferSize < 3) {
         return false;  // Packet is too short
     }
 
     length = bufferSize;
 
-    // Generate expected headers based on the single channel string
-    String expectedHeaders[2];  // Fixed-size array for headers
-    expectedHeaders[0] = String("PT") + String(channel);
-    expectedHeaders[1] = String("TX") + String(channel);
-
     // Parse the header
-    if (!parseHeader(buffer, bufferSize, expectedHeaders, 2)) {
+    if (!parseHeader(buffer, bufferSize)) {
         // If the header is unknown, store the raw message and set type to "NULL"
         rawLength = bufferSize;
         raw = new uint8_t[rawLength];  // Allocate memory for raw buffer
@@ -45,30 +40,34 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize, char channel) {
     return true;
 }
 
-
 bool Packet::isTestMessage() const {
     return type.startsWith("TX") && content.startsWith("test");
 }
 
-bool Packet::parseHeader(const uint8_t* buffer, uint16_t bufferSize, const String expectedHeaders[], uint8_t headerCount) {
-    char headerBuffer[4];
-    strncpy(headerBuffer, (char*)buffer, 3);  // Extract the first 3 characters
-    headerBuffer[3] = '\0';  // Null-terminate the header
+bool Packet::parseHeader(const uint8_t* buffer, uint16_t bufferSize) {
+    if (bufferSize < 3) {
+        return false;
+    }
+
+    // Extract the first 2 characters for the header
+    char headerBuffer[3];
+    strncpy(headerBuffer, (char*)buffer, 2);  // Only copy the first 2 characters
+    headerBuffer[2] = '\0';  // Null-terminate the header
 
     header = String(headerBuffer);
 
-    for (uint8_t i = 0; i < headerCount; i++) {
-        Serial.print("Expected header: ");
-        Serial.println(expectedHeaders[i]);
+    // Extract the 3rd character as the channel
+    channel = buffer[2];
 
-        if (header == expectedHeaders[i]) {
-            type = expectedHeaders[i].startsWith("PT") ? "PTT" : (expectedHeaders[i].startsWith("TX") ? "TXT" : "RAW");
-            return true;
-        }
+    // Check if the header is "PT" or "TX"
+    if (header == "PT") {
+        type = "PTT";
+    } else if (header == "TX") {
+        type = "TXT";
+    } else {
+        type = "NULL";
+        return false;
     }
 
-    // If no match found, set type to "NULL"
-    type = "NULL";
-    return false;
+    return true;
 }
-
