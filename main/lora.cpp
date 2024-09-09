@@ -32,21 +32,9 @@ void checkLoraPacketComplete(){
         // reset flag
         operationDone = false;
         if(transmitFlag) {
-
-            //Serial.println("SENT COMPLETE");
-            uint16_t irqStatus = radio->getIrqStatus();
-            if (irqStatus & RADIOLIB_SX126X_IRQ_TX_DONE) {
-              //Serial.println(F("Transmission successful!"));
-            }
-            else {
-              Serial.println(F("Transmission not done!!"));
-            }
-
-
             int state = radio->finishTransmit();
-
             if (state == RADIOLIB_ERR_NONE) {
-                // We have sent a package, so listen again
+                // We have sent a package sucessfull!
             } 
             else {
               Serial.print(F("Sent failed, code "));
@@ -55,17 +43,12 @@ void checkLoraPacketComplete(){
               showError(buf);
               Serial.println(state);
             }
-
-            //Let's reset lora to get receiving again. There is a bug when using a spread factor >10, receiving stops working
-            radio->sleep(true);
-            radio->standby();
-            radio->startReceive(); //Start after processing, otherwise the packet is cleared before reading
-            transmitFlag=false;        
+            radio->startReceive();
+            transmitFlag = false;
         }
         else {
             //Serial.println("RECEIVE COMPLETE");
             handlePacket();
-            radio->startReceive(); //Start after processing, otherwise the packet is cleared before reading
             operationDone=false;
         }
     }
