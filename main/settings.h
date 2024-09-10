@@ -6,6 +6,11 @@
 #include <cstddef>
 #include <pcf8563.h>
 
+// Buffer sizes and other constants
+#define RAW_SIZE 160  // Adjust as necessary
+#define MAX_PKT 255   // Maximum packet size
+
+
 // Enum for settings note that the first must be =0!
 enum Setting {
     SPREADING_FACTOR=0,

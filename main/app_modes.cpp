@@ -25,15 +25,11 @@ int pckt_count=0;
 uint32_t        actionButtonTimer = 0;
 bool ignore_next_button_press=false;
 
-// Buffer sizes and other constants
-#define RAW_SIZE 160  // Adjust as necessary
-#define MAX_PKT 255   // Maximum packet size
-
 // Buffers
 short raw_buf[RAW_SIZE];
 //This is used for sending LORA messages
 //This buffer receives LORA messages
-unsigned char rcv_pkt_buf[MAX_PKT];
+//unsigned char rcv_pkt_buf[MAX_PKT];
 
 // Codec2 instance
 CODEC2* codec;
@@ -269,87 +265,81 @@ void sendTestMessage(bool now) {
 
 }
 
-void handlePacket() {
-    int pkt_size = receivePacket(rcv_pkt_buf, MAX_PKT);
-    if (pkt_size) {
-        rcv_pkt_buf[pkt_size] = '\0';  // Null-terminate the received packet
+void handlePacket(Packet packet) {
+    if (packet.type == "NULL") {
+      // Handle unknown packet type and show the raw message
+      updDisp(3, "Unknwn pcket tpe", true);
 
-        Packet packet;
-
-        // Parse the packet using the current channel configuration
-        if (packet.parsePacket(rcv_pkt_buf, pkt_size)) {
-            if (current_mode == "RAW" || current_mode == "TST") {
-
-                //Cool of period to allow receiving of messages because of switching from sent to receive takes time
-                sendTestMessageTimer = millis();
-
-                pckt_count++;
-                char buf[50];
-
-                char display_msg[30];
-                snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
-                updDisp(3, display_msg,false);
-                snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
-                updDisp(4, display_msg,false);
-
-                snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
-                updDisp(5, buf, false);
-
-                if (packet.isTestMessage()) {
-                    test_message_counter=packet.testCounter;
-                    snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
-                    updDisp(6, buf, false);
-
-                } else {
-                    updDisp(6, "", false);
-                }
-
-                updDisp(7, packet.content.c_str(), true);
-
-            } else if (current_mode == "PTT" && packet.type == "PTT") {
-                if(packet.channel== channels[deviceSettings.channel_idx]) {
-                    //This is actually meant for my channel
-                    uint8_t rcv_mode = rcv_pkt_buf[3];
-                    if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
-                        codec = codec2_create(bitrate_modes[rcv_mode]);
-                        codec2_decode(codec, raw_buf, rcv_pkt_buf + 4);
-                        playAudio(raw_buf, RAW_SIZE);
-                        updDisp(1, "Receiving...", false);
-                    } else {
-                        updDisp(2, "Invalid mode received", true);
-                    }
-                }
-            } else if (current_mode == "TXT" && packet.type == "TXT") {
-                if(packet.channel== channels[deviceSettings.channel_idx]) {
-                    //This is actually meant for my channel
-                    updDisp(7, packet.content.c_str(), true);
-                }
-
-            }
-        } else if (packet.type == "NULL") {
-            // Handle unknown packet type and show the raw message
-            updDisp(3, "Unknwn pcket tpe", true);
-
-            char display_msg[30];
-            snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
-            updDisp(5, display_msg,false);
-            snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
-            updDisp(6, display_msg,false);
+      char display_msg[30];
+      snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
+      updDisp(5, display_msg,false);
+      snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+      updDisp(6, display_msg,false);
 
 
-            char rawMessage[packet.rawLength * 4 + 1];  // Enough space for each byte as either ASCII or hex
-            uint16_t index = 0;
-            for (uint16_t i = 0; i < packet.rawLength; i++) {
-                if (isprint(packet.raw[i])) {
-                    rawMessage[index++] = packet.raw[i];  // Copy printable characters directly
-                } else {
-                    sprintf(rawMessage + index, "\\x%02X", packet.raw[i]);  // Convert non-printable byte to hex
-                    index += 4;  // Move index forward by 4 (for \xNN)
-                }
-            }
-            rawMessage[index] = '\0';  // Null-terminate the string
-            updDisp(7, rawMessage, true);  // Display the raw message in hexadecimal
-        }
+      char rawMessage[packet.rawLength * 4 + 1];  // Enough space for each byte as either ASCII or hex
+      uint16_t index = 0;
+      for (uint16_t i = 0; i < packet.rawLength; i++) {
+          if (isprint(packet.raw[i])) {
+              rawMessage[index++] = packet.raw[i];  // Copy printable characters directly
+          } else {
+              sprintf(rawMessage + index, "\\x%02X", packet.raw[i]);  // Convert non-printable byte to hex
+              index += 4;  // Move index forward by 4 (for \xNN)
+          }
+      }
+      rawMessage[index] = '\0';  // Null-terminate the string
+      updDisp(7, rawMessage, true);  // Display the raw message in hexadecimal
+    } 
+    else {
+      // Parse the packet using the current channel configuration
+      if (current_mode == "RAW" || current_mode == "TST") {
+          //Cool of period to allow receiving of messages because of switching from sent to receive takes time
+          sendTestMessageTimer = millis();
+
+          pckt_count++;
+          char buf[50];
+
+          char display_msg[30];
+          snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
+          updDisp(3, display_msg,false);
+          snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+          updDisp(4, display_msg,false);
+
+          snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
+          updDisp(5, buf, false);
+
+          if (packet.isTestMessage()) {
+              test_message_counter=packet.testCounter;
+              snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
+              updDisp(6, buf, false);
+
+          } else {
+              updDisp(6, "", false);
+          }
+
+          updDisp(7, packet.content.c_str(), true);
+
+      } 
+      else if (current_mode == "PTT" && packet.type == "PTT") {
+          if(packet.channel== channels[deviceSettings.channel_idx]) {
+              //This is actually meant for my channel
+              uint8_t rcv_mode = packet.content[0];
+              if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
+                  codec = codec2_create(bitrate_modes[rcv_mode]);
+                  //codec2_decode(codec, raw_buf, packet.content + 1);
+                  playAudio(raw_buf, RAW_SIZE);
+                  updDisp(1, "Receiving...", false);
+              } else {
+                  updDisp(2, "Invalid mode received", true);
+              }
+          }
+      } 
+      else if (current_mode == "TXT" && packet.type == "TXT") {
+          if(packet.channel== channels[deviceSettings.channel_idx]) {
+              //This is actually meant for my channel
+              updDisp(7, packet.content.c_str(), true);
+          }
+      }
     }
 }
 

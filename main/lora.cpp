@@ -10,6 +10,7 @@
 #include "display.h"
 #include "app_modes.h"  // Include settings.h to use global variables
 #include "lora.h"
+#include "packet.h"
 
 SX1262* radio = nullptr;
 SPIClass* rfPort = nullptr;
@@ -35,6 +36,7 @@ void checkLoraPacketComplete(){
             int state = radio->finishTransmit();
             if (state == RADIOLIB_ERR_NONE) {
                 // We have sent a package sucessfull!
+                Serial.println("Packet was Sent, finishTransmit");
             } 
             else {
               Serial.print(F("Sent failed, code "));
@@ -47,8 +49,56 @@ void checkLoraPacketComplete(){
             transmitFlag = false;
         }
         else {
-            //Serial.println("RECEIVE COMPLETE");
-            handlePacket();
+            Serial.println("Packet Received, checking");
+            uint16_t packet_len = radio->getPacketLength(false);
+
+            uint16_t irqStatus = radio->getIrqStatus();
+
+            unsigned char rcv_pkt_buf[MAX_PKT];
+
+            if (irqStatus & RADIOLIB_SX126X_IRQ_RX_DONE) {
+                // Read the data into the buffer
+                int state = radio->readData(rcv_pkt_buf, packet_len);
+
+                if (state == RADIOLIB_ERR_NONE) {
+                    Serial.println("Packet Received, data loaded");
+                    // Print RSSI (Received Signal Strength Indicator)
+                    Serial.print(F("[SX1262] RSSI:\t\t"));
+                    Serial.print(radio->getRSSI());
+                    Serial.println(F(" dBm"));
+
+                    // Print SNR (Signal-to-Noise Ratio)
+                    Serial.print(F("[SX1262] SNR:\t\t"));
+                    Serial.print(radio->getSNR());
+                    Serial.println(F(" dB"));
+
+
+                    //Analyze and process the packet
+                    rcv_pkt_buf[packet_len] = '\0';  // Null-terminate the received packet
+
+                    Packet packet;
+                    if (packet.parsePacket(rcv_pkt_buf, packet_len)) {
+                        handlePacket(packet);
+                    }
+                    else {
+                        Serial.println("Error packet received");
+                    }
+                } else {
+                    if (state == RADIOLIB_ERR_RX_TIMEOUT ) {
+                        //This is OK, no data was received
+                    }
+                    else {
+                        Serial.print(F("Receive failed, code "));
+                        char buf[50];
+                        snprintf(buf, sizeof(buf), "Receive Err: %d", state);
+                        showError(buf);
+                        Serial.println(state);
+                    }
+                }
+            }
+            else {
+              return;
+            }
             operationDone=false;
         }
     }
@@ -166,6 +216,7 @@ void sendPacket(const char* str) {
     }
 }
 
+/*
 int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
 
     // Get the length of the received packet
@@ -206,6 +257,8 @@ int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
       return 0;
     }
 }
+*/
+
 
 void sleepLoRa() {
     // Put the LoRa module into sleep mode using RadioLib's sleep function

@@ -23,7 +23,7 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
         rawLength = bufferSize;
         raw = new uint8_t[rawLength];  // Allocate memory for raw buffer
         memcpy(raw, buffer, rawLength);  // Copy raw buffer content
-        return false;
+        return true;
     }
 
     // Extract the content
