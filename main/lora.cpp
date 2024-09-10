@@ -123,7 +123,6 @@ bool setupLoRa() {
 void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     if(transmitFlag) {
         //We are already transmitting. Avoid flooding
-        char buf[50];
         showError("Already in transmit, skipping");
         return;
     }
@@ -147,7 +146,6 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
 void sendPacket(const char* str) {
     if(transmitFlag) {
         //We are already transmitting. Avoid flooding
-        char buf[50];
         showError("Already in transmit, skipping");
         return;
     }

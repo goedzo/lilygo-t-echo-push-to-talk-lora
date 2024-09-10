@@ -17,6 +17,7 @@ void p_setFlag(void) {
 }
 
 void setupPingPong() {
+
   // Initialize SX1262 with default settings
   Serial.print(F("[SX1262] Initializing Ping Pong ... "));
 
@@ -83,7 +84,7 @@ void pingpongStart() {
     Serial.print(F("[SX1262] Sending first packet ... "));
     transmissionState = p_radio->startTransmit("Ping!");
     p_transmitFlag = true;
-    updDisp(5, "ping",true);
+    updDisp(5, "Ping!",true);
 
 }
 
@@ -145,7 +146,7 @@ void pingpongLoop() {
 
       // Send another packet
       Serial.print(F("[SX1262] Sending another packet ... "));
-      updDisp(5, "ping",true);
+      updDisp(5, "Ping!",true);
       transmissionState = p_radio->startTransmit("Ping!");
       p_transmitFlag = true;
     }

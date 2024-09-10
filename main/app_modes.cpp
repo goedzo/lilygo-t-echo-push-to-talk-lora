@@ -19,7 +19,7 @@ const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 0;
 const char* current_mode=modes[modeIndex];
 
-uint32_t        appmodeTimer = 0;
+uint32_t        sendTestMessageTimer = 0;
 int pckt_count=0;
 
 uint32_t        actionButtonTimer = 0;
@@ -240,16 +240,11 @@ void sendAudio() {
     }
 }
 
-void sendTestMessage() {
-    //Only do this every 1 seconds
+void sendTestMessage(bool now) {
+    //Only do this every 2 seconds or when now=true
 
-    if(digitalRead(TOUCH_PIN) == LOW) {
-      //Let's reset the counters
-      test_message_counter=0;
-    }
-
-    if (millis() - appmodeTimer > 2000) {
-      appmodeTimer = millis();
+    if (millis() - sendTestMessageTimer > 2000 || now) {
+      sendTestMessageTimer = millis();
 
       test_message_counter++;
       char test_msg[50];
@@ -259,12 +254,18 @@ void sendTestMessage() {
       snprintf((char*)send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s%d", channels[deviceSettings.channel_idx], "test", test_message_counter);
       char display_msg[30];
       snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
-      updDisp(4, display_msg);
+      updDisp(2, display_msg);
 
       sendPacket(send_pkt_buf);
-
-
+      //Cool of period to allow receiving of messages because of switching from sent to receive takes time
+      sendTestMessageTimer = millis();
     }
+
+    if(digitalRead(TOUCH_PIN) == LOW) {
+      //Let's reset the counters
+      test_message_counter=0;
+    }
+
 
 }
 
@@ -278,6 +279,10 @@ void handlePacket() {
         // Parse the packet using the current channel configuration
         if (packet.parsePacket(rcv_pkt_buf, pkt_size)) {
             if (current_mode == "RAW" || current_mode == "TST") {
+
+                //Cool of period to allow receiving of messages because of switching from sent to receive takes time
+                sendTestMessageTimer = millis();
+
                 pckt_count++;
                 char buf[50];
 
@@ -294,6 +299,7 @@ void handlePacket() {
                     test_message_counter=packet.testCounter;
                     snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
                     updDisp(6, buf, false);
+
                 } else {
                     updDisp(6, "", false);
                 }
@@ -326,9 +332,9 @@ void handlePacket() {
 
             char display_msg[30];
             snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
-            updDisp(4, display_msg,false);
-            snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
             updDisp(5, display_msg,false);
+            snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+            updDisp(6, display_msg,false);
 
 
             char rawMessage[packet.rawLength * 4 + 1];  // Enough space for each byte as either ASCII or hex
@@ -341,6 +347,7 @@ void handlePacket() {
                     index += 4;  // Move index forward by 4 (for \xNN)
                 }
             }
+            rawMessage[index] = '\0';  // Null-terminate the string
             updDisp(7, rawMessage, true);  // Display the raw message in hexadecimal
         }
     }
@@ -355,12 +362,12 @@ void updMode() {
     current_mode=modes[modeIndex];
 
     if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" ) {
-        //We need to reinit the radio
+        //We need to reinit the right radio
         setupLoRa();
     }
 
     if(current_mode=="PONG") {
-        //We need to reinit the radio
+        //We need to reinit the right radio
         setupPingPong();
     }
 
