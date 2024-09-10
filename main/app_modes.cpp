@@ -307,23 +307,23 @@ void handlePacket(Packet packet) {
 
           char display_msg[30];
           snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
-          updDisp(3, display_msg,false);
-          snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
           updDisp(4, display_msg,false);
+          snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+          updDisp(5, display_msg,false);
 
           snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
-          updDisp(5, buf, false);
+          updDisp(6, buf, false);
 
           if (packet.isTestMessage()) {
               test_message_counter=packet.testCounter;
               snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
-              updDisp(6, buf, false);
+              updDisp(7, buf, false);
 
           } else {
-              updDisp(6, "", false);
+              updDisp(7, "", false);
           }
 
-          updDisp(7, packet.content.c_str(), true);
+          updDisp(8, packet.content.c_str(), true);
 
       } 
       else if (current_mode == "PTT" && packet.type == "PTT") {

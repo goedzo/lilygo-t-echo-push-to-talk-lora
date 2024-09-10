@@ -152,7 +152,7 @@ bool setupLoRa() {
 
   radio->setBandwidth(500.0);
   radio->setCodingRate(5);
-  radio->setPreambleLength(8);
+  //radio->setPreambleLength(8);
 
   if (radio->setOutputPower(20) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
       Serial.println(F("Selected output power is invalid for this module!"));
