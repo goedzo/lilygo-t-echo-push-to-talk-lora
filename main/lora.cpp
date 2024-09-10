@@ -95,12 +95,12 @@ bool setupLoRa() {
       Serial.println(state);
   }
 
-  if (radio->setOutputPower(18) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
+  if (radio->setOutputPower(20) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
       Serial.println(F("Selected output power is invalid for this module!"));
   }
 
   // Stel de stroomlimiet in (tussen 45 en 240 mA)
-  if (radio->setCurrentLimit(90) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
+  if (radio->setCurrentLimit(120) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
       Serial.println(F("Selected current limit is invalid for this module!"));
   }
 
