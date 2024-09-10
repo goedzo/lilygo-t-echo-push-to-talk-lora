@@ -19,7 +19,7 @@ DeviceSettings deviceSettings = {
     .bitrate_idx = 2,
     .volume_level = 5,
     .channel_idx = 0,
-    .spreading_factor = 12,
+    .spreading_factor = 6,
     .backlight = true,
     .hours = 0,
     .minutes = 0,
@@ -53,7 +53,7 @@ void DeviceSettings::incrementTime(int idx, RTC_Date& dateTime) {
 }
 
 void DeviceSettings::nextSpreadingFactor() {
-    spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1;
+    spreading_factor = spreading_factor == 6 ? 12 : spreading_factor - 1;
 }
 
 void DeviceSettings::nextBandwidth() {

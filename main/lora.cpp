@@ -204,6 +204,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     if(transmitFlag) {
         //We are already transmitting. Avoid flooding
         showError("Already in transmit, skipping");
+        transmitFlag=false;
         return;
     }
 
