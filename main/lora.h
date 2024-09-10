@@ -3,6 +3,7 @@
 
 #include <RadioLib.h>
 extern SX1262* radio;
+extern size_t timeOnAir;
 
 bool setupLoRa();
 void sendPacket(uint8_t* pkt_buf, uint16_t len);

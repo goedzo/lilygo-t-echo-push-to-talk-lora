@@ -242,17 +242,23 @@ void sendTestMessage(bool now) {
     if (millis() - sendTestMessageTimer > 2000 || now) {
       sendTestMessageTimer = millis();
 
+
       test_message_counter++;
       char test_msg[50];
       snprintf(test_msg, sizeof(test_msg), "test%d", test_message_counter);
 
       char send_pkt_buf[50];
       snprintf((char*)send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s%d", channels[deviceSettings.channel_idx], "test", test_message_counter);
-      char display_msg[30];
-      snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
-      updDisp(2, display_msg);
 
       sendPacket(send_pkt_buf);
+
+      char display_msg[30];
+      snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
+      updDisp(2, display_msg,false);
+
+      snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
+      updDisp(3, display_msg,true);
+
       //Cool of period to allow receiving of messages because of switching from sent to receive takes time
       sendTestMessageTimer = millis();
     }

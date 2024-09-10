@@ -20,6 +20,7 @@ SPIClass* rfPort = nullptr;
 volatile bool operationDone = false;
 // flag to indicate transmission or reception state
 bool transmitFlag = false;
+size_t timeOnAir=0;
 
 void setFlag(void) {
   // we sent or received a packet, set the flag
@@ -108,6 +109,10 @@ bool setupLoRa() {
   // Initialize SX1262 with default settings
   Serial.print(F("Initializing Lora ... "));
 
+  //Reset state
+  transmitFlag=false;
+  operationDone=false;
+
   rfPort = new SPIClass(
       /*SPIPORT*/NRF_SPIM3,
       /*MISO*/ LoRa_Miso,
@@ -145,6 +150,10 @@ bool setupLoRa() {
       Serial.println(state);
   }
 
+  radio->setBandwidth(500.0);
+  radio->setCodingRate(5);
+  radio->setPreambleLength(8);
+
   if (radio->setOutputPower(20) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
       Serial.println(F("Selected output power is invalid for this module!"));
   }
@@ -177,6 +186,11 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
         return;
     }
 
+    // Calculate time-on-air for the packet
+    timeOnAir = radio->getTimeOnAir(len);
+    Serial.print(F("Time-on-Air (ms): "));
+    Serial.println(timeOnAir);
+
     // Start non-blocking transmission
     int state = radio->startTransmit(pkt_buf, len);
     transmitFlag = true;
@@ -199,6 +213,11 @@ void sendPacket(const char* str) {
         showError("Already in transmit, skipping");
         return;
     }
+
+    // Calculate time-on-air for the packet
+    timeOnAir = radio->getTimeOnAir(strlen(str));
+    Serial.print(F("Time-on-Air (ms): "));
+    Serial.println(timeOnAir);
 
     // Start non-blocking transmission
     int state = radio->startTransmit(str);
