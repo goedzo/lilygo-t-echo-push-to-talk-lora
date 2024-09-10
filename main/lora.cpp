@@ -173,9 +173,9 @@ bool setupLoRa() {
   }
 
   //Maybe change this if the time-on-air gets too large?
-  //radio->setPreambleLength(8);
+  radio->setPreambleLength(24);
 
-  if (radio->setOutputPower(20) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
+  if (radio->setOutputPower(14) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
       Serial.println(F("Selected output power is invalid for this module!"));
   }
 
@@ -256,50 +256,6 @@ void sendPacket(const char* str) {
         return;
     }
 }
-
-/*
-int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
-
-    // Get the length of the received packet
-    uint16_t packet_len = radio->getPacketLength(false);
-    
-    if(packet_len==0) {
-        return 0;
-    }
-
-    if (packet_len > max_len) {
-        // Prevent buffer overflow if the packet is larger than the provided buffer
-        packet_len = max_len;
-    }
-
-    //Let's check the IRQ status to make sure all data is actually received
-    uint16_t irqStatus = radio->getIrqStatus();
-    if (irqStatus & RADIOLIB_SX126X_IRQ_RX_DONE) {
-        // Read the data into the buffer
-        int state = radio->readData(pkt_buf, packet_len);
-
-        if (state == RADIOLIB_ERR_NONE) {
-            return packet_len;  // Of de werkelijke grootte van het ontvangen pakket
-        } else {
-            if (state == RADIOLIB_ERR_RX_TIMEOUT ) {
-                //This is OK, no data was received
-            }
-            else {
-                Serial.print(F("Receive failed, code "));
-                char buf[50];
-                snprintf(buf, sizeof(buf), "Receive Err: %d", state);
-                showError(buf);
-                Serial.println(state);
-            }
-            return 0;
-        }
-    }
-    else {
-      return 0;
-    }
-}
-*/
-
 
 void sleepLoRa() {
     // Put the LoRa module into sleep mode using RadioLib's sleep function

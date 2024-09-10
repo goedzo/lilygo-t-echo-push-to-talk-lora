@@ -13,7 +13,7 @@
 using namespace ace_button;
 
 // Define an array of mode names as strings
-const char* modes[] = { "RAW","TXT", "PONG","TST","PTT"};
+const char* modes[] = { "RAW","TXT", "RANGE", "PONG","TST","PTT"};
 const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 0;
 const char* current_mode=modes[modeIndex];
@@ -37,12 +37,102 @@ CODEC2* codec;
 int test_message_counter = 0;
 int rcv_test_message_counter=0;
 
+// Range Test vars
+bool range_role_sender=false;
+int range_last_count=0;
+int range_consecutive_ok=0;
+//We start at Null Island https://en.wikipedia.org/wiki/Null_Island
+double range_home_lat=0;
+double range_home_long=0;
+int range_total_pckt_loss=0;
+
 // Button objects
 // Define the pin numbers
 #define MODE_PIN _PINNUM(1,10)  // Button 1 connected to P1.10
 #define TOUCH_PIN _PINNUM(0,11)  // Button 2 connected to P0.11 (Touch-capable pin)
 AceButton modeButton(MODE_PIN);
 AceButton touchButton(TOUCH_PIN);
+
+// Variables for debouncing the touch button
+unsigned long lastTouchPressTime = 0; // Timestamp of the last button press
+unsigned long debounceDelay = 50;     // Debounce time in milliseconds
+bool touchButtonPressed = false;      // Flag to track the debounced state
+
+// The main loop that is the logic for all app modes
+void handleAppModes() {
+    modeButton.check();
+    touchButton.check();
+
+    //Always allow receiving and sending messages;
+    checkLoraPacketComplete(); //If a message was received, it will call handlePacket();
+
+    //Update GPS location
+    loopGPS();
+
+    //Let's implement a power off, when the action button is pressed 5 seconds
+    if(digitalRead(MODE_PIN) == LOW) {
+      //Keep counting until 5 seconds
+      if (millis() - actionButtonTimer > 5000) {
+        powerOff();
+      }
+
+    }
+    else if (digitalRead(MODE_PIN) == HIGH) {
+      //No button pressed
+      actionButtonTimer=millis();
+    }
+
+
+    if (!in_settings_mode) {
+        if (current_mode == "PTT") {
+            //sendAudio();
+        } else if (current_mode == "TST") {
+
+            if(digitalRead(TOUCH_PIN) == LOW) {
+              //Let's reset the counters
+              test_message_counter=0;
+              pckt_count=rcv_test_message_counter;
+            }
+
+            //Non blocking send
+            sendTestMessage();
+        } else if (current_mode == "TXT" || current_mode == "RAW") {
+            if(digitalRead(TOUCH_PIN) == LOW) {
+              //Let's synch the packet count to the last received test counter
+              pckt_count=rcv_test_message_counter;
+            }
+        }
+        else if (current_mode == "PONG") {
+            if (debouncedTouchPress()) {
+              //We start on the buttonpress
+              updDisp(4, "Started pingpong",true);
+              Serial.print(F("[SX1262] Sending another packet ... "));
+              updDisp(5, "Ping!",true);
+              sendPacket("Ping!");
+            }
+        }
+    }
+
+}
+
+// Function to handle debouncing for the touch button
+bool debouncedTouchPress() {
+    bool currentState = (digitalRead(TOUCH_PIN) == LOW);
+    unsigned long currentTime = millis();
+
+    if (currentState != touchButtonPressed) {
+        // Button state has changed, reset the debounce timer
+        lastTouchPressTime = currentTime;
+        touchButtonPressed = currentState;
+    }
+
+    // If the button is pressed and the debounce delay has passed, return true
+    if (currentState && (currentTime - lastTouchPressTime > debounceDelay)) {
+        return true;
+    }
+
+    return false;
+}
 
 void setupAppModes() {
     // Initialize buttons
@@ -160,55 +250,6 @@ void powerOff() {
     // Note: The system will remain in this state until reset or a wake-up interrupt occurs.
 }
 
-void handleAppModes() {
-    modeButton.check();
-    touchButton.check();
-
-    //Always allow receiving and sending messages;
-    checkLoraPacketComplete(); //If a message was received, it will call handlePacket();
-
-    //Update GPS location
-    loopGPS();
-
-    //Let's implement a power off, when the action button is pressed 5 seconds
-    if(digitalRead(MODE_PIN) == LOW) {
-      //Keep counting until 5 seconds
-      if (millis() - actionButtonTimer > 5000) {
-        powerOff();
-      }
-
-    }
-    else if (digitalRead(MODE_PIN) == HIGH) {
-      //No button pressed
-      actionButtonTimer=millis();
-    }
-
-
-    if (!in_settings_mode) {
-        if (current_mode == "PTT") {
-            //sendAudio();
-        } else if (current_mode == "TST") {
-            //Non blocking send
-            sendTestMessage();
-        } else if (current_mode == "TXT" || current_mode == "RAW") {
-            if(digitalRead(TOUCH_PIN) == LOW) {
-              //Let's synch the packet count to the last received test counter
-              pckt_count=rcv_test_message_counter;
-            }
-        }
-        else if (current_mode == "PONG") {
-            if(digitalRead(TOUCH_PIN) == LOW) {
-              //We start on the buttonpress
-              updDisp(4, "Started pingpong",true);
-              Serial.print(F("[SX1262] Sending another packet ... "));
-              updDisp(5, "Ping!",true);
-              sendPacket("Ping!");
-            }
-        }
-    }
-
-}
-
 void sendAudio() {
     codec = codec2_create(bitrate_modes[deviceSettings.bitrate_idx]);
     int bits_per_frame = codec2_bits_per_frame(codec);
@@ -249,24 +290,19 @@ void sendTestMessage(bool now) {
       char send_pkt_buf[50];
       snprintf((char*)send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s%d", channels[deviceSettings.channel_idx], "test", test_message_counter);
 
-      sendPacket(send_pkt_buf);
-
       char display_msg[30];
       snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
-      updDisp(2, display_msg,false);
+      updDisp(2, display_msg,true);
 
+      sendPacket(send_pkt_buf);
+      //Give the device some small time to process sending
+      delay(100);
       snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
       updDisp(3, display_msg,true);
 
       //Cool of period to allow receiving of messages because of switching from sent to receive takes time
       sendTestMessageTimer = millis();
     }
-
-    if(digitalRead(TOUCH_PIN) == LOW) {
-      //Let's reset the counters
-      test_message_counter=0;
-    }
-
 
 }
 
@@ -276,9 +312,9 @@ void handlePacket(Packet packet) {
       updDisp(3, "Unknwn pcket tpe", true);
 
       char display_msg[30];
-      snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
+      snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
       updDisp(5, display_msg,false);
-      snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+      snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
       updDisp(6, display_msg,false);
 
 
@@ -305,9 +341,9 @@ void handlePacket(Packet packet) {
           char buf[50];
 
           char display_msg[30];
-          snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
+          snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
           updDisp(4, display_msg,false);
-          snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+          snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
           updDisp(5, display_msg,false);
 
           snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
@@ -360,9 +396,9 @@ void handlePacket(Packet packet) {
             Serial.println(F(" dB"));
 
             char display_msg[30];
-            snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
+            snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
             updDisp(6, display_msg,false);
-            snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+            snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
             updDisp(7, display_msg,true);          
 
             // Send another packet

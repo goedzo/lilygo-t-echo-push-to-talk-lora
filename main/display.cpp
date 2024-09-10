@@ -128,6 +128,45 @@ const uint16_t raw_icon[16] = {
     0b0000000000000000
 };
 
+
+const uint16_t range_icon[16] = {
+    0b0000001111000000,  
+    0b0000110000110000,  
+    0b0001000000001000,  
+    0b0010000000000100,  
+    0b0100000000000010,  
+    0b0100000001100010,  
+    0b1000000111100001,  
+    0b1000111111000001,  
+    0b1000011111000001,  
+    0b1000000110000001,  
+    0b0100000110000010,  
+    0b0100000010000010,  
+    0b0010000000000100,  
+    0b0001000000001000,  
+    0b0000110000110000,  
+    0b0000001111000000   
+};
+
+const uint16_t pong_icon[16] = {
+    0b0000001111100000,  
+    0b0000011111110000,  
+    0b0000111110011000,  
+    0b0001111110001100,  
+    0b0001111111001100,  
+    0b0001111111111100,  
+    0b0000111111111000,  
+    0b0000111111111000,  
+    0b0000010101010000,  
+    0b0000001000100000,  
+    0b0000000101000000,  
+    0b0000000101000000,  
+    0b0000000101000000,  
+    0b0000000101000000,  
+    0b0000000101000000,  
+    0b0000000111000000   
+};
+
 // Black Icon
 const uint16_t black_icon[16] = {
     0b1111111111111111,
@@ -449,6 +488,12 @@ void drawModeIcon(const char* mode) {
             icon_drawn=true;
         } else if (mode == "TST") {
             drawIcon(test_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn=true;
+        } else if (mode == "RANGE") {
+            drawIcon(range_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn=true;
+        } else if (mode == "PONG") {
+            drawIcon(pong_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
             icon_drawn=true;
         }
 

@@ -14,6 +14,7 @@ extern const char* current_mode;
 void setupAppModes();  // Initializes the buttons and configures event handling
 void handleAppModes();  // Manages the different modes (PTT, TXT, TST, RAW)
 void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState);  // Handles button events
+bool debouncedTouchPress();
 void sendAudio();  // Handles audio transmission in PTT mode
 void sendTestMessage(bool now=false);  // Sends a test message in TST mode
 void handlePacket(Packet packet);  // Handles received packets

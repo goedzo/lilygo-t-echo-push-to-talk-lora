@@ -71,6 +71,8 @@ bool Packet::parseHeader(const uint8_t* buffer, uint16_t bufferSize) {
         type = "PTT";
     } else if (header == "TX") {
         type = "TXT";
+    } else if (header == "RN") {
+        type = "RANGE";
     } else {
         type = "NULL";
         return false;

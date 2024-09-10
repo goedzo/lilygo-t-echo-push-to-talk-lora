@@ -218,6 +218,12 @@ void displayCurrentSetting() {
 
 void displayBacklight() {
     updDisp(1, "Backlight:", true);
+    if(deviceSettings.backlight) {
+      updDisp(1, "On", true);
+    }
+    else {
+      updDisp(1, "Off", true);
+    }
 }
 
 void displayBitrate() {
