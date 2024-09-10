@@ -9,7 +9,6 @@
 #include "settings.h"
 #include "app_modes.h"
 #include "packet.h"
-#include "pingpong.h"
 
 using namespace ace_button;
 
@@ -198,11 +197,12 @@ void handleAppModes() {
             }
         }
         else if (current_mode == "PONG") {
-            pingpongLoop();
             if(digitalRead(TOUCH_PIN) == LOW) {
               //We start on the buttonpress
               updDisp(4, "Started pingpong",true);
-              pingpongStart();
+              Serial.print(F("[SX1262] Sending another packet ... "));
+              updDisp(5, "Ping!",true);
+              sendPacket("Ping!");
             }
         }
     }
@@ -345,6 +345,32 @@ void handlePacket(Packet packet) {
               updDisp(7, packet.content.c_str(), true);
           }
       }
+      else if (current_mode == "PONG" && packet.type == "PING") {
+          //We pong this message
+            updDisp(5, "       pong",false);
+
+            // Print RSSI (Received Signal Strength Indicator)
+            Serial.print(F("[SX1262] RSSI:\t\t"));
+            Serial.print(radio->getRSSI());
+            Serial.println(F(" dBm"));
+
+            // Print SNR (Signal-to-Noise Ratio)
+            Serial.print(F("[SX1262] SNR:\t\t"));
+            Serial.print(radio->getSNR());
+            Serial.println(F(" dB"));
+
+            char display_msg[30];
+            snprintf(display_msg, sizeof(display_msg), "SNR: %.3f  dB", radio->getSNR() );
+            updDisp(6, display_msg,false);
+            snprintf(display_msg, sizeof(display_msg), "RSSI: %.3f dBm", radio->getRSSI() );
+            updDisp(7, display_msg,true);          
+
+            // Send another packet
+            Serial.print(F("[SX1262] Sending another packet ... "));
+            updDisp(5, "Ping!",true);
+            sendPacket("Ping!");
+
+      } 
     }
 }
 
@@ -356,14 +382,9 @@ void updMode() {
     modeIndex = (modeIndex + 1) % numModes;
     current_mode=modes[modeIndex];
 
-    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" ) {
+    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" || current_mode=="PONG" ) {
         //We need to reinit the right radio
         setupLoRa();
-    }
-
-    if(current_mode=="PONG") {
-        //We need to reinit the right radio
-        setupPingPong();
     }
 
     // Update the mode and channel display

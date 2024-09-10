@@ -17,7 +17,14 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
 
     length = bufferSize;
 
-    // Parse the header
+    // Directly check if the packet is "Ping!"
+    if (strncmp((char*)buffer, "Ping!", bufferSize) == 0) {
+        type = "PING";
+        content = "Ping!";
+        return true;
+    }
+
+    // Parse the header if it's not a "Ping!" message
     if (!parseHeader(buffer, bufferSize)) {
         // If the header is unknown, store the raw message and set type to "NULL"
         rawLength = bufferSize;
@@ -26,7 +33,7 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
         return true;
     }
 
-    // Extract the content
+    // Extract the content for other messages
     content = String((char*)(buffer + 3));
 
     // Check if this is a test message and extract the test counter
