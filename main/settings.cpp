@@ -14,16 +14,18 @@ void rtcInterruptCb() {
     rtcInterrupt = true;
 }
 
-// Define the instance of the DeviceSettings struct with default values
+// Initialize device settings with default values
 DeviceSettings deviceSettings = {
-    .bitrate_idx = 2,             // Default to index 2
-    .volume_level = 5,            // Default volume level
-    .channel_idx = 0,             // Default channel index
-    .spreading_factor = 12,        // Default spreading factor (SF9)
+    .bitrate_idx = 2,
+    .volume_level = 5,
+    .channel_idx = 0,
+    .spreading_factor = 12,
     .backlight = true,
     .hours = 0,
     .minutes = 0,
-    .seconds = 0
+    .seconds = 0,
+    .bandwidth_idx = BW_250_KHZ, // Set default bandwidth to 250 kHz
+    .coding_rate_idx = CR_5      // Default coding rate
 };
 
 // Implementing the methods defined in DeviceSettings struct
@@ -40,7 +42,7 @@ void DeviceSettings::nextChannel() {
 }
 
 void DeviceSettings::incrementTime(int idx, RTC_Date& dateTime) {
-    time_set=true;
+    time_set = true;
     if (idx == HOURS) {
         dateTime.hour = (dateTime.hour + 1) % 24;
     } else if (idx == MINUTES) {
@@ -52,6 +54,36 @@ void DeviceSettings::incrementTime(int idx, RTC_Date& dateTime) {
 
 void DeviceSettings::nextSpreadingFactor() {
     spreading_factor = spreading_factor == 12 ? 6 : spreading_factor + 1;
+}
+
+void DeviceSettings::nextBandwidth() {
+    if (bandwidth_idx == BW_500_KHZ) {
+        bandwidth_idx = BW_7_8_KHZ;  // Cycle back to the smallest value
+    } else {
+        switch (bandwidth_idx) {
+            case BW_7_8_KHZ: bandwidth_idx = BW_10_4_KHZ; break;
+            case BW_10_4_KHZ: bandwidth_idx = BW_15_6_KHZ; break;
+            case BW_15_6_KHZ: bandwidth_idx = BW_20_8_KHZ; break;
+            case BW_20_8_KHZ: bandwidth_idx = BW_31_25_KHZ; break;
+            case BW_31_25_KHZ: bandwidth_idx = BW_41_7_KHZ; break;
+            case BW_41_7_KHZ: bandwidth_idx = BW_62_5_KHZ; break;
+            case BW_62_5_KHZ: bandwidth_idx = BW_125_KHZ; break;
+            case BW_125_KHZ: bandwidth_idx = BW_250_KHZ; break;
+            case BW_250_KHZ: bandwidth_idx = BW_500_KHZ; break;
+        }
+    }
+}
+
+void DeviceSettings::nextCodingRate() {
+    if (coding_rate_idx == CR_8) {
+        coding_rate_idx = CR_5;  // Cycle back to the smallest value
+    } else {
+        switch (coding_rate_idx) {
+            case CR_5: coding_rate_idx = CR_6; break;
+            case CR_6: coding_rate_idx = CR_7; break;
+            case CR_7: coding_rate_idx = CR_8; break;
+        }
+    }
 }
 
 // Global variables
@@ -92,7 +124,6 @@ void toggleSettingsMode() {
     in_settings_mode = !in_settings_mode;
     if (in_settings_mode) {
         clearScreen();
-        setting_idx = 0;  // Start SPF
         updDisp(1, "Entered Settings",true);
         displayCurrentSetting();
     } else {
@@ -142,6 +173,14 @@ void updateCurrentSetting() {
             rtc.setDateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour, dateTime.minute, dateTime.second);
             displayCurrentTimeSetting();
             break;
+        case BANDWIDTH:
+            deviceSettings.nextBandwidth();
+            displayBandwidth();
+            break;
+        case CODING_RATE:
+            deviceSettings.nextCodingRate();
+            displayCodingRate();
+            break;
     }
     displayCurrentSetting();
 }
@@ -168,13 +207,18 @@ void displayCurrentSetting() {
         case SECONDS:
             displayCurrentTimeSetting();
             break;
+        case BANDWIDTH:
+            displayBandwidth();
+            break;
+        case CODING_RATE:
+            displayCodingRate();
+            break;
     }
 }
 
 void displayBacklight() {
     updDisp(1, "Backlight:", true);
 }
-
 
 void displayBitrate() {
     updDisp(1, "Bitrate:", false);
@@ -217,6 +261,27 @@ void displayCurrentTimeSetting() {
         updDisp(1, "Setting Second:");
     }
     updDisp(2, time_str);
+}
+
+void displayBandwidth() {
+    updDisp(1, "Bandwidth:", false);
+    
+    // Convert bandwidth from Hz to kHz (float value)
+    float bandwidth_in_khz = deviceSettings.bandwidth_idx / 1000.0;
+    
+    // Create a string to display the current bandwidth
+    char bw_str[20];
+    snprintf(bw_str, sizeof(bw_str), "BW: %.2f kHz", bandwidth_in_khz);
+    
+    // Update display with the current bandwidth
+    updDisp(2, bw_str);
+}
+
+void displayCodingRate() {
+    updDisp(1, "Coding Rate:", false);
+    char cr_str[20];
+    snprintf(cr_str, sizeof(cr_str), "CR: %d", deviceSettings.coding_rate_idx);
+    updDisp(2, cr_str);
 }
 
 // Example function to map the bitrate index to actual bitrate value (bps)

@@ -36,7 +36,7 @@ CODEC2* codec;
 
 // Test message counter
 int test_message_counter = 0;
-
+int rcv_test_message_counter=0;
 
 // Button objects
 // Define the pin numbers
@@ -194,7 +194,7 @@ void handleAppModes() {
         } else if (current_mode == "TXT" || current_mode == "RAW") {
             if(digitalRead(TOUCH_PIN) == LOW) {
               //Let's synch the packet count to the last received test counter
-              pckt_count=test_message_counter;
+              pckt_count=rcv_test_message_counter;
             }
         }
         else if (current_mode == "PONG") {
@@ -239,9 +239,8 @@ void sendAudio() {
 void sendTestMessage(bool now) {
     //Only do this every 2 seconds or when now=true
 
-    if (millis() - sendTestMessageTimer > 2000 || now) {
+    if (millis() - sendTestMessageTimer > 5000 || now) {
       sendTestMessageTimer = millis();
-
 
       test_message_counter++;
       char test_msg[50];
@@ -315,7 +314,7 @@ void handlePacket(Packet packet) {
           updDisp(6, buf, false);
 
           if (packet.isTestMessage()) {
-              test_message_counter=packet.testCounter;
+              rcv_test_message_counter=packet.testCounter;
               snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
               updDisp(7, buf, false);
 

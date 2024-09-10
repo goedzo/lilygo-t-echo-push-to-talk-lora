@@ -150,8 +150,29 @@ bool setupLoRa() {
       Serial.println(state);
   }
 
-  radio->setBandwidth(500.0);
-  radio->setCodingRate(5);
+  // Set the bandwidth (convert from integer Hz to float kHz)
+  state = radio->setBandwidth(deviceSettings.bandwidth_idx / 1000.0);  // Divide by 1000 to convert to kHz
+  if (state == RADIOLIB_ERR_NONE) {
+      Serial.print(F("Bandwidth set to "));
+      Serial.print(deviceSettings.bandwidth_idx / 1000.0);
+      Serial.println(F(" kHz"));
+  } else {
+      Serial.print(F("Failed to set bandwidth, code "));
+      Serial.println(state);
+  }
+
+  
+  // Set the coding rate
+  state = radio->setCodingRate(deviceSettings.coding_rate_idx);
+  if (state == RADIOLIB_ERR_NONE) {
+      Serial.print(F("Coding rate set to CR"));
+      Serial.println(deviceSettings.coding_rate_idx);
+  } else {
+      Serial.print(F("Failed to set coding rate, code "));
+      Serial.println(state);
+  }
+
+  //Maybe change this if the time-on-air gets too large?
   //radio->setPreambleLength(8);
 
   if (radio->setOutputPower(20) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
