@@ -14,7 +14,7 @@
 using namespace ace_button;
 
 // Define an array of mode names as strings
-const char* modes[] = { "PONG","RAW","PTT", "TXT", "TST"};
+const char* modes[] = { "RAW","TXT", "PONG","TST","PTT"};
 const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 0;
 const char* current_mode=modes[modeIndex];
@@ -32,7 +32,6 @@ bool ignore_next_button_press=false;
 // Buffers
 short raw_buf[RAW_SIZE];
 //This is used for sending LORA messages
-unsigned char send_pkt_buf[MAX_PKT];
 //This buffer receives LORA messages
 unsigned char rcv_pkt_buf[MAX_PKT];
 
@@ -219,6 +218,8 @@ void sendAudio() {
     int bits_per_frame = codec2_bits_per_frame(codec);
     int enc_size = (bits_per_frame + 7) / 8;
     while (digitalRead(TOUCH_PIN) == LOW) {
+
+        unsigned char send_pkt_buf[MAX_PKT];
         capAudio(raw_buf, RAW_SIZE);
         codec2_encode(codec, send_pkt_buf, raw_buf);  
 
@@ -250,19 +251,17 @@ void sendTestMessage() {
     if (millis() - appmodeTimer > 2000) {
       appmodeTimer = millis();
 
+      test_message_counter++;
       char test_msg[50];
-      snprintf(test_msg, sizeof(test_msg), "test%d", ++test_message_counter);
+      snprintf(test_msg, sizeof(test_msg), "test%d", test_message_counter);
 
-      snprintf((char*)send_pkt_buf, 4, "TX%c", channels[deviceSettings.channel_idx]);
-      strcpy((char*)send_pkt_buf + 3, test_msg);
-
-
+      char send_pkt_buf[50];
+      snprintf((char*)send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s%d", channels[deviceSettings.channel_idx], "test", test_message_counter);
       char display_msg[30];
       snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
       updDisp(4, display_msg);
 
-
-      sendPacket(send_pkt_buf, strlen(test_msg)+3);
+      sendPacket(send_pkt_buf);
 
 
     }

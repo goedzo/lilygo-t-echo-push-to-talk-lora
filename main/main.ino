@@ -59,7 +59,7 @@ void setup()
 
     updDisp(5, "Setup ok!");
 
-    setupPingPong();
+    //setupPingPong();
 
 
     clearScreen();

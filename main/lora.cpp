@@ -95,12 +95,12 @@ bool setupLoRa() {
       Serial.println(state);
   }
 
-  if (radio->setOutputPower(22) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
+  if (radio->setOutputPower(18) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
       Serial.println(F("Selected output power is invalid for this module!"));
   }
 
   // Stel de stroomlimiet in (tussen 45 en 240 mA)
-  if (radio->setCurrentLimit(80) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
+  if (radio->setCurrentLimit(90) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
       Serial.println(F("Selected current limit is invalid for this module!"));
   }
 
@@ -144,7 +144,29 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     }
 }
 
+void sendPacket(const char* str) {
+    if(transmitFlag) {
+        //We are already transmitting. Avoid flooding
+        char buf[50];
+        showError("Already in transmit, skipping");
+        return;
+    }
 
+    // Start non-blocking transmission
+    int state = radio->startTransmit(str);
+    transmitFlag = true;
+
+    if (state != RADIOLIB_ERR_NONE) {
+        Serial.print(F("Transmission start failed, code "));
+        Serial.println(state);
+        char buf[50];
+        snprintf(buf, sizeof(buf), "Lora Strt Trnsmt Err: %d", state);
+        showError(buf);
+        //Let's reinitialize the radio
+        setupLoRa();
+        return;
+    }
+}
 
 int receivePacket(uint8_t* pkt_buf, uint16_t max_len) {
 
