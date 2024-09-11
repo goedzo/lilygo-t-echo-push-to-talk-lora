@@ -52,7 +52,7 @@ bool Packet::isTestMessage() const {
 }
 
 bool Packet::isRangeMessage() const {
-    return type.startsWith("RN") && content.startsWith("test");
+    return type == "RANGE" && content.startsWith("test");
 }
 
 

@@ -50,7 +50,7 @@ void checkLoraPacketComplete(){
             transmitFlag = false;
         }
         else {
-            Serial.println("Packet Received, checking");
+            //Serial.println("Packet Received, checking");
             uint16_t packet_len = radio->getPacketLength(false);
 
             uint16_t irqStatus = radio->getIrqStatus();
@@ -62,6 +62,8 @@ void checkLoraPacketComplete(){
                 int state = radio->readData(rcv_pkt_buf, packet_len);
 
                 if (state == RADIOLIB_ERR_NONE) {
+
+                    /*
                     Serial.println("Packet Received, data loaded");
                     // Print RSSI (Received Signal Strength Indicator)
                     Serial.print(F("[SX1262] RSSI:\t\t"));
@@ -72,7 +74,7 @@ void checkLoraPacketComplete(){
                     Serial.print(F("[SX1262] SNR:\t\t"));
                     Serial.print(radio->getSNR());
                     Serial.println(F(" dB"));
-
+                    */
 
                     //Analyze and process the packet
                     rcv_pkt_buf[packet_len] = '\0';  // Null-terminate the received packet
@@ -129,7 +131,7 @@ bool setupLoRa() {
   // BUSY pin:  9
   radio = new SX1262(new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *rfPort, spiSettings));
 
-  int state = radio->begin();
+  int state = radio->begin(869.47);
   if (state == RADIOLIB_ERR_NONE) {
     Serial.println(F("success!"));
   } else {
@@ -175,7 +177,7 @@ bool setupLoRa() {
   //Maybe change this if the time-on-air gets too large?
   radio->setPreambleLength(24);
 
-  if (radio->setOutputPower(14) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
+  if (radio->setOutputPower(20) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
       Serial.println(F("Selected output power is invalid for this module!"));
   }
 

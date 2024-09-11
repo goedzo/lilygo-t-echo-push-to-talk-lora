@@ -27,6 +27,17 @@ int disp_height = 200;      // The height of the display
 int disp_width = 200;       // The width of the display
 
 
+// Display buffer for each line (Top line, middle, bottom, and errors)
+char disp_buf[20][80] = {
+    "",  // Top line with channel and bitrate
+    "",  // Middle line
+    "",  // Bottom line for errors
+    ""   // 4th line for non-PTT messages
+};
+
+int displayLines=sizeof(disp_buf) / sizeof(disp_buf[0]);
+
+
 // Define the 16x16 pixel icon for "TXT" mode
 const uint16_t txt_icon[16] = {
     // Your bitmap data for TXT mode
@@ -398,15 +409,6 @@ GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>* display = nullptr;
 
 
 
-// Display buffer for each line (Top line, middle, bottom, and errors)
-char disp_buf[20][80] = {
-    "",  // Top line with channel and bitrate
-    "",  // Middle line
-    "",  // Bottom line for errors
-    ""   // 4th line for non-PTT messages
-};
-
-int displayLines=sizeof(disp_buf) / sizeof(disp_buf[0]);
 
 void printline(const char* msg) {
     //Serial.println(msg);
@@ -544,36 +546,12 @@ void clearScreen(){
       updDisp(i,"",false);
     }
     updDisp(0,"",true);
+    //clear any error
+    showError("");
 }
 
 
-void printStatusIcons(){
-  uint8_t batteryPercentage = getBatteryPercentage();
-  if(batteryPercentage>90) {
-    drawIcon(bat100_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>80) {
-    drawIcon(bat80_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>60) {
-    drawIcon(bat60_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>40) {
-    drawIcon(bat40_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>20) {
-    drawIcon(bat20_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>10) {
-    drawIcon(bat10_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>3) {
-    drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>0) {
-    drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-
+void printGPSIcon() {
   if(gps_status==NO_GPS) {
       //No GPS Module installed, so don't display any icon
   }
@@ -604,7 +582,35 @@ void printStatusIcons(){
 
 
   }
+}
 
+void printStatusIcons(){
+  uint8_t batteryPercentage = getBatteryPercentage();
+  if(batteryPercentage>90) {
+    drawIcon(bat100_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>80) {
+    drawIcon(bat80_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>60) {
+    drawIcon(bat60_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>40) {
+    drawIcon(bat40_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>20) {
+    drawIcon(bat20_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>10) {
+    drawIcon(bat10_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>3) {
+    drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  else if (batteryPercentage>0) {
+    drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+  }
+  printGPSIcon();
 }
 
 void updModeAndChannelDisplay() {
@@ -631,6 +637,8 @@ void updModeAndChannelDisplay() {
 
 void showError(const char* error_msg) {
     // Display error message on bottom line
+    //Sometimes an error has 2 lines, so clear the last line
+    updDisp(10, "",false);
     updDisp(9, error_msg);
 }
 

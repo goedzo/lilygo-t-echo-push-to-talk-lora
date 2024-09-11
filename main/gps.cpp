@@ -85,25 +85,6 @@ void loopGPS() {
     }
 
     if (millis() - lastGPSUpdate > 5000) {
-        if (gps->location.isUpdated()) {
-            gps_latitude = gps->location.lat();
-            gps_longitude = gps->location.lng();
-            gps_location_age = gps->location.age();
-            gps_status = GPS_LOC;  // GPS location found, update status
-
-            //Let's set our home location if needed
-            if(range_home_lat==0 && range_home_long==0) {
-                range_home_lat=gps_latitude;
-                range_home_long=gps_longitude;
-                updDisp(4, "Home Location OK",true);
-            }
-
-            //SerialMon.print(F("LOCATION   Lat="));
-            //SerialMon.print(gps_latitude, 6);
-            //SerialMon.print(F(" Long="));
-            //SerialMon.println(gps_longitude, 6);
-        }
-
         if (gps->altitude.isUpdated()) {
             gps_altitude = gps->altitude.meters();
             //SerialMon.print(F("altitude: "));
@@ -153,6 +134,61 @@ void loopGPS() {
             //SerialMon.println(gps_hdop);
         }
 
+        if (gps->location.isUpdated()) {
+            if(gps->location.isValid()) {
+                if (gps->satellites.value() >= 4) {
+                    // Location is more stable
+                    if (gps->hdop.isValid() && gps->hdop.value() <= 100.0) {
+                        // HDOP is within a good range, likely stable
+                        if (gps->location.age() < 4000) {
+                            // The fix is recent, likely stable
+                            gps_latitude = gps->location.lat();
+                            gps_longitude = gps->location.lng();
+                            gps_location_age = gps->location.age();
+                            gps_status = GPS_LOC;  // GPS location found, update status
+                        }
+                        else {
+                            //Location is too old
+                            gps_status=GPS_TIME;
+                            SerialMon.print("GPS Loc age too high");
+                            SerialMon.print(gps->location.age());
+                            SerialMon.println("");
+                        }
+                    } else {
+                        // HDOP is too high, position might be unstable
+                        gps_status=GPS_TIME;
+                        SerialMon.print("GPS Loc hdop too low ");
+                        SerialMon.print(gps->hdop.value());
+                        SerialMon.println("");
+
+                        //Still store it, in case someone still wants to use it.
+                        gps_latitude = gps->location.lat();
+                        gps_longitude = gps->location.lng();
+                        gps_location_age = gps->location.age();
+
+
+                    }
+                } else {
+                    // Location might not be stable
+                    gps_status=GPS_TIME;
+                    SerialMon.print("GPS Loc sattelites too low ");
+                    SerialMon.print(gps->satellites.value());
+                    SerialMon.println("");
+
+                }
+
+                //SerialMon.print(F("LOCATION   Lat="));
+                //SerialMon.print(gps_latitude, 6);
+                //SerialMon.print(F(" Long="));
+                //SerialMon.println(gps_longitude, 6);
+            }
+            else {
+              gps_status=GPS_TIME;
+              SerialMon.println("GPS Location invalid");
+            }
+
+        }
+        printGPSIcon();
         lastGPSUpdate = millis();
     }
 }

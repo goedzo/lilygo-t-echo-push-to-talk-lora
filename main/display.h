@@ -28,4 +28,5 @@ void showError(const char* error_msg);
 void clearScreen();
 void sleepDisplay();
 void printStatusIcons();
+void printGPSIcon();
 #endif

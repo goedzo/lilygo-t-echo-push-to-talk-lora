@@ -41,7 +41,7 @@ int rcv_test_message_counter=0;
 // Range Test vars
 bool range_role_sender=false;
 //Test counters start at 1
-int range_last_count=1;
+int range_last_count=0;
 int range_consecutive_ok=0;
 //We start at Null Island https://en.wikipedia.org/wiki/Null_Island
 double range_home_lat=0;
@@ -126,6 +126,12 @@ void handleAppModes() {
         else if (current_mode == "RANGE") {
             if (debouncedTouchPress()) {
                 range_role_sender=!range_role_sender;
+                //Reset the counters
+                range_last_count=0;
+                range_total_pckt_loss=0;
+                range_consecutive_ok=0;
+                clearScreen();
+                updModeAndChannelDisplay();
                 printRangeStatus();
             }  
 
@@ -186,7 +192,7 @@ void handlePacket(Packet packet) {
           snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
           updDisp(6, buf, false);
 
-          if (packet.isTestMessage()) {
+          if (packet.isTestMessage() || packet.isRangeMessage() ) {
               rcv_test_message_counter=packet.testCounter;
               snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
               updDisp(7, buf, false);
@@ -248,6 +254,21 @@ void handlePacket(Packet packet) {
           if(packet.channel== channels[deviceSettings.channel_idx]) {
               //Let's work on the range
               if (packet.isRangeMessage()){
+                  updDisp(3, packet.content.c_str(),true); //test message and counter
+
+                  char display_msg[30];
+
+                  snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
+                  updDisp(8, display_msg,false);
+                  snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
+                  updDisp(9, display_msg,true);          
+
+
+                  if(range_last_count==0) {
+                      //We just initialized, so reset the counter to what it now is
+                      range_last_count=packet.testCounter-1;
+                  }
+
                   if(packet.testCounter==range_last_count+1) {
                       //No Packet missed!
                       range_last_count++;
@@ -256,13 +277,24 @@ void handlePacket(Packet packet) {
                   else {
                       //Packet loss!
                       int pckt_missed=packet.testCounter-range_last_count+1;
-                      range_total_pckt_loss+=pckt_missed;
-                      range_consecutive_ok=0;
+
+                      if(pckt_missed<0) {
+                          //Sender got reset so no miss
+                          updDisp(6, "Sender was reset",false);
+                      }
+                      else {
+                          range_total_pckt_loss+=pckt_missed;
+                          range_consecutive_ok=0;
+                      }
+
                       range_last_count=packet.testCounter;
                   }
 
                   if(gps_status!=GPS_LOC) {
-                      updDisp(4, "Wait on GPS Lock.",false);
+                      snprintf(display_msg, sizeof(display_msg), "No GPS Fx(%.0f)", gps_hdop );
+                      updDisp(4, display_msg,false);
+                      //Remove Wait for pckg
+                      updDisp(6, "",false);
                   }
                   else {
                       if(range_home_lat==0 && range_home_long==0) {
@@ -271,30 +303,51 @@ void handlePacket(Packet packet) {
                         range_home_long=gps_longitude;
                         updDisp(4, "Home Location OK",true);
                       }
+                      else {
+                        snprintf(display_msg, sizeof(display_msg), "%.6f, %.6f", gps_latitude,gps_longitude );
+                        updDisp(4, display_msg,false);
+                      }
 
                       //Let's calculate the range
                       double distance = TinyGPSPlus::distanceBetween(range_home_lat, range_home_long, gps_latitude, gps_longitude);
-                      if(range_max_dist < distance) {
-                          range_max_dist = distance;
-                      }
-                      if(range_consecutive_ok>2) {
-                          //We had no packet loss, so let's make it the stable distance
-                          range_stable_dist=distance;
+
+                      Serial.print(F("Checking distance: "));
+                      Serial.print(distance,6);
+                      Serial.print(F(" - "));
+                      Serial.print(range_home_lat,7);
+                      Serial.print(F(" "));
+                      Serial.print(range_home_long,7);
+                      Serial.print(F(" / "));
+                      Serial.print(gps_latitude,7);
+                      Serial.print(F(" "));
+                      Serial.print(gps_longitude,7);
+                      Serial.println(F(" #"));
+
+                      if(distance>0) {
+                          if(range_max_dist < distance) {
+                              range_max_dist = distance;
+                          }
+                          if(range_consecutive_ok>2) {
+                              //We had no packet loss, so let's make it the stable distance
+                              range_stable_dist=distance;
+                          }
                       }
 
-                      //Let's print the info
+                      snprintf(display_msg, sizeof(display_msg), "Dist: %.1fm/%.1fm", distance,range_max_dist);
+                      updDisp(5, display_msg,false); 
 
-                      updDisp(4, packet.content.c_str(),false); //test message and counter
-                      char display_msg[30];
-                      snprintf(display_msg, sizeof(display_msg), "Dist: %dm Max: %dm", range_max_dist);
-                      updDisp(5, display_msg,false); //test message and counter
-                      snprintf(display_msg, sizeof(display_msg), "Stable: %dm", range_stable_dist);
-                      updDisp(6, display_msg,false); //test message and counter
-                      snprintf(display_msg, sizeof(display_msg), "Pckt Loss: %dm", range_total_pckt_loss);
-                      updDisp(7, display_msg,false); //test message and counter
-                      snprintf(display_msg, sizeof(display_msg), "Pckt Ok: %dm", range_consecutive_ok);
-                      updDisp(8, display_msg,false); //test message and counter
                   }
+
+
+                  //Let's print the info
+                  snprintf(display_msg, sizeof(display_msg), "Stable: %.1fm", range_stable_dist);
+                  updDisp(6, display_msg,false); //test message and counter
+
+                  snprintf(display_msg, sizeof(display_msg), "PLoss: %d/%d ok", range_total_pckt_loss,range_consecutive_ok);
+                  updDisp(7, display_msg,true); //test message and counter
+
+
+
               }
               else {
                   showError("no range pckt");
@@ -318,9 +371,9 @@ void printRangeStatus() {
             //Location ok!
             updDisp(4, "",true);
         } else {
-            updDisp(4, "Wait on GPS Lock.",true);
+            updDisp(4, " #Wait on GPS Fix",true);
         }
-        updDisp(5, "Wait for pckg",true);
+        updDisp(6, "Wait for pckg",true);
     }
 }
 
@@ -504,8 +557,20 @@ void sendRangeMessage() {
       sendPacket(send_pkt_buf);
       //Give the device some small time to process sending
       delay(100);
+
+      if(gps_status!=GPS_LOC) {
+          snprintf(display_msg, sizeof(display_msg), "No GPS Fx(%.0f)", gps_hdop );
+          updDisp(3, display_msg,false);
+      }
+      else {
+          snprintf(display_msg, sizeof(display_msg), "%.6f, %.6f", gps_latitude,gps_longitude );
+          updDisp(3, display_msg,false);
+      }
+
       snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
       updDisp(5, display_msg,true);
+
+
 
       //Cool of period to allow receiving of messages because of switching from sent to receive takes time
       sendTestMessageTimer = millis();
@@ -559,6 +624,9 @@ void updMode() {
     clearScreen();
     updModeAndChannelDisplay();
     if(current_mode=="RANGE") {
+        //Make sure we reset the count
+        range_last_count=0;
+
         printRangeStatus();
     }
 
