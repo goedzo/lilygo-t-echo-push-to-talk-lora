@@ -9,11 +9,14 @@ extern const char* modes[];
 extern const int numModes;
 extern int modeIndex;
 extern const char* current_mode;
+extern double range_home_lat;
+extern double range_home_long;
 
 
 void setupAppModes();  // Initializes the buttons and configures event handling
 void handleAppModes();  // Manages the different modes (PTT, TXT, TST, RAW)
 void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState);  // Handles button events
+void sendRangeMessage();
 bool debouncedTouchPress();
 void sendAudio();  // Handles audio transmission in PTT mode
 void sendTestMessage(bool now=false);  // Sends a test message in TST mode
@@ -23,4 +26,5 @@ void updChannel();  // Cycles through the channels
 void powerOff(); //Powers off the device
 void sleepAudio();
 void turnoffLed();
+void printRangeStatus();
 #endif

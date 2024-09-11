@@ -37,7 +37,7 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
     content = String((char*)(buffer + 3));
 
     // Check if this is a test message and extract the test counter
-    if (isTestMessage()) {
+    if (isTestMessage() || isRangeMessage()) {
         const char* testCounterStr = content.c_str() + 4;
         testCounter = atoi(testCounterStr);
     } else {
@@ -50,6 +50,11 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
 bool Packet::isTestMessage() const {
     return type.startsWith("TX") && content.startsWith("test");
 }
+
+bool Packet::isRangeMessage() const {
+    return type.startsWith("RN") && content.startsWith("test");
+}
+
 
 bool Packet::parseHeader(const uint8_t* buffer, uint16_t bufferSize) {
     if (bufferSize < 3) {

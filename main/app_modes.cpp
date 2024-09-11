@@ -1,5 +1,6 @@
 #include <AceButton.h>
 #include <codec2.h>
+#include <TinyGPS++.h>
 #include "utilities.h"
 
 #include "gps.h"
@@ -39,12 +40,16 @@ int rcv_test_message_counter=0;
 
 // Range Test vars
 bool range_role_sender=false;
-int range_last_count=0;
+//Test counters start at 1
+int range_last_count=1;
 int range_consecutive_ok=0;
 //We start at Null Island https://en.wikipedia.org/wiki/Null_Island
 double range_home_lat=0;
 double range_home_long=0;
+double range_max_dist;
+double range_stable_dist;
 int range_total_pckt_loss=0;
+
 
 // Button objects
 // Define the pin numbers
@@ -96,10 +101,17 @@ void handleAppModes() {
 
             //Non blocking send
             sendTestMessage();
-        } else if (current_mode == "TXT" || current_mode == "RAW") {
+        } 
+        else if (current_mode == "TXT") {
             if(digitalRead(TOUCH_PIN) == LOW) {
               //Let's synch the packet count to the last received test counter
               pckt_count=rcv_test_message_counter;
+            }
+        }
+        else if (current_mode == "RAW") {
+            if(digitalRead(TOUCH_PIN) == LOW) {
+              //Let's synch the packet count to the last received test counter
+              pckt_count=test_message_counter;
             }
         }
         else if (current_mode == "PONG") {
@@ -111,8 +123,205 @@ void handleAppModes() {
               sendPacket("Ping!");
             }
         }
+        else if (current_mode == "RANGE") {
+            if (debouncedTouchPress()) {
+                range_role_sender=!range_role_sender;
+                printRangeStatus();
+            }  
+
+            if(range_role_sender) {
+                //We are a sender, so we can sent the range messages
+                sendRangeMessage();
+            }
+            else {
+                //We are receiver, will be handled with receive packet
+            }
+
+
+        }
     }
 
+}
+
+void handlePacket(Packet packet) {
+    if (packet.type == "NULL") {
+      // Handle unknown packet type and show the raw message
+      updDisp(3, "Unknwn pcket tpe", true);
+
+      char display_msg[30];
+      snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
+      updDisp(5, display_msg,false);
+      snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
+      updDisp(6, display_msg,false);
+
+
+      char rawMessage[packet.rawLength * 4 + 1];  // Enough space for each byte as either ASCII or hex
+      uint16_t index = 0;
+      for (uint16_t i = 0; i < packet.rawLength; i++) {
+          if (isprint(packet.raw[i])) {
+              rawMessage[index++] = packet.raw[i];  // Copy printable characters directly
+          } else {
+              sprintf(rawMessage + index, "\\x%02X", packet.raw[i]);  // Convert non-printable byte to hex
+              index += 4;  // Move index forward by 4 (for \xNN)
+          }
+      }
+      rawMessage[index] = '\0';  // Null-terminate the string
+      updDisp(7, rawMessage, true);  // Display the raw message in hexadecimal
+    } 
+    else {
+      // Parse the packet using the current channel configuration
+      if (current_mode == "RAW" || current_mode == "TST") {
+          //Cool of period to allow receiving of messages because of switching from sent to receive takes time
+          sendTestMessageTimer = millis();
+
+          pckt_count++;
+          char buf[50];
+
+          char display_msg[30];
+          snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
+          updDisp(4, display_msg,false);
+          snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
+          updDisp(5, display_msg,false);
+
+          snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
+          updDisp(6, buf, false);
+
+          if (packet.isTestMessage()) {
+              rcv_test_message_counter=packet.testCounter;
+              snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
+              updDisp(7, buf, false);
+
+          } else {
+              updDisp(7, "", false);
+          }
+
+          updDisp(8, packet.content.c_str(), true);
+
+      } 
+      else if (current_mode == "PTT" && packet.type == "PTT") {
+          if(packet.channel== channels[deviceSettings.channel_idx]) {
+              //This is actually meant for my channel
+              uint8_t rcv_mode = packet.content[0];
+              if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
+                  codec = codec2_create(bitrate_modes[rcv_mode]);
+                  //codec2_decode(codec, raw_buf, packet.content + 1);
+                  playAudio(raw_buf, RAW_SIZE);
+                  updDisp(1, "Receiving...", false);
+              } else {
+                  updDisp(2, "Invalid mode received", true);
+              }
+          }
+      } 
+      else if (current_mode == "TXT" && packet.type == "TXT") {
+          if(packet.channel== channels[deviceSettings.channel_idx]) {
+              //This is actually meant for my channel
+              updDisp(7, packet.content.c_str(), true);
+          }
+      }
+      else if (current_mode == "PONG" && packet.type == "PING") {
+          //We pong this message
+            updDisp(5, "       pong",false);
+
+            // Print RSSI (Received Signal Strength Indicator)
+            Serial.print(F("[SX1262] RSSI:\t\t"));
+            Serial.print(radio->getRSSI());
+            Serial.println(F(" dBm"));
+
+            // Print SNR (Signal-to-Noise Ratio)
+            Serial.print(F("[SX1262] SNR:\t\t"));
+            Serial.print(radio->getSNR());
+            Serial.println(F(" dB"));
+
+            char display_msg[30];
+            snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
+            updDisp(6, display_msg,false);
+            snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
+            updDisp(7, display_msg,true);          
+
+            // Send another packet
+            Serial.print(F("[SX1262] Sending another packet ... "));
+            updDisp(5, "Ping!",true);
+            sendPacket("Ping!");
+
+      } 
+      else if (current_mode == "RANGE" && packet.type == "RANGE") {
+          if(packet.channel== channels[deviceSettings.channel_idx]) {
+              //Let's work on the range
+              if (packet.isRangeMessage()){
+                  if(packet.testCounter==range_last_count+1) {
+                      //No Packet missed!
+                      range_last_count++;
+                      range_consecutive_ok++;
+                  }
+                  else {
+                      //Packet loss!
+                      int pckt_missed=packet.testCounter-range_last_count+1;
+                      range_total_pckt_loss+=pckt_missed;
+                      range_consecutive_ok=0;
+                      range_last_count=packet.testCounter;
+                  }
+
+                  if(gps_status!=GPS_LOC) {
+                      updDisp(4, "Wait on GPS Lock.",false);
+                  }
+                  else {
+                      if(range_home_lat==0 && range_home_long==0) {
+                        //Let's set our homebase
+                        range_home_lat=gps_latitude;
+                        range_home_long=gps_longitude;
+                        updDisp(4, "Home Location OK",true);
+                      }
+
+                      //Let's calculate the range
+                      double distance = TinyGPSPlus::distanceBetween(range_home_lat, range_home_long, gps_latitude, gps_longitude);
+                      if(range_max_dist < distance) {
+                          range_max_dist = distance;
+                      }
+                      if(range_consecutive_ok>2) {
+                          //We had no packet loss, so let's make it the stable distance
+                          range_stable_dist=distance;
+                      }
+
+                      //Let's print the info
+
+                      updDisp(4, packet.content.c_str(),false); //test message and counter
+                      char display_msg[30];
+                      snprintf(display_msg, sizeof(display_msg), "Dist: %dm Max: %dm", range_max_dist);
+                      updDisp(5, display_msg,false); //test message and counter
+                      snprintf(display_msg, sizeof(display_msg), "Stable: %dm", range_stable_dist);
+                      updDisp(6, display_msg,false); //test message and counter
+                      snprintf(display_msg, sizeof(display_msg), "Pckt Loss: %dm", range_total_pckt_loss);
+                      updDisp(7, display_msg,false); //test message and counter
+                      snprintf(display_msg, sizeof(display_msg), "Pckt Ok: %dm", range_consecutive_ok);
+                      updDisp(8, display_msg,false); //test message and counter
+                  }
+              }
+              else {
+                  showError("no range pckt");
+              }
+          }
+      }
+    }
+}
+
+
+void printRangeStatus() {
+    if(range_role_sender) {
+        updDisp(2, "Role: Sender",true);
+    }
+    else {
+        updDisp(2, "Role: Receiver",false);
+        if(gps_status==NO_GPS) {
+            showError("No GPS Installed!");
+        }
+        else if (gps_status==GPS_LOC) {
+            //Location ok!
+            updDisp(4, "",true);
+        } else {
+            updDisp(4, "Wait on GPS Lock.",true);
+        }
+        updDisp(5, "Wait for pckg",true);
+    }
 }
 
 // Function to handle debouncing for the touch button
@@ -277,6 +486,34 @@ void sendAudio() {
     }
 }
 
+void sendRangeMessage() {
+    if (millis() - sendTestMessageTimer > 5000 ) {
+      sendTestMessageTimer = millis();
+
+      test_message_counter++;
+      char test_msg[50];
+      snprintf(test_msg, sizeof(test_msg), "test%d", test_message_counter);
+
+      char send_pkt_buf[50];
+      snprintf((char*)send_pkt_buf, sizeof(send_pkt_buf), "RN%c%s%d", channels[deviceSettings.channel_idx], "test", test_message_counter);
+
+      char display_msg[30];
+      snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
+      updDisp(4, display_msg,true);
+
+      sendPacket(send_pkt_buf);
+      //Give the device some small time to process sending
+      delay(100);
+      snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
+      updDisp(5, display_msg,true);
+
+      //Cool of period to allow receiving of messages because of switching from sent to receive takes time
+      sendTestMessageTimer = millis();
+    }
+
+}
+
+
 void sendTestMessage(bool now) {
     //Only do this every 2 seconds or when now=true
 
@@ -306,126 +543,26 @@ void sendTestMessage(bool now) {
 
 }
 
-void handlePacket(Packet packet) {
-    if (packet.type == "NULL") {
-      // Handle unknown packet type and show the raw message
-      updDisp(3, "Unknwn pcket tpe", true);
-
-      char display_msg[30];
-      snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
-      updDisp(5, display_msg,false);
-      snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
-      updDisp(6, display_msg,false);
-
-
-      char rawMessage[packet.rawLength * 4 + 1];  // Enough space for each byte as either ASCII or hex
-      uint16_t index = 0;
-      for (uint16_t i = 0; i < packet.rawLength; i++) {
-          if (isprint(packet.raw[i])) {
-              rawMessage[index++] = packet.raw[i];  // Copy printable characters directly
-          } else {
-              sprintf(rawMessage + index, "\\x%02X", packet.raw[i]);  // Convert non-printable byte to hex
-              index += 4;  // Move index forward by 4 (for \xNN)
-          }
-      }
-      rawMessage[index] = '\0';  // Null-terminate the string
-      updDisp(7, rawMessage, true);  // Display the raw message in hexadecimal
-    } 
-    else {
-      // Parse the packet using the current channel configuration
-      if (current_mode == "RAW" || current_mode == "TST") {
-          //Cool of period to allow receiving of messages because of switching from sent to receive takes time
-          sendTestMessageTimer = millis();
-
-          pckt_count++;
-          char buf[50];
-
-          char display_msg[30];
-          snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
-          updDisp(4, display_msg,false);
-          snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
-          updDisp(5, display_msg,false);
-
-          snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
-          updDisp(6, buf, false);
-
-          if (packet.isTestMessage()) {
-              rcv_test_message_counter=packet.testCounter;
-              snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
-              updDisp(7, buf, false);
-
-          } else {
-              updDisp(7, "", false);
-          }
-
-          updDisp(8, packet.content.c_str(), true);
-
-      } 
-      else if (current_mode == "PTT" && packet.type == "PTT") {
-          if(packet.channel== channels[deviceSettings.channel_idx]) {
-              //This is actually meant for my channel
-              uint8_t rcv_mode = packet.content[0];
-              if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
-                  codec = codec2_create(bitrate_modes[rcv_mode]);
-                  //codec2_decode(codec, raw_buf, packet.content + 1);
-                  playAudio(raw_buf, RAW_SIZE);
-                  updDisp(1, "Receiving...", false);
-              } else {
-                  updDisp(2, "Invalid mode received", true);
-              }
-          }
-      } 
-      else if (current_mode == "TXT" && packet.type == "TXT") {
-          if(packet.channel== channels[deviceSettings.channel_idx]) {
-              //This is actually meant for my channel
-              updDisp(7, packet.content.c_str(), true);
-          }
-      }
-      else if (current_mode == "PONG" && packet.type == "PING") {
-          //We pong this message
-            updDisp(5, "       pong",false);
-
-            // Print RSSI (Received Signal Strength Indicator)
-            Serial.print(F("[SX1262] RSSI:\t\t"));
-            Serial.print(radio->getRSSI());
-            Serial.println(F(" dBm"));
-
-            // Print SNR (Signal-to-Noise Ratio)
-            Serial.print(F("[SX1262] SNR:\t\t"));
-            Serial.print(radio->getSNR());
-            Serial.println(F(" dB"));
-
-            char display_msg[30];
-            snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
-            updDisp(6, display_msg,false);
-            snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
-            updDisp(7, display_msg,true);          
-
-            // Send another packet
-            Serial.print(F("[SX1262] Sending another packet ... "));
-            updDisp(5, "Ping!",true);
-            sendPacket("Ping!");
-
-      } 
-    }
-}
-
-
-
 // Function to cycle through modes
 void updMode() {
     // Increment the mode index and wrap around if necessary
     modeIndex = (modeIndex + 1) % numModes;
     current_mode=modes[modeIndex];
 
-    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" || current_mode=="PONG" ) {
+    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" || current_mode=="PONG" || current_mode=="RANGE" ) {
         //We need to reinit the right radio
         setupLoRa();
     }
 
+
     // Update the mode and channel display
     clearScreen();
     updModeAndChannelDisplay();
+    if(current_mode=="RANGE") {
+        printRangeStatus();
+    }
+
+
     //Make sure we keep receiving messages
     //setupLoRa();
 

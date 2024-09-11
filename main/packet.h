@@ -26,6 +26,8 @@ public:
     // Check if the packet is a valid test message
     bool isTestMessage() const;
 
+    bool isRangeMessage() const;
+
 private:
     bool parseHeader(const uint8_t* buffer, uint16_t bufferSize);
 };

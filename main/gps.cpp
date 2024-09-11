@@ -3,6 +3,7 @@
 #include "settings.h"   // Include for 'time_set' and 'rtc' definitions
 #include "gps.h"
 #include "display.h"
+#include "app_modes.h"
 
 TinyGPSPlus     *gps;
 
@@ -89,6 +90,13 @@ void loopGPS() {
             gps_longitude = gps->location.lng();
             gps_location_age = gps->location.age();
             gps_status = GPS_LOC;  // GPS location found, update status
+
+            //Let's set our home location if needed
+            if(range_home_lat==0 && range_home_long==0) {
+                range_home_lat=gps_latitude;
+                range_home_long=gps_longitude;
+                updDisp(4, "Home Location OK",true);
+            }
 
             //SerialMon.print(F("LOCATION   Lat="));
             //SerialMon.print(gps_latitude, 6);
