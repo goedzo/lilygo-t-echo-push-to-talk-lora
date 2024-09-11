@@ -333,7 +333,7 @@ void handlePacket(Packet packet) {
                           }
                       }
 
-                      snprintf(display_msg, sizeof(display_msg), "Dist: %.1fm/%.1fm", distance,range_max_dist);
+                      snprintf(display_msg, sizeof(display_msg), "Rng:%.1f/%.1fm", distance,range_max_dist);
                       updDisp(5, display_msg,false); 
 
                   }
