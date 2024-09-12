@@ -449,6 +449,8 @@ void setupAppModes() {
 
     modeButton.init(MODE_PIN);
     touchButton.init(TOUCH_PIN);
+    //To avoid power-off when just being booted
+    actionButtonTimer=millis();
 }
 
 void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState) {

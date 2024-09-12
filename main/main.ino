@@ -63,7 +63,6 @@ void setup()
 
     clearScreen();
     updModeAndChannelDisplay();
-
 }
 
 void loop()
