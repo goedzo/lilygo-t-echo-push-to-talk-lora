@@ -178,6 +178,11 @@ void handleAppModes() {
             }
         } 
         else if (current_mode == "SCAN") {
+            if(digitalRead(TOUCH_PIN) == LOW) {
+                //Let's clearout the scan-list
+                initTopChannels();
+            }
+
             // Handle the SCAN mode
             handleFrequencyScan();  // Call the non-blocking scan function
         }    

@@ -8,7 +8,7 @@
 // Variables to control the scanning process
 float startFreq = 863.0; //869.46;
 float endFreq = 869.65; //869.48;
-float stepSize = 0.10;//0.01;
+float stepSize = 0.05;//0.01;
 int numSamples = 10;
 float currentFreq = startFreq;
 int sampleCount = 0;
@@ -28,6 +28,7 @@ void initTopChannels() {
         topChannels[i] = {0, -999, -999, 0};  // Invalid values to start
     }
     displayLine = 2;  // Reset the display line counter
+    printTopChannels();
     //clearScreen();  // Clear the display before starting scan
     updDisp(1, "Scanning...", true);  // Display initial message
 }

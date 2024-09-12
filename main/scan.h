@@ -13,6 +13,7 @@ struct ChannelResult {
 
 // Function declarations for frequency scan operations
 void startScanFrequencies();
+void initTopChannels();
 void stopScanFrequencies();
 void handleFrequencyScan();
 void printTopChannels();
