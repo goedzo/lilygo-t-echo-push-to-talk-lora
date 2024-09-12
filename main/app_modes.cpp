@@ -10,11 +10,12 @@
 #include "settings.h"
 #include "app_modes.h"
 #include "packet.h"
+#include "scan.h"
 
 using namespace ace_button;
 
 // Define an array of mode names as strings
-const char* modes[] = { "RAW","TXT", "RANGE", "PONG","TST","PTT"};
+const char* modes[] = { "RAW","TXT", "SCAN","RANGE", "PONG","TST","PTT"};
 const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 0;
 const char* current_mode=modes[modeIndex];
@@ -62,6 +63,39 @@ AceButton touchButton(TOUCH_PIN);
 unsigned long lastTouchPressTime = 0; // Timestamp of the last button press
 unsigned long debounceDelay = 50;     // Debounce time in milliseconds
 bool touchButtonPressed = false;      // Flag to track the debounced state
+
+
+// Function to cycle through modes
+void updMode() {
+    // Increment the mode index and wrap around if necessary
+    modeIndex = (modeIndex + 1) % numModes;
+    current_mode=modes[modeIndex];
+
+    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" || current_mode=="PONG" || current_mode=="RANGE" || current_mode=="SCAN") {
+        //We need to reinit the right radio
+        setupLoRa();
+    }
+
+
+    // Update the mode and channel display
+    clearScreen();
+    updModeAndChannelDisplay();
+    if(current_mode=="RANGE") {
+        //Make sure we reset the count
+        range_last_count=0;
+
+        printRangeStatus();
+    }
+
+    // Handle mode-specific initialization
+    if (current_mode == "SCAN") {
+        startScanFrequencies();  // Start the scan process when SCAN mode is selected
+    } else {
+        stopScanFrequencies();   // Ensure the scan is stopped when switching out of SCAN mode
+    }
+
+}
+
 
 // The main loop that is the logic for all app modes
 void handleAppModes() {
@@ -142,11 +176,12 @@ void handleAppModes() {
             else {
                 //We are receiver, will be handled with receive packet
             }
-
-
-        }
+        } 
+        else if (current_mode == "SCAN") {
+            // Handle the SCAN mode
+            handleFrequencyScan();  // Call the non-blocking scan function
+        }    
     }
-
 }
 
 void handlePacket(Packet packet) {
@@ -608,33 +643,6 @@ void sendTestMessage(bool now) {
 
 }
 
-// Function to cycle through modes
-void updMode() {
-    // Increment the mode index and wrap around if necessary
-    modeIndex = (modeIndex + 1) % numModes;
-    current_mode=modes[modeIndex];
-
-    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" || current_mode=="PONG" || current_mode=="RANGE" ) {
-        //We need to reinit the right radio
-        setupLoRa();
-    }
-
-
-    // Update the mode and channel display
-    clearScreen();
-    updModeAndChannelDisplay();
-    if(current_mode=="RANGE") {
-        //Make sure we reset the count
-        range_last_count=0;
-
-        printRangeStatus();
-    }
-
-
-    //Make sure we keep receiving messages
-    //setupLoRa();
-
-}
 
 void updChannel() {
     updModeAndChannelDisplay();
