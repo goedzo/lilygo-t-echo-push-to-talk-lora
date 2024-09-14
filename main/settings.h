@@ -12,7 +12,7 @@
 
 // Enum for settings note that the first must be =0!
 enum Setting {
-    SPREADING_FACTOR=0,
+    SPREADING_FACTOR = 0,
     CHANNEL,
     BITRATE,
     BACKLIGHT,
@@ -20,9 +20,10 @@ enum Setting {
     HOURS,
     MINUTES,
     SECONDS,
-    BANDWIDTH,    // New bandwidth setting
-    CODING_RATE,  // New coding rate setting
-    NUM_SETTINGS
+    BANDWIDTH,          // New bandwidth setting
+    CODING_RATE,        // New coding rate setting
+    FREQUENCY_HOPPING,  // New frequency hopping setting
+    NUM_SETTINGS        // Always keep this as the last element to track the total number of settings
 };
 
 // Enum for Bandwidth with actual values
@@ -54,15 +55,16 @@ struct DeviceSettings {
     int channel_idx;
     int spreading_factor;
     bool backlight;
-
+    
     // Time-related settings
     int hours;
     int minutes;
     int seconds;
 
     // New settings
-    int bandwidth_idx;   // Index for bandwidth settings
-    int coding_rate_idx; // Index for coding rate settings
+    int bandwidth_idx;      // Index for bandwidth settings
+    int coding_rate_idx;    // Index for coding rate settings
+    bool frequency_hopping_enabled;  // Enable frequency hopping (true/false)
 
     // Methods to increment or cycle settings
     void nextBitrate();
@@ -72,6 +74,7 @@ struct DeviceSettings {
     void nextSpreadingFactor();
     void nextBandwidth();   // New method for bandwidth
     void nextCodingRate();  // New method for coding rate
+    void toggleFrequencyHopping();  // New method to toggle frequency hopping
 };
 
 // External declarations for global variables
@@ -84,7 +87,7 @@ extern PCF8563_Class rtc;              // Allow the RTC to be set from the GPS
 
 extern uint8_t setting_idx;  // Index for the current setting (using the Setting enum)
 extern bool in_settings_mode; // Flag indicating whether the device is in settings mode
-extern bool time_set;
+extern bool time_set;         // Flag to indicate if time is set
 
 // Function prototypes
 void setupSettings();
@@ -100,6 +103,7 @@ void displaySpreadingFactor();
 void displayBacklight();
 void displayBandwidth();   // New function to display bandwidth
 void displayCodingRate();  // New function to display coding rate
+void displayFrequencyHopping();  // New function to display frequency hopping status
 int getBitrateFromIndex(int index);
 
 #endif // SETTINGS_H

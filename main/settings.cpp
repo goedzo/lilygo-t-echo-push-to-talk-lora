@@ -15,6 +15,7 @@ void rtcInterruptCb() {
 }
 
 // Initialize device settings with default values
+// Initialize device settings with default values
 DeviceSettings deviceSettings = {
     .bitrate_idx = 2,
     .volume_level = 5,
@@ -25,7 +26,8 @@ DeviceSettings deviceSettings = {
     .minutes = 0,
     .seconds = 0,
     .bandwidth_idx = BW_250_KHZ, // Set default bandwidth to 250 kHz
-    .coding_rate_idx = CR_5      // Default coding rate
+    .coding_rate_idx = CR_5,     // Default coding rate
+    .frequency_hopping_enabled = true  // Enable frequency hopping by default
 };
 
 // Implementing the methods defined in DeviceSettings struct
@@ -85,6 +87,11 @@ void DeviceSettings::nextCodingRate() {
             case CR_7: coding_rate_idx = CR_8; break;
         }
     }
+}
+
+// Method to toggle frequency hopping
+void DeviceSettings::toggleFrequencyHopping() {
+    frequency_hopping_enabled = !frequency_hopping_enabled;
 }
 
 // Global variables
@@ -182,6 +189,10 @@ void updateCurrentSetting() {
             deviceSettings.nextCodingRate();
             displayCodingRate();
             break;
+        case FREQUENCY_HOPPING:   // New case for frequency hopping
+            deviceSettings.toggleFrequencyHopping();
+            displayFrequencyHopping();
+            break;
     }
     displayCurrentSetting();
 }
@@ -213,6 +224,9 @@ void displayCurrentSetting() {
             break;
         case CODING_RATE:
             displayCodingRate();
+            break;
+        case FREQUENCY_HOPPING:   // New display case for frequency hopping
+            displayFrequencyHopping();
             break;
     }
 }
@@ -289,6 +303,15 @@ void displayCodingRate() {
     char cr_str[20];
     snprintf(cr_str, sizeof(cr_str), "CR: %d", deviceSettings.coding_rate_idx);
     updDisp(2, cr_str);
+}
+
+void displayFrequencyHopping() {
+    updDisp(1, "Frequency Hopping:", true);
+    if (deviceSettings.frequency_hopping_enabled) {
+        updDisp(2, "Enabled", true);
+    } else {
+        updDisp(2, "Disabled", true);
+    }
 }
 
 // Example function to map the bitrate index to actual bitrate value (bps)

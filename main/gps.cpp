@@ -27,7 +27,7 @@ float gps_hdop = 0;
 
 // External variables from settings.h
 extern bool time_set;  // Ensure 'time_set' is declared in settings.h
-extern PCF8563_Class rtc;  // RTC instance from your RTC code
+//extern PCF8563_Class rtc;  // RTC instance from your RTC code
 
 bool setupGPS() {
     SerialMon.println("[GPS] Initializing ... ");

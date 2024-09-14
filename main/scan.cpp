@@ -6,11 +6,7 @@
 #define MAX_TOP_CHANNELS 10
 
 // Variables to control the scanning process
-float startFreq = 863.0; //869.46;
-float endFreq = 869.65; //869.48;
-float stepSize = 0.05;//0.01;
 int numSamples = 10;
-float currentFreq = startFreq;
 int sampleCount = 0;
 float rssiTotal = 0;
 float snrTotal = 0;
@@ -32,24 +28,6 @@ void initTopChannels() {
     //clearScreen();  // Clear the display before starting scan
     updDisp(1, "Scanning...", true);  // Display initial message
 }
-
-// Function to calculate quality rating with 60-40 rule for SNR and RSSI
-int calculateQuality(float rssi, float snr, bool ignoreSNR) {
-    int rssiScore;
-    int snrScore = 0;
-
-    if (ignoreSNR) {
-        // If SNR is unavailable, base the quality entirely on RSSI (scaled 0-100)
-         rssiScore = map(rssi, -130, -20, 0, 100);  // RSSI scaled from 0 (worst) to 100 (best)
-    } else {
-        // When SNR is available, use 60-40 rule: SNR contributes 60%, RSSI 40%
-        rssiScore = map(rssi, -130, -20, 0, 40);  // RSSI contributes up to 40 points
-        snrScore = map(snr, -20, 10, 0, 60);      // SNR contributes up to 60 points
-    }
-
-    return constrain(rssiScore + snrScore, 1, 100);  // Total score out of 100
-}
-
 
 // Add result to the top channels list
 void addResultToTopChannels(float frequency, float rssi, float snr) {
@@ -82,13 +60,23 @@ void addResultToTopChannels(float frequency, float rssi, float snr) {
 
 // Start the frequency scan
 void startScanFrequencies() {
-    currentFreq = startFreq;
+    currentFrequency = startFreq;
     sampleCount = 0;
     rssiTotal = 0;
     snrTotal = 0;
     scanning = true;
     initTopChannels();
     Serial.println(F("Frequency scan started."));
+
+    int state = setFrequency(currentFrequency);
+    if (state != RADIOLIB_ERR_NONE) {
+        Serial.print(F("Failed to set frequency "));
+        Serial.print(currentFrequency);
+        Serial.print(F(" MHz, code "));
+        Serial.println(state);
+    }
+
+
 }
 
 // Stop the frequency scan
@@ -106,10 +94,10 @@ void handleFrequencyScan() {
 
             if (sampleCount == 0) {
                 // Set the current frequency only once, when sampleCount is 0 (i.e., for a new frequency)
-                int state = radio->setFrequency(currentFreq);
+                int state = setFrequency(currentFrequency);
                 if (state != RADIOLIB_ERR_NONE) {
                     Serial.print(F("Failed to set frequency "));
-                    Serial.print(currentFreq);
+                    Serial.print(currentFrequency);
                     Serial.print(F(" MHz, code "));
                     Serial.println(state);
                     return;
@@ -117,7 +105,7 @@ void handleFrequencyScan() {
                 // Start receiving
                 radio->startReceive();
                 char displayString[30];
-                snprintf(displayString, sizeof(displayString), ">Test %.2f MHz", currentFreq);
+                snprintf(displayString, sizeof(displayString), ">Test %.2f MHz", currentFrequency);
                 updDisp(2, displayString, true);  // Print all info on one line
 
             }
@@ -142,7 +130,7 @@ void handleFrequencyScan() {
                 float avgSNR = snrTotal / numSamples;
 
                 // Add result to top channels
-                addResultToTopChannels(currentFreq, avgRSSI, avgSNR);
+                addResultToTopChannels(currentFrequency, avgRSSI, avgSNR);
 
                 printTopChannels();
 
@@ -150,22 +138,22 @@ void handleFrequencyScan() {
                 char displayString[30];
                 updDisp(2, "", false);  // Clear the scanning line
 
-                snprintf(displayString, sizeof(displayString), "%.2f Q%d R%.1f", currentFreq, calculateQuality(avgRSSI, avgSNR,true), avgRSSI);
+                snprintf(displayString, sizeof(displayString), "%.2f Q%d R%.1f", currentFrequency, calculateQuality(avgRSSI, avgSNR,true), avgRSSI);
                 updDisp(1, displayString, true);  // Print all info on one line
 
                 // Move to the next frequency
-                currentFreq += stepSize;
+                currentFrequency += stepSize;
                 sampleCount = 0;
                 rssiTotal = 0;
                 snrTotal = 0;
 
                 // Stop scanning when done or out of space
-                if (currentFreq <= endFreq) {  
+                if (currentFrequency <= endFreq) {  
                     displayLine++;  // Move to the next line for the next result
                 } else {
                     //stopScanFrequencies();
                     //Wrap around
-                    currentFreq=startFreq;
+                    currentFrequency=startFreq;
                     displayLine++;
                 }
             }
