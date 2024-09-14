@@ -29,4 +29,5 @@ void clearScreen();
 void sleepDisplay();
 void printStatusIcons();
 void printGPSIcon();
+void printFrequencyIcon();
 #endif

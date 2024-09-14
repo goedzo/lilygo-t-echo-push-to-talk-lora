@@ -247,5 +247,8 @@ int setFrequency(float freq) {
         Serial.println(state);
     }
 
+    //Show the new freqeuncy on the screen
+    printFrequencyIcon();
+
     return state;  // Return the state (success or error code)
 }

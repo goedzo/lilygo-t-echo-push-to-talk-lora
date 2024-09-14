@@ -4,6 +4,7 @@
 #include "app_modes.h"
 #include "battery.h"
 #include "gps.h"
+#include "lora.h"
 
 
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
@@ -584,6 +585,22 @@ void printGPSIcon() {
   }
 }
 
+void printFrequencyIcon() {
+  //Let's print the current frequency on the left bottom
+  display->fillRect(0, disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset+disp_font_height, 78, disp_font_height, GxEPD_WHITE);
+  display->setCursor(0, disp_height-disp_icon_height-disp_bottom_margin+disp_font_height);
+
+  // Set text color and font
+  display->setTextColor(GxEPD_BLACK);
+  display->setFont(&FreeMonoBold9pt7b);
+
+  char displayString[10];
+  snprintf(displayString, sizeof(displayString), "%.2f", currentFrequency);
+
+  // Print the new line
+  display->print(displayString);
+}
+
 void printStatusIcons(){
   uint8_t batteryPercentage = getBatteryPercentage();
   if(batteryPercentage>90) {
@@ -611,6 +628,7 @@ void printStatusIcons(){
     drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
   }
   printGPSIcon();
+  printFrequencyIcon();
 }
 
 void updModeAndChannelDisplay() {
