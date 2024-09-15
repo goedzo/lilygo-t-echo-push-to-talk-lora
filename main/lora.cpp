@@ -253,3 +253,12 @@ int setFrequency(float freq) {
 
     return state;  // Return the state (success or error code)
 }
+
+// Simple checksum calculation for validating received maps
+unsigned char calculateChecksum(const unsigned char* data, int len) {
+    unsigned char checksum = 0;
+    for (int i = 0; i < len; i++) {
+        checksum ^= data[i];  // XOR all bytes
+    }
+    return checksum;
+}

@@ -44,5 +44,6 @@ int calculateQuality(float rssi, float snr, bool ignoreSNR); // Function to calc
 void markFrequencyAsGood(float freq);            // Mark a frequency as "good" based on quality score
 void markFrequencyAsBad(float freq);             // Mark a frequency as "bad" based on quality score
 int setFrequency(float freq);
+unsigned char calculateChecksum(const unsigned char* data, int len);
 
 #endif // LORA_H
