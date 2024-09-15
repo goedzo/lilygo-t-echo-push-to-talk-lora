@@ -14,7 +14,8 @@
 SX1262* radio = nullptr;
 SPIClass* rfPort = nullptr;
 
-float currentFrequency = 869.47;  // Default frequency
+float defaultFrequency = 869.47;  // Default frequency
+float currentFrequency = defaultFrequency;
 
 // Flag to indicate that a packet was sent or received
 volatile bool operationDone = false;

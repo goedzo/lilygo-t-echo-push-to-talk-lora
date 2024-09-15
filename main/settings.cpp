@@ -7,6 +7,7 @@
 #include "settings.h"
 #include <time.h>  // Include time.h for time manipulation
 
+unsigned long sharedSeed = 7529;
 PCF8563_Class rtc;  // Real-time clock instance
 bool time_set = false;
 volatile bool rtcInterrupt = false;
@@ -92,6 +93,9 @@ void DeviceSettings::nextCodingRate() {
 // Method to toggle frequency hopping
 void DeviceSettings::toggleFrequencyHopping() {
     frequency_hopping_enabled = !frequency_hopping_enabled;
+    if(!frequency_hopping_enabled) {
+        setFrequency(defaultFrequency);
+    }
 }
 
 // Global variables
@@ -103,7 +107,7 @@ const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_160
 const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
 
 void setupSettings() {
-    SerialMon.print("[PCF8563] Initializing ...  ");
+    SerialMon.print("setupSettings Initializing ...  ");
 
     pinMode(RTC_Int_Pin, INPUT);
     attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
@@ -122,7 +126,6 @@ void setupSettings() {
         return;
     }
     SerialMon.println("success");
-
     rtc.begin(Wire);
     rtc.disableAlarm();
     //rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Optional initial time setting
@@ -306,7 +309,7 @@ void displayCodingRate() {
 }
 
 void displayFrequencyHopping() {
-    updDisp(1, "Frequency Hopping:", true);
+    updDisp(1, "Freqncy Hopping:", true);
     if (deviceSettings.frequency_hopping_enabled) {
         updDisp(2, "Enabled", true);
     } else {

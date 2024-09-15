@@ -22,6 +22,7 @@ extern bool transmitFlag;            // Flag to indicate whether we are transmit
 extern size_t timeOnAir;             // Variable to store time-on-air for transmitted packets
 
 // Frequency hopping related
+extern float defaultFrequency;
 extern float currentFrequency;       // Variable to track the current operating frequency
 extern float startFreq;              // Start frequency for hopping
 extern float endFreq;                // End frequency for hopping
