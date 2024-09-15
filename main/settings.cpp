@@ -112,13 +112,16 @@ void setupSettings() {
     pinMode(RTC_Int_Pin, INPUT);
     attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
 
+    SerialMon.println("Starting RTC");
     Wire.begin();
 
     int retry = 3, ret = 0;
     do {
         Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);
         ret = Wire.endTransmission();
-        delay(200);
+        SerialMon.println("Wire.endTransmission");
+        SerialMon.println(ret);
+        delay(500);
     } while (ret != 0 && retry-- > 0);
 
     if (ret != 0) {

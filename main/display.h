@@ -29,5 +29,5 @@ void clearScreen();
 void sleepDisplay();
 void printStatusIcons();
 void printGPSIcon();
-void printFrequencyIcon();
+void printFrequencyIcon(bool updateScreen);
 #endif

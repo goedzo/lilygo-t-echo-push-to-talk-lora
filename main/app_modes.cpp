@@ -15,7 +15,7 @@
 using namespace ace_button;
 
 // Define an array of mode names as strings
-const char* modes[] = { "RAW","TXT", "SCAN","RANGE", "PONG","TST","PTT"};
+const char* modes[] = { "RAW","TXT", "RANGE", "TST","PONG","SCAN","PTT"};
 const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 0;
 const char* current_mode=modes[modeIndex];

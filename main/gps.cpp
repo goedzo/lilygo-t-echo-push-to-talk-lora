@@ -69,7 +69,7 @@ void loopGPS() {
     }
 
     // Only attempt to update RTC if GPS time has been updated and not already synced
-    if (!time_set && gps->time.isUpdated() && gps->date.isUpdated()) {
+    if (gps_satellites >= 5 && gps->time.isUpdated() && gps->date.isUpdated() && digitalRead(Gps_pps_Pin) == HIGH) {
         // Get the GPS time and date
         int gpsHour = gps->time.hour();
         int gpsMinute = gps->time.minute();
@@ -77,11 +77,17 @@ void loopGPS() {
         int gpsYear = gps->date.year();
         int gpsMonth = gps->date.month();
         int gpsDay = gps->date.day();
+        //Only correct it when it's off
 
-        rtc.setDateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond);
-        time_set = true;
-        gps_status = GPS_TIME;  // Set status to GPS_TIME since we found the time
-        SerialMon.println("RTC set from GPS time");
+        RTC_Date currentTime = rtc.getDateTime();  // Get the current time from RTC
+        if(currentTime.second != gpsSecond) {
+            rtc.setDateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond);
+            time_set = true;
+            SerialMon.println("RTC set from GPS time");
+        }
+        if(gps_status==GPS_INIT) {
+            gps_status = GPS_TIME;  // Set status to GPS_TIME since we found the time
+        }
     }
 
     if (millis() - lastGPSUpdate > 5000) {

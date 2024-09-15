@@ -585,7 +585,7 @@ void printGPSIcon() {
   }
 }
 
-void printFrequencyIcon() {
+void printFrequencyIcon(bool updateScreen=false) {
   //Let's print the current frequency on the left bottom
   display->fillRect(0, disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset+disp_font_height, 78, disp_font_height, GxEPD_WHITE);
   display->setCursor(0, disp_height-disp_icon_height-disp_bottom_margin+disp_font_height);
@@ -599,6 +599,9 @@ void printFrequencyIcon() {
 
   // Print the new line
   display->print(displayString);
+  if(updateScreen) {
+      display->displayWindow(0,0,disp_width,disp_height);    
+  }
 }
 
 void printStatusIcons(){

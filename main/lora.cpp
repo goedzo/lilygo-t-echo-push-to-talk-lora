@@ -5,11 +5,13 @@
 #include <GxDEPG0150BN/GxDEPG0150BN.h>  // 1.54" b/w
 #include <RadioLib.h>
 #include <stdint.h>
-#include "settings.h"  // Include settings.h to use global variables
+#include "settings.h"
 #include "display.h"
-#include "app_modes.h"  // Include settings.h to use global variables
+#include "app_modes.h"
 #include "lora.h"
 #include "packet.h"
+#include <time.h>  // For RTC time management
+#include <stdlib.h>  // For random number generation
 
 SX1262* radio = nullptr;
 SPIClass* rfPort = nullptr;
@@ -17,33 +19,169 @@ SPIClass* rfPort = nullptr;
 float defaultFrequency = 869.47;  // Default frequency
 float currentFrequency = defaultFrequency;
 
-// Flag to indicate that a packet was sent or received
-volatile bool operationDone = false;
-bool transmitFlag = false;
-size_t timeOnAir = 0;
+// Frequency hopping related variables
+float startFreq = 863.0;
+float endFreq = 869.65;
+float stepSize = 0.05;
+int numFrequencies = (endFreq - startFreq) / stepSize;
+FrequencyStatus* frequencyMap = nullptr;
 
-// Define frequency hopping related variables here
-float startFreq = 863.0; //869.46;
-float endFreq = 869.65; //869.48;
-float stepSize = 0.05;//0.01;
+volatile bool operationDone = false;  // Flag to indicate radio operation is done
+bool transmitFlag = false;            // Flag for transmission state
+size_t timeOnAir = 0;                 // Time-on-air for transmitted packets
 
+unsigned long lastHopTime = 0;  // Time of last hop
 
-int numFrequencies = (endFreq - startFreq) / stepSize;  // Calculate number of frequencies at runtime
-FrequencyStatus* frequencyMap = nullptr;  // Pointer to store the frequency map
+unsigned long syncLossTimer = 0;  // Timer for detecting lost synchronization
 
+bool mapChanged = false;  // Flag to track if the map has changed locally
+unsigned long lastMapShareTime = 0;  // Last time the map was shared
+unsigned long mapShareDelay = 0;  // Random delay for map sharing
+
+// Function to initialize frequency map
 void initializeFrequencyMap() {
-    // Dynamically allocate the frequency map array
+    SerialMon.print("initializeFrequencyMap Initializing ...  ");
     frequencyMap = new FrequencyStatus[numFrequencies];
     for (int i = 0; i < numFrequencies; i++) {
         frequencyMap[i].frequency = startFreq + (i * stepSize);
-        frequencyMap[i].isGood = true;  // Start by assuming all frequencies are good
+        frequencyMap[i].status = FREQUENCY_GOOD;  // Start by assuming all frequencies are good
+    }
+}
+
+// Pseudo-random frequency hopping based on a shared time source and randomness
+float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
+    // Combine sharedTime and sharedSeed for randomness
+    unsigned long randomValue = sharedTime ^ sharedSeed;  // XOR the time with the seed for randomness
+    Serial.print(F("SharedTime: ")); 
+    Serial.println(sharedTime);
+    Serial.print(F("SharedSeed: "));
+    Serial.println(sharedSeed);
+    Serial.print(F("RandomValue: "));
+    Serial.println(randomValue);
+
+    // Generate a random starting index
+    int startingIndex = randomValue % numFrequencies;
+    Serial.print(F("Starting Index: "));
+    Serial.println(startingIndex);
+
+    // Loop through the frequencies starting from the random index
+    for (int i = 0; i < numFrequencies; i++) {
+        int index = (startingIndex + i) % numFrequencies;  // Wrap around if we exceed the range
+        Serial.print(F("Checking Frequency Index: "));
+        Serial.println(index);
+        Serial.print(F("Frequency: "));
+        Serial.println(frequencyMap[index].frequency);
+        Serial.print(F("Frequency Status: "));
+        Serial.println(frequencyMap[index].status);
+
+        if (frequencyMap[index].status == FREQUENCY_GOOD) {
+            Serial.print(F("Selected Frequency: "));
+            Serial.println(frequencyMap[index].frequency);
+            return frequencyMap[index].frequency;  // Return the good frequency
+        }
+    }
+
+    // If no good frequency is found, fallback to startFreq
+    Serial.println(F("No good frequency found, falling back to startFreq"));
+    return defaultFrequency;
+}
+
+
+// Function to detect loss of synchronization
+bool isSyncLost() {
+    RTC_Date currentTime = rtc.getDateTime();  // Get the current time from RTC
+    unsigned long currentSharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
+
+    // Calculate expected hop time based on last known good map sharing time
+    unsigned long expectedSharedTime = lastMapShareTime + (millis() - syncLossTimer) / 1000;  // Convert to seconds
+    
+    // Calculate the time difference between current and expected
+    long timeDifference = abs((long)(currentSharedTime - expectedSharedTime));
+
+    // Consider sync lost if the time difference exceeds a threshold (e.g., 5 seconds)
+    if (timeDifference > 5) {  // Adjustable threshold
+        Serial.print(F("Sync loss detected. Time difference: "));
+        Serial.println(timeDifference);
+        return true;
+    }
+
+    // If the time difference is within the threshold, sync is not lost
+    return false;
+}
+
+
+// Simple checksum calculation for validating received maps
+unsigned char calculateChecksum(const unsigned char* data, int len) {
+    unsigned char checksum = 0;
+    for (int i = 0; i < len; i++) {
+        checksum ^= data[i];  // XOR all bytes
+    }
+    return checksum;
+}
+
+// Function to share the frequency map with other devices
+void shareFrequencyMap() {
+    char send_pkt_buf[155];
+    snprintf(send_pkt_buf, sizeof(send_pkt_buf), "MAP");  // Add "MAP" header
+
+    unsigned char frequencyStatusData[numFrequencies];
+    for (int i = 0; i < numFrequencies; i++) {
+        frequencyStatusData[i] = (frequencyMap[i].status == FREQUENCY_BAD_LOCAL) ? 0 : 1;  // Only share locally marked bad frequencies
+    }
+
+    // Append the frequency status data to the packet
+    memcpy(send_pkt_buf + 3, frequencyStatusData, numFrequencies);
+
+    // Calculate checksum and append it
+    unsigned char checksum = calculateChecksum((unsigned char*)send_pkt_buf, numFrequencies + 3);
+    send_pkt_buf[numFrequencies + 3] = checksum;
+
+    // Send the frequency map packet with the "MAP" header
+    sendPacket((uint8_t*)send_pkt_buf, numFrequencies + 4);  // +4 to include header and checksum
+
+    // Reset the mapChanged flag and set the last shared time
+    mapChanged = false;
+    lastMapShareTime = millis();
+}
+
+// Function to update local frequency map based on received data
+void updateFrequencyMap(const unsigned char* receivedData, int len) {
+    // Validate the checksum
+    if (calculateChecksum(receivedData, len - 1) != receivedData[len - 1]) {
+        Serial.println("Invalid frequency map received");
+        return;  // Invalid map, do not update
+    }
+
+    // Merge the received map into the local map, keeping locally marked bad channels
+    for (int i = 0; i < len - 1 && i < numFrequencies; i++) {
+        if (frequencyMap[i].status == FREQUENCY_GOOD && receivedData[i] == 0) {
+            // If it was good locally but bad in the received map, mark it bad externally
+            frequencyMap[i].status = FREQUENCY_BAD_EXTERNAL;
+        } else if (frequencyMap[i].status == FREQUENCY_BAD_LOCAL && receivedData[i] == 0) {
+            // If it was bad locally and bad in the received map, mark it bad by both
+            frequencyMap[i].status = FREQUENCY_BAD_BOTH;
+        }
     }
 }
 
 void setFlag(void) {
-    operationDone = true;  // Set the flag when a packet is sent or received
+    operationDone = true;
 }
 
+// Function to handle map sharing logic
+void handleMapSharing() {
+    if(deviceSettings.frequency_hopping_enabled) {
+      if (mapChanged) {
+          // Check if it's time to share the map
+          unsigned long currentTime = millis();
+          if (currentTime - lastMapShareTime >= mapShareDelay) {
+              shareFrequencyMap();
+          }
+      }
+    }
+}
+
+// Handle AFH and packet completion
 void checkLoraPacketComplete() {
     if (operationDone) {
         operationDone = false;
@@ -54,9 +192,6 @@ void checkLoraPacketComplete() {
                 Serial.println("Packet was Sent, finishTransmit");
             } else {
                 Serial.print(F("Sent failed, code "));
-                char buf[50];
-                snprintf(buf, sizeof(buf), "Sent Err: %d", state);
-                showError(buf);
                 Serial.println(state);
             }
             radio->startReceive();  // Start receiving after transmission
@@ -75,7 +210,7 @@ void checkLoraPacketComplete() {
                     if (packet.parsePacket(rcv_pkt_buf, packet_len)) {
                         handlePacket(packet);
 
-                        // *** Channel Quality Evaluation ***
+                        // Update quality of the current frequency
                         float rssi = radio->getRSSI();
                         float snr = radio->getSNR();
                         int qualityScore = calculateQuality(rssi, snr, false);
@@ -83,53 +218,112 @@ void checkLoraPacketComplete() {
                         if (qualityScore >= QUALITY_THRESHOLD) {
                             markFrequencyAsGood(currentFrequency);
                         } else {
-                            markFrequencyAsBad(currentFrequency);
+                            markFrequencyAsBad(currentFrequency, true);  // Mark bad by local
+                            mapChanged = true;  // Flag that a local change occurred
+                            mapShareDelay = random(1000, 5000);  // Randomize the map share delay (1-5 seconds)
                         }
+
+                        // Update local frequency map if frequency map packet is received
+                        if (packet.type == "MAP") {
+                            updateFrequencyMap(rcv_pkt_buf + 3, packet_len - 4);  // Skip the header and checksum
+                        }
+
+                        // Reset sync loss timer on successful packet
+                        syncLossTimer = millis();
                     } else {
                         Serial.println("Error packet received");
                     }
                 } else if (state != RADIOLIB_ERR_RX_TIMEOUT) {
                     Serial.print(F("Receive failed, code "));
-                    char buf[50];
-                    snprintf(buf, sizeof(buf), "Receive Err: %d", state);
-                    showError(buf);
                     Serial.println(state);
                 }
             }
             radio->startReceive();  // Prepare to receive the next packet
         }
     }
+
+    // Handle frequency hopping using RTC time (hours, minutes, and seconds)
+    if (deviceSettings.frequency_hopping_enabled && time_set) {
+        RTC_Date currentTime = rtc.getDateTime();  // Get current time from the RTC
+        int currentSeconds = currentTime.second;   // Get current seconds value
+
+        // Check if the current seconds are at a hop point (0, 10, 20, 30, 40, 50)
+        if (currentSeconds % 10 == 0 && currentSeconds != lastHopTime) {
+
+            Serial.print(F("Frequency hop at "));
+            Serial.println(currentSeconds);
+
+            // Create a shared time using hours, minutes, and seconds
+            unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
+
+            // Use shared time to get the next frequency using the frequency hopping algorithm
+            float newFrequency = getNextFrequency(sharedTime, sharedSeed);
+
+            // Check for lost synchronization
+            if (isSyncLost()) {
+                Serial.println(F("Sync lost, reinitializing synchronization..."));
+                // Reinitialize sync using the current RTC time
+                lastMapShareTime = sharedTime;
+                syncLossTimer = millis();  // Reset the sync loss timer
+
+                lastHopTime = currentSeconds;  // Update the last hop time
+
+                // Use the reinitialized shared time to get the next frequency
+                newFrequency = getNextFrequency(sharedTime, sharedSeed);
+            }
+
+            setFrequency(newFrequency);  // Set the new frequency
+            lastHopTime = currentSeconds;  // Update the last hop time
+        }
+    }
+    // Handle the map sharing logic
+    handleMapSharing();
 }
 
+// Function to set the frequency and update global state
+int setFrequency(float freq) {
+    int state = radio->setFrequency(freq);
+    if (state == RADIOLIB_ERR_NONE) {
+        currentFrequency = freq;
+        printFrequencyIcon(true);  // Show frequency on screen
+        Serial.print(F("Setting frequency "));
+        Serial.println(freq);
+    } else {
+        Serial.print(F("Failed to set frequency, code "));
+        Serial.print(freq);
+        Serial.print(F(" - "));
+        Serial.println(state);
+    }
+    transmitFlag = false;
+    //Listen to this frequency
+    radio->startReceive();
+    return state;
+}
+
+// Setup LoRa radio
 bool setupLoRa() {
     Serial.print(F("Initializing Lora ... "));
+
 
     transmitFlag = false;
     operationDone = false;
 
-    rfPort = new SPIClass(
-        /*SPIPORT*/NRF_SPIM3,
-        /*MISO*/ LoRa_Miso,
-        /*SCLK*/LoRa_Sclk,
-        /*MOSI*/LoRa_Mosi
-    );
+    rfPort = new SPIClass(NRF_SPIM3, LoRa_Miso, LoRa_Sclk, LoRa_Mosi);
     rfPort->begin();
     SPISettings spiSettings;
 
     radio = new SX1262(new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *rfPort, spiSettings));
 
-    int state = radio->begin(currentFrequency);  // Use currentFrequency
-    if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("success!"));
-    } else {
-        Serial.print(F("failed, code "));
-        Serial.println(state);
-        while (true);
+    int state = radio->begin(defaultFrequency);  // Use currentFrequency
+        if (state == RADIOLIB_ERR_NONE) {
+            Serial.println(F("success!"));
+        } else {
+            Serial.print(F("failed, code "));
+            Serial.println(state);
     }
 
-    radio->setDio1Action(setFlag);  // Set the callback for packet transmission/reception
+    radio->setDio1Action(setFlag);
 
-    // Set Spreading Factor, Bandwidth, Coding Rate
     state = radio->setSpreadingFactor(deviceSettings.spreading_factor);
     state |= radio->setBandwidth(deviceSettings.bandwidth_idx / 1000.0);
     state |= radio->setCodingRate(deviceSettings.coding_rate_idx);
@@ -142,6 +336,15 @@ bool setupLoRa() {
     radio->setPreambleLength(24);
     radio->setOutputPower(20);
     radio->setCurrentLimit(120);
+
+    state = setFrequency(defaultFrequency);
+    if (state == RADIOLIB_ERR_NONE) {
+        Serial.println(F("Setup lora success!"));
+    } else {
+        Serial.print(F("failed, code "));
+        Serial.println(state);
+    }
+
 
     Serial.println(F("LoRa setup completed successfully!"));
     return radio->startReceive() == RADIOLIB_ERR_NONE;
@@ -194,6 +397,9 @@ void sendPacket(const char* str) {
     }
 }
 
+
+
+// Function to calculate quality rating with 60-40 rule for SNR and RSSI
 int calculateQuality(float rssi, float snr, bool ignoreSNR) {
     int rssiScore;
     int snrScore = 0;
@@ -219,46 +425,34 @@ void sleepLoRa() {
     }
 }
 
+// Mark frequency as good
 void markFrequencyAsGood(float freq) {
     for (int i = 0; i < numFrequencies; i++) {
         if (frequencyMap[i].frequency == freq) {
-            frequencyMap[i].isGood = true;
+            frequencyMap[i].status = FREQUENCY_GOOD;
             break;
         }
     }
 }
 
-void markFrequencyAsBad(float freq) {
+// Mark frequency as bad (local or external)
+void markFrequencyAsBad(float freq, bool local) {
     for (int i = 0; i < numFrequencies; i++) {
         if (frequencyMap[i].frequency == freq) {
-            frequencyMap[i].isGood = false;
+            if (local) {
+                if (frequencyMap[i].status == FREQUENCY_BAD_EXTERNAL) {
+                    frequencyMap[i].status = FREQUENCY_BAD_BOTH;
+                } else {
+                    frequencyMap[i].status = FREQUENCY_BAD_LOCAL;
+                }
+            } else {
+                if (frequencyMap[i].status == FREQUENCY_BAD_LOCAL) {
+                    frequencyMap[i].status = FREQUENCY_BAD_BOTH;
+                } else {
+                    frequencyMap[i].status = FREQUENCY_BAD_EXTERNAL;
+                }
+            }
             break;
         }
     }
-}
-
-// New function to set frequency
-int setFrequency(float freq) {
-    int state = radio->setFrequency(freq);  // Set frequency on the radio
-
-    if (state == RADIOLIB_ERR_NONE) {
-        currentFrequency = freq;  // Update the global frequency variable if successful
-    } else {
-        Serial.print(F("Failed to set frequency, code "));
-        Serial.println(state);
-    }
-
-    //Show the new freqeuncy on the screen
-    printFrequencyIcon();
-
-    return state;  // Return the state (success or error code)
-}
-
-// Simple checksum calculation for validating received maps
-unsigned char calculateChecksum(const unsigned char* data, int len) {
-    unsigned char checksum = 0;
-    for (int i = 0; i < len; i++) {
-        checksum ^= data[i];  // XOR all bytes
-    }
-    return checksum;
 }

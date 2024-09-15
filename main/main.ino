@@ -41,17 +41,21 @@ void setup()
     boardInit();
     updDisp(4, "Booting...");
 
+    updDisp(5, "Init frequencymap");
+    initializeFrequencyMap();
 
     updDisp(5, "Init lora...");
     setupLoRa();
 
-    updDisp(5, "Init settings...");
-    Serial.println("Init settings\n");
+    //We need a delay so that all devices can be initialized properly
+    delay(1000);
+    updDisp(5, "Init settings..");
     setupSettings();
 
     updDisp(5, "Init gps...");
     Serial.println("Init settings\n");
     setupGPS();
+
 
     updDisp(5, "Setup app modes");
     setupAppModes();
