@@ -22,13 +22,17 @@ float currentFrequency = defaultFrequency;
 // Frequency hopping related variables
 float startFreq = 863.0;
 float endFreq = 869.65;
-float stepSize = 0.05;
+float stepSize = 0.01;
 int numFrequencies = (endFreq - startFreq) / stepSize;
 FrequencyStatus* frequencyMap = nullptr;
+int FrequencyHopSeconds = 17; //After how many seconds do we hop to the next frequency?
 
 volatile bool operationDone = false;  // Flag to indicate radio operation is done
 bool transmitFlag = false;            // Flag for transmission state
 size_t timeOnAir = 0;                 // Time-on-air for transmitted packets
+
+bool hopAfterTxRx = false;            // Hop when our last action was completed
+float hopToFrequency;
 
 unsigned long lastHopTime = 0;  // Time of last hop
 
@@ -194,7 +198,14 @@ void checkLoraPacketComplete() {
                 Serial.print(F("Sent failed, code "));
                 Serial.println(state);
             }
-            radio->startReceive();  // Start receiving after transmission
+            if(hopAfterTxRx) {
+                hopAfterTxRx=false;
+                setFrequency(hopToFrequency);  // Set the new frequency
+            }
+            else {
+                radio->startReceive();  // Start receiving after transmission
+
+            }
             transmitFlag = false;
         } else {
             uint16_t packet_len = radio->getPacketLength(false);
@@ -238,7 +249,13 @@ void checkLoraPacketComplete() {
                     Serial.println(state);
                 }
             }
-            radio->startReceive();  // Prepare to receive the next packet
+            if(hopAfterTxRx){
+                hopAfterTxRx=false;
+                setFrequency(hopToFrequency);  // Set the new frequency
+            }
+            else {
+                radio->startReceive();  // Prepare to receive the next packet
+            }
         }
     }
 
@@ -247,8 +264,8 @@ void checkLoraPacketComplete() {
         RTC_Date currentTime = rtc.getDateTime();  // Get current time from the RTC
         int currentSeconds = currentTime.second;   // Get current seconds value
 
-        // Check if the current seconds are at a hop point (0, 10, 20, 30, 40, 50)
-        if (currentSeconds % 10 == 0 && currentSeconds != lastHopTime) {
+        // Only hop if no transmission/reception is occurring
+        if (currentSeconds % FrequencyHopSeconds == 0 && currentSeconds != lastHopTime) {  // Adjust the hop interval if needed
 
             Serial.print(F("Frequency hop at "));
             Serial.println(currentSeconds);
@@ -271,11 +288,21 @@ void checkLoraPacketComplete() {
                 // Use the reinitialized shared time to get the next frequency
                 newFrequency = getNextFrequency(sharedTime, sharedSeed);
             }
+            if(!transmitFlag && operationDone) {
+                //We must delay until our next radio action is completed
+                hopToFrequency=newFrequency;
+                hopAfterTxRx=true;
 
-            setFrequency(newFrequency);  // Set the new frequency
+            }
+            else {
+                //We can hop, as nothing is happening on the radio
+                setFrequency(newFrequency);  // Set the new frequency
+            }
+            
             lastHopTime = currentSeconds;  // Update the last hop time
         }
     }
+
     // Handle the map sharing logic
     handleMapSharing();
 }
@@ -304,6 +331,7 @@ int setFrequency(float freq) {
 bool setupLoRa() {
     Serial.print(F("Initializing Lora ... "));
 
+    hopAfterTxRx=false;
 
     transmitFlag = false;
     operationDone = false;
@@ -336,7 +364,7 @@ bool setupLoRa() {
     radio->setPreambleLength(24);
     radio->setOutputPower(20);
     radio->setCurrentLimit(120);
-
+/*
     state = setFrequency(defaultFrequency);
     if (state == RADIOLIB_ERR_NONE) {
         Serial.println(F("Setup lora success!"));
@@ -344,7 +372,7 @@ bool setupLoRa() {
         Serial.print(F("failed, code "));
         Serial.println(state);
     }
-
+*/
 
     Serial.println(F("LoRa setup completed successfully!"));
     return radio->startReceive() == RADIOLIB_ERR_NONE;

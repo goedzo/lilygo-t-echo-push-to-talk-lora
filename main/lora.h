@@ -35,6 +35,8 @@ extern int numFrequencies;
 extern volatile bool operationDone;  // Flag to indicate a completed radio operation (sent/received)
 extern bool transmitFlag;            // Flag to indicate whether we are transmitting a packet
 extern size_t timeOnAir;             // Variable to store time-on-air for transmitted packets
+extern bool hopAfterTxRx;            // Hop when our last action was completed
+extern float hopToFrequency;
 
 
 // Function declarations

@@ -125,7 +125,8 @@ void handleAppModes() {
     if (!in_settings_mode) {
         if (current_mode == "PTT") {
             //sendAudio();
-        } else if (current_mode == "TST") {
+        } 
+        else if (current_mode == "TST") {
 
             if(digitalRead(TOUCH_PIN) == LOW) {
               //Let's reset the counters
@@ -138,14 +139,13 @@ void handleAppModes() {
         } 
         else if (current_mode == "TXT") {
             if(digitalRead(TOUCH_PIN) == LOW) {
-              //Let's synch the packet count to the last received test counter
-              pckt_count=rcv_test_message_counter;
+                //Maybe show text-input for keyboard entry?
             }
         }
         else if (current_mode == "RAW") {
             if(digitalRead(TOUCH_PIN) == LOW) {
               //Let's synch the packet count to the last received test counter
-              pckt_count=test_message_counter;
+              pckt_count=rcv_test_message_counter;
             }
         }
         else if (current_mode == "PONG") {

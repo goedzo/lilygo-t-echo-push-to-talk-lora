@@ -107,28 +107,42 @@ const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_160
 const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
 
 void setupSettings() {
-    SerialMon.print("setupSettings Initializing ...  ");
+    Serial.print("setupSettings Initializing ...  ");
 
+    //We need to make sure the I2C bus is properly initialized
+
+    pinMode(SCL_Pin, OUTPUT);
+    for (int i = 0; i < 9; i++) {
+        digitalWrite(SCL_Pin, HIGH);
+        delay(10);
+        digitalWrite(SCL_Pin, LOW);
+        delay(10);
+    }
+    Wire.begin();  // Re-initialize I2C bus    
+
+    Serial.print("pinMode(RTC_Int_Pin, INPUT);");
     pinMode(RTC_Int_Pin, INPUT);
+    Serial.print("attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);");
     attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
 
-    SerialMon.println("Starting RTC");
+    Serial.println("Starting RTC");
     Wire.begin();
 
     int retry = 3, ret = 0;
     do {
+        Serial.println("Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);");
         Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);
+        delay(200);
         ret = Wire.endTransmission();
-        SerialMon.println("Wire.endTransmission");
-        SerialMon.println(ret);
-        delay(500);
+        Serial.println("Wire.endTransmission");
+        Serial.println(ret);
     } while (ret != 0 && retry-- > 0);
 
     if (ret != 0) {
-        SerialMon.println("failed");
+        Serial.println("failed");
         return;
     }
-    SerialMon.println("success");
+    Serial.println("success");
     rtc.begin(Wire);
     rtc.disableAlarm();
     //rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Optional initial time setting

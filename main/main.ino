@@ -48,7 +48,7 @@ void setup()
     setupLoRa();
 
     //We need a delay so that all devices can be initialized properly
-    delay(1000);
+    Serial.println("Init settings\n");
     updDisp(5, "Init settings..");
     setupSettings();
 
