@@ -152,7 +152,7 @@ void handleAppModes() {
             if (debouncedTouchPress()) {
               //We start on the buttonpress
               updDisp(4, "Started pingpong",true);
-              Serial.print(F("[SX1262] Sending another packet ... "));
+              Serial.println(F("[SX1262] Sending another packet ... "));
               updDisp(5, "Ping!",true);
               sendPacket("Ping!");
             }

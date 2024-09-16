@@ -194,6 +194,7 @@ void checkLoraPacketComplete() {
         operationDone = false;
 
         if (transmitFlag) {
+            transmitFlag = false;
             int state = radio->finishTransmit();
             if (state == RADIOLIB_ERR_NONE) {
                 Serial.println("Packet was Sent, finishTransmit");
@@ -209,7 +210,6 @@ void checkLoraPacketComplete() {
                 radio->startReceive();  // Start receiving after transmission
 
             }
-            transmitFlag = false;
         } else {
             uint16_t packet_len = radio->getPacketLength(false);
             uint16_t irqStatus = radio->getIrqStatus();

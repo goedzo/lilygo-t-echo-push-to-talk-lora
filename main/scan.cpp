@@ -14,6 +14,8 @@ bool scanning = false;
 unsigned long lastScanTime = 0;
 unsigned long scanInterval = 150;  // Time between samples in milliseconds
 int displayLine = 2;  // Start at line 2 for displaying messages
+float enterFrequency = defaultFrequency; //If we exit scan, we must go back to the enter freq
+
 
 // Array to store the top 10 results
 ChannelResult topChannels[MAX_TOP_CHANNELS];
@@ -60,6 +62,9 @@ void addResultToTopChannels(float frequency, float rssi, float snr) {
 
 // Start the frequency scan
 void startScanFrequencies() {
+    //Save the entry frequency
+    enterFrequency=currentFrequency;
+
     currentFrequency = startFreq;
     sampleCount = 0;
     rssiTotal = 0;
@@ -81,8 +86,12 @@ void startScanFrequencies() {
 
 // Stop the frequency scan
 void stopScanFrequencies() {
-    scanning = false;
-    Serial.println(F("Frequency scan stopped."));
+    if(scanning) {
+        //We stop and revert back to the original frequency
+        setFrequency(enterFrequency);
+        scanning = false;
+        Serial.println(F("Frequency scan stopped."));
+    }
     //printTopChannels();  // Print the final top 10 channels to the display
 }
 
