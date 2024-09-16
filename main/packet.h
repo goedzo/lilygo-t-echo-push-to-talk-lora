@@ -12,9 +12,9 @@ public:
     String content;
     uint8_t* raw;        // Raw message buffer
     uint16_t rawLength;  // Length of the raw message
-    char channel;        // New property to store the channel
-
+    char channel;        // Store the channel
     int testCounter;
+    uint32_t packetCounter;  // Message counter to track duplicates or for other purposes
 
     // Constructor
     Packet();
@@ -26,6 +26,7 @@ public:
     // Check if the packet is a valid test message
     bool isTestMessage() const;
 
+    // Check if the packet is a valid range message
     bool isRangeMessage() const;
 
 private:

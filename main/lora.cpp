@@ -42,6 +42,9 @@ bool mapChanged = false;  // Flag to track if the map has changed locally
 unsigned long lastMapShareTime = 0;  // Last time the map was shared
 unsigned long mapShareDelay = 0;  // Random delay for map sharing
 
+// Global message counter to find out if we have missed messages
+unsigned int messageCounter = 0;
+
 // Function to initialize frequency map
 void initializeFrequencyMap() {
     SerialMon.print("initializeFrequencyMap Initializing ...  ");
@@ -385,6 +388,19 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
         return;
     }
 
+    // Increment the message counter for each new packet
+    messageCounter++;
+
+
+    // Calculate the size of the new packet buffer (original packet size + 4 digits for message counter)
+    uint16_t newLen = len + 4;  // Original length + 4 digits for the message counter
+    // Create a dynamically sized buffer for the packet
+    char* send_pkt_buf = new char[newLen + 1];  // +1 for null terminator
+    // Copy the original packet data to the new buffer
+    memcpy(send_pkt_buf, pkt_buf, len);
+    // Append the message counter to the end of the packet (as a 4-digit number)
+    snprintf(send_pkt_buf + len, newLen + 1 - len, "%04u", messageCounter);
+
     timeOnAir = radio->getTimeOnAir(len);
     Serial.print(F("Time-on-Air (ms): "));
     Serial.println(timeOnAir);
@@ -400,6 +416,10 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
         showError(buf);
         setupLoRa();  // Reinitialize the radio
     }
+
+    // Free the dynamically allocated buffer
+    delete[] send_pkt_buf;
+
 }
 
 void sendPacket(const char* str) {
@@ -408,12 +428,32 @@ void sendPacket(const char* str) {
         return;
     }
 
-    timeOnAir = radio->getTimeOnAir(strlen(str));
+    // Increment the message counter
+    messageCounter++;
+
+    // Calculate the size of the new packet buffer (original packet size + 4 digits for the message counter)
+    uint16_t len = strlen(str);
+    uint16_t newLen = len + 4;  // Original length + 4 digits for the message counter
+
+    // Create a dynamically sized buffer for the packet
+    char* send_pkt_buf = new char[newLen + 1];  // +1 for null terminator
+
+    // Copy the original string data to the new buffer
+    strcpy(send_pkt_buf, str);
+
+    // Append the message counter to the end of the packet (as a 4-digit number)
+    snprintf(send_pkt_buf + len, newLen + 1 - len, "%04u", messageCounter);
+
+    // Send the modified packet
+    timeOnAir = radio->getTimeOnAir(newLen);
     Serial.print(F("Time-on-Air (ms): "));
     Serial.println(timeOnAir);
 
-    int state = radio->startTransmit(str);
+    int state = radio->startTransmit((uint8_t*)send_pkt_buf, newLen);
     transmitFlag = true;
+
+    // Clean up the dynamically allocated buffer
+    delete[] send_pkt_buf;
 
     if (state != RADIOLIB_ERR_NONE) {
         Serial.print(F("Transmission start failed, code "));
