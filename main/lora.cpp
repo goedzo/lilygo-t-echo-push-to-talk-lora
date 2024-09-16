@@ -42,8 +42,10 @@ bool mapChanged = false;  // Flag to track if the map has changed locally
 unsigned long lastMapShareTime = 0;  // Last time the map was shared
 unsigned long mapShareDelay = 0;  // Random delay for map sharing
 
-// Global message counter to find out if we have missed messages
-unsigned int messageCounter = 0;
+unsigned int messageCounter = 0;       // The counter I add to each message so that it can be tracket
+unsigned int lastReceivedCounter = 0;  // Global variable to store the last received packet counter
+uint8_t* lastMessageBuffer = nullptr;  // Buffer to store the last message sent
+uint16_t lastMessageLength = 0;        // Length of the last message sent
 
 // Function to initialize frequency map
 void initializeFrequencyMap() {
@@ -205,6 +207,11 @@ void checkLoraPacketComplete() {
             if(hopAfterTxRx) {
                 hopAfterTxRx=false;
                 setFrequency(hopToFrequency);  // Set the new frequency
+                // Resend the last message after hopping to the new frequency
+                if (lastMessageBuffer && lastMessageLength > 0) {
+                    Serial.println(F("Resending last message after frequency hop"));
+                    sendPacket(lastMessageBuffer, lastMessageLength);
+                }
             }
             else {
                 radio->startReceive();  // Start receiving after transmission
@@ -405,6 +412,15 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     // Append the message counter to the end of the packet (as a 4-digit number)
     snprintf(send_pkt_buf + len, newLen + 1 - len, "%04u", messageCounter);
 
+
+    // Store the last message
+    if (lastMessageBuffer) {
+        delete[] lastMessageBuffer;  // Free the previous buffer
+    }
+    lastMessageBuffer = new uint8_t[newLen];
+    memcpy(lastMessageBuffer, send_pkt_buf, newLen);
+    lastMessageLength = newLen;
+
     timeOnAir = radio->getTimeOnAir(len);
     Serial.print(F("Time-on-Air (ms): "));
     Serial.println(timeOnAir);
@@ -448,6 +464,14 @@ void sendPacket(const char* str) {
 
     // Append the message counter to the end of the packet (as a 4-digit number)
     snprintf(send_pkt_buf + len, newLen + 1 - len, "%04u", messageCounter);
+
+    // Store the last message
+    if (lastMessageBuffer) {
+        delete[] lastMessageBuffer;  // Free the previous buffer
+    }
+    lastMessageBuffer = new uint8_t[newLen];
+    memcpy(lastMessageBuffer, send_pkt_buf, newLen);
+    lastMessageLength = newLen;
 
     // Send the modified packet
     timeOnAir = radio->getTimeOnAir(newLen);
@@ -528,4 +552,13 @@ void markFrequencyAsBad(float freq, bool local) {
             break;
         }
     }
+}
+
+// Check if the packet is duplicate by comparing packetCounter
+bool isDuplicatePacket(Packet& packet) {
+    if (packet.packetCounter == lastReceivedCounter) {
+        return true;  // Duplicate packet
+    }
+    lastReceivedCounter = packet.packetCounter;  // Update the last received counter
+    return false;
 }
