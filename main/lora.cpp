@@ -222,6 +222,10 @@ void checkLoraPacketComplete() {
 
                     Packet packet;
                     if (packet.parsePacket(rcv_pkt_buf, packet_len)) {
+                        Serial.print(F("Packet parsed: "));
+                        Serial.println(packet.type);
+                        Serial.println(packet.content);
+
                         handlePacket(packet);
 
                         // Update quality of the current frequency
@@ -425,6 +429,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
 void sendPacket(const char* str) {
     if (transmitFlag) {
         showError("Already in transmit, skipping");
+        transmitFlag = false;
         return;
     }
 

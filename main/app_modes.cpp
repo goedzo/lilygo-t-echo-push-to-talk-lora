@@ -286,6 +286,13 @@ void handlePacket(Packet packet) {
 
             // Send another packet
             Serial.print(F("[SX1262] Sending another packet ... "));
+            //Don't flood, just wait 3 seconds
+            updDisp(5, "Ping!  3",true);
+            delay(1000);
+            updDisp(5, "Ping!  2",true);
+            delay(1000);
+            updDisp(5, "Ping!  1",true);
+            delay(1000);
             updDisp(5, "Ping!",true);
             sendPacket("Ping!");
 
