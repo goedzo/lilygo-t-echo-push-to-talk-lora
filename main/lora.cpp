@@ -25,7 +25,7 @@ float endFreq = 869.65;
 float stepSize = 0.01;
 int numFrequencies = (endFreq - startFreq) / stepSize;
 FrequencyStatus* frequencyMap = nullptr;
-int FrequencyHopSeconds = 17; //After how many seconds do we hop to the next frequency?
+int FrequencyHopSeconds = 47; //After how many seconds do we hop to the next frequency?
 
 volatile bool operationDone = false;  // Flag to indicate radio operation is done
 bool transmitFlag = false;            // Flag for transmission state
@@ -58,17 +58,21 @@ void initializeFrequencyMap() {
 }
 
 // Pseudo-random frequency hopping based on a shared time source and randomness
+// Pseudo-random frequency hopping based on a shared time source and randomness
 float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
-    // Combine sharedTime and sharedSeed for randomness
-    unsigned long randomValue = sharedTime ^ sharedSeed;  // XOR the time with the seed for randomness
-    Serial.print(F("SharedTime: ")); 
-    Serial.println(sharedTime);
+    // Calculate how many intervals of 'FrequencyHopSeconds' have passed
+    unsigned long intervalCount = sharedTime / FrequencyHopSeconds;  // Count of hop intervals passed
+
+    // Combine intervalCount and sharedSeed for randomness
+    unsigned long randomValue = intervalCount ^ sharedSeed;  // XOR interval count with the seed for randomness
+    Serial.print(F("IntervalCount: ")); 
+    Serial.println(intervalCount);
     Serial.print(F("SharedSeed: "));
     Serial.println(sharedSeed);
     Serial.print(F("RandomValue: "));
     Serial.println(randomValue);
 
-    // Generate a random starting index
+    // Generate a random starting index based on intervalCount
     int startingIndex = randomValue % numFrequencies;
     Serial.print(F("Starting Index: "));
     Serial.println(startingIndex);
@@ -94,6 +98,7 @@ float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
     Serial.println(F("No good frequency found, falling back to startFreq"));
     return defaultFrequency;
 }
+
 
 
 // Function to detect loss of synchronization
@@ -209,6 +214,7 @@ void checkLoraPacketComplete() {
                 setFrequency(hopToFrequency);  // Set the new frequency
                 // Resend the last message after hopping to the new frequency
                 if (lastMessageBuffer && lastMessageLength > 0) {
+                    delay(1000); //To allow some deviation in the other devices
                     Serial.println(F("Resending last message after frequency hop"));
                     sendPacket(lastMessageBuffer, lastMessageLength);
                 }
@@ -276,44 +282,44 @@ void checkLoraPacketComplete() {
     // Handle frequency hopping using RTC time (hours, minutes, and seconds)
     if (deviceSettings.frequency_hopping_enabled && time_set) {
         RTC_Date currentTime = rtc.getDateTime();  // Get current time from the RTC
-        int currentSeconds = currentTime.second;   // Get current seconds value
+        unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
 
-        // Only hop if no transmission/reception is occurring
-        if (currentSeconds % FrequencyHopSeconds == 0 && currentSeconds != lastHopTime) {  // Adjust the hop interval if needed
+        if (sharedTime != lastHopTime) {  // Adjust the hop interval if needed
 
-            Serial.print(F("Frequency hop at "));
-            Serial.println(currentSeconds);
-
-            // Create a shared time using hours, minutes, and seconds
-            unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
 
             // Use shared time to get the next frequency using the frequency hopping algorithm
             float newFrequency = getNextFrequency(sharedTime, sharedSeed);
-
-            // Check for lost synchronization
-            if (isSyncLost()) {
-                Serial.println(F("Sync lost, reinitializing synchronization..."));
-                // Reinitialize sync using the current RTC time
-                lastMapShareTime = sharedTime;
-                syncLossTimer = millis();  // Reset the sync loss timer
-
-                lastHopTime = currentSeconds;  // Update the last hop time
-
-                // Use the reinitialized shared time to get the next frequency
-                newFrequency = getNextFrequency(sharedTime, sharedSeed);
-            }
-            if(!transmitFlag && operationDone) {
-                //We must delay until our next radio action is completed
-                hopToFrequency=newFrequency;
-                hopAfterTxRx=true;
-
+            if(newFrequency==currentFrequency ) {
+                //No Need to Change
+                lastHopTime = sharedTime;
             }
             else {
-                //We can hop, as nothing is happening on the radio
-                setFrequency(newFrequency);  // Set the new frequency
+                // Check for lost synchronization
+                if (isSyncLost()) {
+                    Serial.println(F("Sync lost, reinitializing synchronization..."));
+                    // Reinitialize sync using the current RTC time
+                    lastMapShareTime = sharedTime;
+                    syncLossTimer = millis();  // Reset the sync loss timer
+
+                    lastHopTime = sharedTime;  // Update the last hop time
+
+                    // Use the reinitialized shared time to get the next frequency
+                    newFrequency = getNextFrequency(sharedTime, sharedSeed);
+                }
+                if(!transmitFlag && operationDone) {
+                    //We must delay until our next radio action is completed
+                    hopToFrequency=newFrequency;
+                    hopAfterTxRx=true;
+
+                }
+                else {
+                    //We can hop, as nothing is happening on the radio
+                    setFrequency(newFrequency);  // Set the new frequency
+                }
+                
+                lastHopTime = sharedTime;  // Update the last hop time
+
             }
-            
-            lastHopTime = currentSeconds;  // Update the last hop time
         }
     }
 

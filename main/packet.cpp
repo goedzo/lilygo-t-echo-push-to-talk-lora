@@ -61,7 +61,7 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
     // Parse the header if it's not a "Ping!" message
     if (!parseHeader(buffer, bufferSize)) {
         // If the header is unknown, store the raw message and set type to "NULL"
-        rawLength = bufferSize;
+        rawLength = bufferSize-4;
         raw = new uint8_t[rawLength];  // Allocate memory for raw buffer
         memcpy(raw, buffer, rawLength);  // Copy raw buffer content
         return true;

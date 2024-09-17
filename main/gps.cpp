@@ -80,7 +80,9 @@ void loopGPS() {
         //Only correct it when it's off
 
         RTC_Date currentTime = rtc.getDateTime();  // Get the current time from RTC
+
         if(currentTime.second != gpsSecond) {
+            //Update time if we are longer then a minute out of synch
             rtc.setDateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond);
             time_set = true;
             SerialMon.println("RTC set from GPS time");
