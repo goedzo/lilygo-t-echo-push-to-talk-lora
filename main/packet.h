@@ -14,6 +14,7 @@ public:
     uint16_t rawLength;  // Length of the raw message
     char channel;        // Store the channel
     uint32_t packetCounter;  // Message counter to track duplicates or for other purposes
+    uint32_t testCounter;  // Message counter to track duplicates or for other purposes
     String gpsData;     // GPS data
     String sendDateTime;// Send date and time
 
@@ -31,7 +32,7 @@ public:
     bool isRangeMessage() const;
 
 private:
-    bool parseHeader(const uint8_t* buffer, uint16_t bufferSize);
+    bool parseHeader(uint8_t* buffer, uint16_t bufferSize);
 };
 
 #endif
