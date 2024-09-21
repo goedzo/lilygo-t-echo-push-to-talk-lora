@@ -4,7 +4,18 @@
 #include "lora.h"
 
 
-Packet::Packet() : type("NULL"), header(""), length(0), content(""), raw(nullptr), rawLength(0), channel('\0'), testCounter(0), packetCounter(0) {}
+Packet::Packet() 
+    : type("NULL"),    // Initialize type to "NULL"
+      header(""),      // Initialize header as an empty string
+      length(0),       // Initialize length to 0
+      content(""),     // Initialize content as an empty string
+      raw(nullptr),    // Initialize raw buffer to nullptr
+      rawLength(0),    // Initialize raw length to 0
+      channel('\0'),   // Initialize channel to null character
+      packetCounter(0),// Initialize packetCounter to 0
+      gpsData(""),     // Add gpsData as an empty string if you store it
+      sendDateTime("") // Add sendDateTime as an empty string
+{}
 
 Packet::~Packet() {
     // Free allocated memory for raw buffer
@@ -14,111 +25,89 @@ Packet::~Packet() {
 }
 
 bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
-    if (bufferSize < 7) {  // Ensure there's enough room for header and message counter
+    if (bufferSize < 3) {  // Ensure there's enough room for at least the type
         type = "NULL";  // Invalidate this packet
         return false;  // Packet is too short
     }
 
     length = bufferSize;
+    uint16_t index = 0;
 
-    // Extract the last 4 characters as the message counter
-    char packetCounterStr[5];  // 4 digits + null terminator
-    strncpy(packetCounterStr, (char*)(buffer + bufferSize - 4), 4);  // Copy the last 4 characters
-    packetCounterStr[4] = '\0';  // Null-terminate the string
+    // Extract the 3-character packet type
+    char typeBuffer[4];
+    strncpy(typeBuffer, (char*)buffer, 3);
+    typeBuffer[3] = '\0';  // Null-terminate
+    type = String(typeBuffer);
+    index += 3;
 
-    // Validate if the last 4 characters are digits
-    bool isValidCounter = true;
-    for (int i = 0; i < 4; i++) {
-        if (!isdigit(packetCounterStr[i])) {  // If any character is not a digit, mark the counter as invalid
-            isValidCounter = false;
+    // Process the headers until we encounter the "~~" marker
+    while (index < bufferSize) {
+        if (buffer[index] == '~' && buffer[index + 1] == '~') {
+            // Found the end of the headers, move past the "~~" marker
+            index += 2;
             break;
         }
-    }
-
-    Serial.print(F("Packet received STR: "));
-    Serial.println(packetCounterStr);
-
-
-
-    // If the counter is valid, convert it to an integer and remove it from the buffer
-    if (isValidCounter) {
-        packetCounter = atoi(packetCounterStr);  // Convert the string to an integer
-        bufferSize -= 4;  // Adjust the buffer size to remove the counter
-    } else {
-        packetCounter = -1;  // Set an invalid packetCounter value to indicate no valid counter
-    }
-
-    Serial.print(F("Packet received "));
-    Serial.println(packetCounter);
-
-    // Directly check if the packet is "Ping!"
-    if (strncmp((char*)buffer, "Ping!", bufferSize) == 0) {  // Exclude the message counter from the check
-        type = "PING";
-        content = "Ping!";
-        return true;
-    }
-
-    // Parse the header if it's not a "Ping!" message
-    if (!parseHeader(buffer, bufferSize)) {
-        // If the header is unknown, store the raw message and set type to "NULL"
-        rawLength = bufferSize-4;
-        raw = new uint8_t[rawLength];  // Allocate memory for raw buffer
-        memcpy(raw, buffer, rawLength);  // Copy raw buffer content
-        return true;
-    }
-
-    // Check if the packet is a "MAP" packet
-    if (type == "MAP") {
-        // Validate checksum only for MAP packets
-        if (bufferSize < 4) {  // Ensure room for header and checksum
-            type = "NULL";  // Invalidate this packet
-            return false;  // Not enough room for a valid MAP packet with checksum
+        if (buffer[index] != '~') {
+            break;  // No more fields if there's no separator
         }
+        index++;  // Skip the separator '~'
 
-        unsigned char receivedChecksum = buffer[bufferSize - 1];  // Checksum is before the message counter
-        unsigned char calculatedChecksum = calculateChecksum(buffer, bufferSize - 1);  // Exclude the checksum byte
-
-        if (receivedChecksum != calculatedChecksum) {
-            Serial.println("Invalid checksum for MAP packet, discarding");
-            type = "NULL";  // Invalidate this packet
-            return false;  // Invalid MAP packet, discard
+        // Find the next separator (or end of the string) for this field
+        uint16_t fieldStart = index;
+        while (index < bufferSize && buffer[index] != '~') {
+            index++;
         }
-        return true;
-    }
+        uint16_t fieldLength = index - fieldStart;
 
-    // Extract the content for other messages (without checksum validation)
-    if (packetCounter == -1) {
-        // If no valid counter, extract content starting from position 3 (after the header)
-        content = String((char*)(buffer + 3));
-    } else {
-        // If a valid counter was found, extract the content excluding the counter
-        if (bufferSize > 3) {
-            // Create a temporary buffer to hold the content without the header and counter
-            char temp[bufferSize - 3 + 1];  // +1 for null terminator
-            memcpy(temp, buffer + 3, bufferSize - 3);
-            temp[bufferSize - 3] = '\0';  // Null-terminate the string
+        // If we have found a field, process the field identifier and value
+        if (fieldLength >= 2) {
+            char fieldType[3];
+            strncpy(fieldType, (char*)(buffer + fieldStart), 2);  // Extract the 2-character field type
+            fieldType[2] = '\0';
 
-            // Now create the content string
-            content = String(temp);
-        } else {
-            // Handle the case where there's not enough data for content
-            content = String("");
+            // Move past the field identifier
+            fieldStart += 2;
+            fieldLength -= 2;
+
+            // Process each type of field based on the field identifier
+            if (strcmp(fieldType, "PC") == 0) {
+                // Packet Counter (PC)
+                if (fieldLength > 0) {
+                    char packetCounterStr[fieldLength + 1];
+                    strncpy(packetCounterStr, (char*)(buffer + fieldStart), fieldLength);
+                    packetCounterStr[fieldLength] = '\0';  // Null-terminate the string
+                    packetCounter = atoi(packetCounterStr);  // Convert to integer
+                }
+            } else if (strcmp(fieldType, "SD") == 0) {
+                // Send DateTime (SD)
+                if (fieldLength == 14) {  // Check for 14 characters for YYYYMMDDHHMMSS
+                    char dateTimeStr[15];  // 14 characters + null terminator
+                    strncpy(dateTimeStr, (char*)(buffer + fieldStart), 14);
+                    dateTimeStr[14] = '\0';
+                    sendDateTime = String(dateTimeStr);  // Store as string or convert to actual time format if needed
+                }
+            } else if (strcmp(fieldType, "GP") == 0) {
+                // GPS data (GP)
+                if (fieldLength > 0) {  // Ensure some data is available for GPS
+                    char gpsStr[fieldLength + 1];  // +1 for null terminator
+                    strncpy(gpsStr, (char*)(buffer + fieldStart), fieldLength);
+                    gpsStr[fieldLength] = '\0';  // Null-terminate the string
+                    gpsData = String(gpsStr);  // Store as string or parse as needed
+                }
+            } else {
+                // Unknown field type, handle accordingly
+            }
         }
     }
-    Serial.print(F("content: "));
-    Serial.println(content);
 
-
-
-    // Check if this is a test message and extract the test counter
-    if (isTestMessage() || isRangeMessage()) {
-        const char* testCounterStr = content.c_str() + 4;
-        testCounter = atoi(testCounterStr);
+    // Extract the content after the "~~" marker
+    if (index < bufferSize) {
+        content = String((char*)(buffer + index));
     } else {
-        testCounter = 0;
+        content = "";  // No content
     }
 
-    return true;
+    return true;  // Successfully parsed
 }
 
 bool Packet::isTestMessage() const {

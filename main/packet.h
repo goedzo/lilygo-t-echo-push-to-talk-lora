@@ -13,8 +13,9 @@ public:
     uint8_t* raw;        // Raw message buffer
     uint16_t rawLength;  // Length of the raw message
     char channel;        // Store the channel
-    int testCounter;
     uint32_t packetCounter;  // Message counter to track duplicates or for other purposes
+    String gpsData;     // GPS data
+    String sendDateTime;// Send date and time
 
     // Constructor
     Packet();

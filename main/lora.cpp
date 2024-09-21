@@ -398,6 +398,20 @@ bool setupLoRa() {
     return radio->startReceive() == RADIOLIB_ERR_NONE;
 }
 
+String getFormattedDateTime() {
+    // Get the current date and time from the RTC
+    RTC_Date dateTime = rtc.getDateTime();
+
+    // Format it as YYYYMMDDHHMMSS
+    char dateTimeStr[15];
+    snprintf(dateTimeStr, sizeof(dateTimeStr), "%04d%02d%02d%02d%02d%02d",
+             dateTime.year, dateTime.month, dateTime.day,
+             dateTime.hour, dateTime.minute, dateTime.second);
+
+    return String(dateTimeStr);
+}
+
+
 void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     if (transmitFlag) {
         showError("Already in transmit, skipping");
@@ -408,16 +422,42 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     // Increment the message counter for each new packet
     messageCounter++;
 
+    // The first 3 characters in pkt_buf are the packet type
+    char typeBuffer[4];
+    strncpy(typeBuffer, (char*)pkt_buf, 3);  // Extract the first 3 characters (packet type)
+    typeBuffer[3] = '\0';
 
-    // Calculate the size of the new packet buffer (original packet size + 4 digits for message counter)
-    uint16_t newLen = len + 4;  // Original length + 4 digits for the message counter
-    // Create a dynamically sized buffer for the packet
+    // Construct the rest of the header starting after the packet type
+    String header = String(typeBuffer);  // Initialize with the packet type
+
+    // Add message counter with the "~PC" field
+    header += "~PC" + String(messageCounter);  // Ensure 4 digits for messageCounter
+
+    // Add sendDateTime from RTC
+    header += "~SD" + getFormattedDateTime();  // Example: "20230921183045"
+
+    // Optionally add GPS data if available
+    /*
+    if (gpsDataAvailable()) {
+        header += "~GP" + getGPSData();  // Ensure GPS data is formatted properly (12 characters)
+    }
+    */
+
+    header += "~~"; //Always end with ~~ before the actual content
+
+    // Calculate the new length (header + the remaining content after the first 3 characters)
+    uint16_t headerLen = header.length();
+    uint16_t newLen = headerLen + (len - 3);  // Total length minus the first 3 characters of pkt_buf
+
+    // Create a dynamically sized buffer for the new packet
     char* send_pkt_buf = new char[newLen + 1];  // +1 for null terminator
-    // Copy the original packet data to the new buffer
-    memcpy(send_pkt_buf, pkt_buf, len);
-    // Append the message counter to the end of the packet (as a 4-digit number)
-    snprintf(send_pkt_buf + len, newLen + 1 - len, "%04u", messageCounter);
 
+    // Copy the header into the new buffer
+    strcpy(send_pkt_buf, header.c_str());
+
+    // Append the rest of the original content (after the first 3 characters)
+    memcpy(send_pkt_buf + headerLen, pkt_buf + 3, len - 3);
+    send_pkt_buf[newLen] = '\0';  // Null-terminate the packet
 
     // Store the last message
     if (lastMessageBuffer) {
@@ -427,11 +467,15 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     memcpy(lastMessageBuffer, send_pkt_buf, newLen);
     lastMessageLength = newLen;
 
-    timeOnAir = radio->getTimeOnAir(len);
+    // Get time-on-air for logging
+    timeOnAir = radio->getTimeOnAir(newLen);
     Serial.print(F("Time-on-Air (ms): "));
     Serial.println(timeOnAir);
 
-    int state = radio->startTransmit(pkt_buf, len);
+    Serial.println(send_pkt_buf);
+
+    // Start the transmission
+    int state = radio->startTransmit((uint8_t*)send_pkt_buf, newLen);
     transmitFlag = true;
 
     if (state != RADIOLIB_ERR_NONE) {
@@ -445,61 +489,13 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
 
     // Free the dynamically allocated buffer
     delete[] send_pkt_buf;
-
 }
 
+// This function converts the string to uint8_t* and calls the main sendPacket
 void sendPacket(const char* str) {
-    if (transmitFlag) {
-        showError("Already in transmit, skipping");
-        transmitFlag = false;
-        return;
-    }
-
-    // Increment the message counter
-    messageCounter++;
-
-    // Calculate the size of the new packet buffer (original packet size + 4 digits for the message counter)
     uint16_t len = strlen(str);
-    uint16_t newLen = len + 4;  // Original length + 4 digits for the message counter
-
-    // Create a dynamically sized buffer for the packet
-    char* send_pkt_buf = new char[newLen + 1];  // +1 for null terminator
-
-    // Copy the original string data to the new buffer
-    strcpy(send_pkt_buf, str);
-
-    // Append the message counter to the end of the packet (as a 4-digit number)
-    snprintf(send_pkt_buf + len, newLen + 1 - len, "%04u", messageCounter);
-
-    // Store the last message
-    if (lastMessageBuffer) {
-        delete[] lastMessageBuffer;  // Free the previous buffer
-    }
-    lastMessageBuffer = new uint8_t[newLen];
-    memcpy(lastMessageBuffer, send_pkt_buf, newLen);
-    lastMessageLength = newLen;
-
-    // Send the modified packet
-    timeOnAir = radio->getTimeOnAir(newLen);
-    Serial.print(F("Time-on-Air (ms): "));
-    Serial.println(timeOnAir);
-
-    int state = radio->startTransmit((uint8_t*)send_pkt_buf, newLen);
-    transmitFlag = true;
-
-    // Clean up the dynamically allocated buffer
-    delete[] send_pkt_buf;
-
-    if (state != RADIOLIB_ERR_NONE) {
-        Serial.print(F("Transmission start failed, code "));
-        Serial.println(state);
-        char buf[50];
-        snprintf(buf, sizeof(buf), "Lora Strt Trnsmt Err: %d", state);
-        showError(buf);
-        setupLoRa();  // Reinitialize the radio
-    }
+    sendPacket((uint8_t*)str, len);  // Call the main function
 }
-
 
 
 // Function to calculate quality rating with 60-40 rule for SNR and RSSI

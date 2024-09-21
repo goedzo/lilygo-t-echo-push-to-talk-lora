@@ -56,5 +56,6 @@ void handleMapSharing();  // Function to handle map sharing logic
 unsigned char calculateChecksum(const unsigned char* data, int len);  // Function to calculate checksum for data validation
 bool isSyncLost();  // Function to detect loss of synchronization
 int calculateQuality(float rssi, float snr, bool ignoreSNR);
+String getFormattedDateTime();
 
 #endif // LORA_H

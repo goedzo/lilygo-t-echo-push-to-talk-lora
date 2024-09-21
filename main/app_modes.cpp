@@ -231,17 +231,7 @@ void handlePacket(Packet packet) {
 
           snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
           updDisp(6, buf, false);
-
-          if (packet.isTestMessage() || packet.isRangeMessage() ) {
-              rcv_test_message_counter=packet.testCounter;
-              snprintf(buf, sizeof(buf), "Test Cnt: %d", packet.testCounter);
-              updDisp(7, buf, false);
-
-          } else {
-              updDisp(7, "", false);
-          }
-
-          updDisp(8, packet.content.c_str(), true);
+          updDisp(7, packet.content.c_str(), true);
 
       } 
       else if (current_mode == "PTT" && packet.type == "PTT") {
@@ -313,17 +303,17 @@ void handlePacket(Packet packet) {
 
                   if(range_last_count==0) {
                       //We just initialized, so reset the counter to what it now is
-                      range_last_count=packet.testCounter-1;
+                      range_last_count=packet.packetCounter-1;
                   }
 
-                  if(packet.testCounter==range_last_count+1) {
+                  if(packet.packetCounter==range_last_count+1) {
                       //No Packet missed!
                       range_last_count++;
                       range_consecutive_ok++;
                   }
                   else {
                       //Packet loss!
-                      int pckt_missed=packet.testCounter-range_last_count+1;
+                      int pckt_missed=packet.packetCounter-range_last_count+1;
 
                       if(pckt_missed<0) {
                           //Sender got reset so no miss
@@ -334,7 +324,7 @@ void handlePacket(Packet packet) {
                           range_consecutive_ok=0;
                       }
 
-                      range_last_count=packet.testCounter;
+                      range_last_count=packet.packetCounter;
                   }
 
                   if(gps_status!=GPS_LOC) {
