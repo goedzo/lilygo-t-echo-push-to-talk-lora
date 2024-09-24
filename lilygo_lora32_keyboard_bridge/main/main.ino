@@ -1,3 +1,4 @@
+#include <utilities.h>
 #include <bluefruit.h>
 #include <HID-Project.h>  // Include HID-Project Library
 
