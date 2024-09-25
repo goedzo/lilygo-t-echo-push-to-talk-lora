@@ -15,6 +15,7 @@ void initBluetooth() {
     }
     esp_bt_gap_register_callback(classicBTDeviceFound);
     Serial.println("Classic Bluetooth started. Scanning for keyboards...");
+    SerialBT.enableSSP();
     displayInfo("", "", "", "");  // Initial display message
 }
 
@@ -153,20 +154,26 @@ void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const Str
             Serial.printf("Initiating pairing with %s...\n", btDeviceAddr.c_str());
             initiatePairing(btDeviceAddr);
 
+            // Prepare parameters for connection
+            uint8_t addr[6];  // To hold the device address in byte array
+            sscanf(btDeviceAddr.c_str(), "%02X:%02X:%02X:%02X:%02X:%02X",
+                   (unsigned int*)&addr[0],
+                   (unsigned int*)&addr[1],
+                   (unsigned int*)&addr[2],
+                   (unsigned int*)&addr[3],
+                   (unsigned int*)&addr[4],
+                   (unsigned int*)&addr[5]);
+
             // Retry connection attempts (3 retries, 10 seconds timeout)
             int retries = 3;
             bool connected = false;
             while (retries-- > 0 && !connected) {
                 Serial.printf("Initiating connection to %s (%d retries left)...\n", btDeviceAddr.c_str(), retries);
-                SerialBT.connect(btDeviceAddr.c_str());
 
-                // Increase delay to 10 seconds
-                delay(10000);
-
-                if (SerialBT.connected()) {
+                // Use the more advanced `connect` method with channel, security mask, and role
+                if (SerialBT.connect(addr, 1, ESP_SPP_SEC_ENCRYPT | ESP_SPP_SEC_AUTHENTICATE, ESP_SPP_ROLE_MASTER)) {
                     Serial.println("Connected successfully!");
                     connected = true;
-                    break;
                 } else {
                     Serial.println("Failed to connect.");
 
@@ -184,7 +191,11 @@ void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const Str
                         Serial.println("Potential reason: Pairing issue or unsupported Bluetooth protocol.");
                     }
                 }
+
+                // Increase delay to 10 seconds between retries
+                delay(10000);
             }
+
             if (!connected) {
                 Serial.println("Failed to connect after multiple attempts.");
             }
