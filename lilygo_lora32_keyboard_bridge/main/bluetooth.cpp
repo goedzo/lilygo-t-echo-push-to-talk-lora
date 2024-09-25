@@ -80,18 +80,25 @@ void btPinCodeRequestCallback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t
 
 // Function to initiate pairing with the device
 void initBluetoothPairing() {
-    // Set up Secure Simple Pairing (SSP) with no input/output for devices like keyboards
-    uint8_t ioCapability = ESP_BT_IO_CAP_NONE;  // No I/O capabilities for a keyboard
-    esp_bt_gap_set_security_param(ESP_BT_SP_IOCAP_MODE, &ioCapability, sizeof(uint8_t));
+    esp_log_level_set("*", ESP_LOG_DEBUG);  // Enable detailed Bluetooth logs
 
-    // Register callback to handle pairing requests
-    esp_bt_gap_register_callback(btPinCodeRequestCallback);
+    // Set up Secure Simple Pairing (SSP) for devices with no input/output like keyboards
+    uint8_t ioCapability = ESP_BT_IO_CAP_NONE;  // No input/output capabilities
+    esp_bt_gap_set_security_param(ESP_BT_SP_IOCAP_MODE, &ioCapability, sizeof(uint8_t));
 
     // Enable visibility for the device
     esp_bt_dev_set_device_name("ESP32_Keyboard");
     esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+
+    // Register callback to handle pairing requests, like PIN requests
+    esp_bt_gap_register_callback(btPinCodeRequestCallback);
+
+    // Set the Bluetooth device to use a fixed PIN (can be modified as needed)
+    esp_bt_gap_set_pin(ESP_BT_PIN_TYPE_VARIABLE, 0, nullptr);
 }
 
+
+// Function to remove a bonded device
 void removeBondedDevice(const String& btDeviceAddrStr) {
     esp_bd_addr_t btDeviceAddr;
     // Convert the string address "XX:XX:XX:XX:XX:XX" to byte array
@@ -106,7 +113,6 @@ void removeBondedDevice(const String& btDeviceAddrStr) {
     // Remove the bonded device
     esp_bt_gap_remove_bond_device(btDeviceAddr);
 }
-
 
 // Updated function to check and connect to the keyboard with pairing support
 void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const String& btDeviceName, int8_t rssi) {
@@ -133,8 +139,8 @@ void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const Str
                 Serial.printf("Initiating connection to %s (%d retries left)...\n", btDeviceAddr.c_str(), retries);
                 SerialBT.connect(btDeviceAddr.c_str());
 
-                // Increase delay to 10 seconds
-                delay(10000);
+                // Increase delay to 15 seconds
+                delay(15000);
 
                 if (SerialBT.connected()) {
                     Serial.println("Connected successfully!");
@@ -168,4 +174,3 @@ void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const Str
         Serial.println("Device is not a Bluetooth keyboard.");
     }
 }
-
