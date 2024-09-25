@@ -22,6 +22,9 @@ void btPinCodeRequestCallback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t
 // Function to initialize Bluetooth pairing with the keyboard
 void initBluetoothPairing();
 
+
+void initiatePairing(const String& btDeviceAddr);
+
 // Function to check and connect to a Bluetooth keyboard with pairing support
 void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const String& btDeviceName, int8_t rssi);
 
