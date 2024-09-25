@@ -15,7 +15,7 @@
 // #define T3_V1_3_SX1278
 
 // #define T3_V1_6_SX1276
-// #define T3_V1_6_SX1278
+#define T3_V1_6_SX1278
 
 // #define T3_V1_6_SX1276_TCXO
 // #define T3_V3_0_SX1276_TCXO
