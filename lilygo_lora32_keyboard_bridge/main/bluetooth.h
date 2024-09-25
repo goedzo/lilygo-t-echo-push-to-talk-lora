@@ -9,7 +9,7 @@
 void initBluetooth();
 void scanClassicBT();
 void classicBTDeviceFound(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param);
-void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const String& btDeviceName);
+void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const String& btDeviceName, int8_t rssi);
 extern BluetoothSerial SerialBT;
 
 #endif  // BLUETOOTH_H

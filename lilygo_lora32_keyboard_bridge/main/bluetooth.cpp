@@ -52,20 +52,54 @@ void classicBTDeviceFound(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
     }
     printFullDeviceInfo(btDeviceName, btDeviceAddr, rawCodStr, deviceClassStr, rssi);
     displayInfo(btDeviceName, btDeviceAddr, rawCodStr, deviceClassStr);
-    checkAndConnectKeyboard(btDeviceAddr, cod, btDeviceName);
+    checkAndConnectKeyboard(btDeviceAddr, cod, btDeviceName,rssi);
   }
 }
 
-void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const String& btDeviceName) {
+void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const String& btDeviceName, int8_t rssi) {
   uint8_t majorDeviceClass = (cod >> 8) & 0x1F;
   uint8_t minorDeviceClass = (cod >> 2) & 0x3F;
 
   if (majorDeviceClass == 0x05 && (minorDeviceClass == 0x01 || minorDeviceClass == 0x03 || minorDeviceClass == 0x10)) {
-    Serial.printf("Connecting to Bluetooth Keyboard: %s\n", btDeviceName.c_str());
+    Serial.printf("Attempting to connect to Bluetooth Keyboard: %s\n", btDeviceName.c_str());
+
     if (!SerialBT.connected()) {
+      // Log the Bluetooth address and class of device
+      Serial.printf("Device Address: %s, Class of Device: 0x%X, RSSI: %d dBm\n", btDeviceAddr.c_str(), cod, rssi);
+      
+      // Initiate connection
+      Serial.printf("Initiating connection to %s...\n", btDeviceAddr.c_str());
       SerialBT.connect(btDeviceAddr.c_str());
+      
+      // Wait for 5 seconds to check if connection is successful
       delay(5000);
-      SerialBT.connected() ? Serial.println("Connected!") : Serial.println("Failed to connect.");
+      
+      if (SerialBT.connected()) {
+        Serial.println("Connected successfully!");
+      } else {
+        // Log more details on failure
+        Serial.println("Failed to connect.");
+        
+        // Check for possible reasons for failure
+        if (rssi < -75) {
+          Serial.println("Potential reason: Signal strength too weak (RSSI < -75 dBm).");
+        } else {
+          Serial.println("Potential reason: Device may not be accepting connections or busy.");
+        }
+
+        // Additional diagnostics (if possible)
+        // Check if the device is still visible or if the device has disappeared
+        if (!SerialBT.hasClient()) {
+          Serial.println("Potential reason: Device no longer visible or out of range.");
+        } else {
+          Serial.println("Potential reason: Pairing issue or unsupported Bluetooth protocol.");
+        }
+      }
+    } else {
+      Serial.println("Already connected to a device.");
     }
+  } else {
+    Serial.println("Device is not a Bluetooth keyboard.");
   }
 }
+
