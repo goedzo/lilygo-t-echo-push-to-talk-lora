@@ -56,6 +56,16 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
         return true;
     }
 
+    // Handle REQ type
+    if (type == "REQ") {
+        // The content will be the requested packet counter (a number)
+        content = String((char*)(buffer + 3));  // After "REQ"
+        Serial.print(F("Requested packet counter: "));
+        Serial.println(content);
+        return true;
+    }
+
+
     // Check if the packet is a "MAP" packet and validate the checksum
     if (type == "MAP") {
         if (bufferSize < 4) {  // Ensure room for header and checksum
@@ -152,14 +162,14 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
     } else if (strncmp((char*)buffer, "MAP", 3) == 0 && index == 3) {
         type = "MAP";
         Serial.println(F("Type determined: MAP"));
+    } else if (strncmp((char*)buffer, "REQ", 3) == 0 && index == 3) {
+        type = "REQ";
+        Serial.println(F("Type determined: REQ (Retransmit Request)"));
     } else {
         type = "NULL";  // Unknown type, mark as invalid
         Serial.println(F("Unknown type, invalid packet."));
         return false;
     }
-
-    // Move past the separator "~"
-    index++;
 
     // Now process additional headers such as PC, SD (send date), and GP (GPS data)
     while (index < bufferSize) {
@@ -189,6 +199,9 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
             // Move past the field identifier
             fieldStart += 2;
             fieldLength -= 2;
+
+            Serial.print(F("Field type extracted: "));
+            Serial.println(fieldType);
 
             // Process the fields: PC (packet counter), SD (Send DateTime), GP (GPS Data)
             if (strcmp(fieldType, "PC") == 0) {

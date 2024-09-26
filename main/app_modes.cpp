@@ -190,6 +190,11 @@ void handleAppModes() {
 }
 
 void handlePacket(Packet packet) {
+    if (packet.type == "REQ") {  // Request for retransmission
+        unsigned int requestedCounter = atoi(packet.content.c_str()); 
+        handleRetransmitRequest(requestedCounter);
+        return;
+    }
     if (packet.type == "NULL") {
       // Handle unknown packet type and show the raw message
       updDisp(3, "Unknwn pcket tpe", true);

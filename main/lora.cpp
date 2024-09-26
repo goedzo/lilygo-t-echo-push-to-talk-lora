@@ -13,6 +13,17 @@
 #include <time.h>  // For RTC time management
 #include <stdlib.h>  // For random number generation
 
+#define PACKET_BUFFER_SIZE 5
+#define NEWER_PACKET_QUEUE_SIZE 5
+
+PacketQueue newerPacketQueue[NEWER_PACKET_QUEUE_SIZE];
+int newerPacketQueueCount = 0;
+
+
+PacketBuffer packetBuffer[PACKET_BUFFER_SIZE];
+int bufferIndex = 0;
+
+
 SX1262* radio = nullptr;
 SPIClass* rfPort = nullptr;
 
@@ -195,6 +206,105 @@ void handleMapSharing() {
     }
 }
 
+void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
+    if (newerPacketQueueCount < NEWER_PACKET_QUEUE_SIZE) {
+        newerPacketQueue[newerPacketQueueCount].packetData = new uint8_t[len];
+        memcpy(newerPacketQueue[newerPacketQueueCount].packetData, pkt_buf, len);
+        newerPacketQueue[newerPacketQueueCount].packetLen = len;
+        newerPacketQueue[newerPacketQueueCount].packetCounter = counter;
+        newerPacketQueueCount++;
+    } else {
+        Serial.println(F("Newer packet queue full, discarding packet."));
+    }
+}
+
+void processPacketQueue() {
+    // Sort the packets by counter (optional for ordered processing)
+    for (int i = 0; i < newerPacketQueueCount; i++) {
+        Packet packet;
+        if (packet.parsePacket(newerPacketQueue[i].packetData, newerPacketQueue[i].packetLen)) {
+            Serial.print(F("Processing queued packet: "));
+            Serial.println(packet.packetCounter);
+            handlePacket(packet);  // Process the packet
+        }
+        // Free the memory after processing
+        delete[] newerPacketQueue[i].packetData;
+    }
+    newerPacketQueueCount = 0;  // Reset the queue count after processing
+}
+
+
+bool checkForMissingPackets(Packet& packet, uint8_t* rcv_pkt_buf, uint16_t packet_len) {
+    unsigned int expectedPacketCounter = lastReceivedCounter + 1;
+    unsigned int missedPackets = packet.packetCounter - lastReceivedCounter - 1;
+
+    if (lastReceivedCounter > 0 && missedPackets > 0) {
+        // Check if we missed more than PACKET_BUFFER_SIZE packets
+        if (missedPackets > PACKET_BUFFER_SIZE) {
+            Serial.println(F("Too many packets missed, unable to request older packets"));
+            lastReceivedCounter = packet.packetCounter;  // Skip to the newest packet
+            return true;  // Continue processing since no retransmission request is needed
+        } else {
+            // Request all missed packets sequentially
+            for (unsigned int missedCounter = expectedPacketCounter; missedCounter < packet.packetCounter; missedCounter++) {
+                char requestBuf[10];
+                snprintf(requestBuf, sizeof(requestBuf), "REQ%04u", missedCounter);
+                sendPacket((uint8_t*)requestBuf, strlen(requestBuf));
+                Serial.print(F("Requesting retransmission of packet: "));
+                Serial.println(missedCounter);
+            }
+            // Store the newer packet in the queue until all missing packets are received
+            storePacketInQueue(rcv_pkt_buf, packet_len, packet.packetCounter);
+
+            return false;  // Halt the processing until missed packets are handled
+        }
+    } else {
+        // No packets are missing, process the received packet normally
+        lastReceivedCounter = packet.packetCounter;
+        return true;  // Continue processing the packet
+    }
+}
+
+void handleRetransmitRequestComplete() {
+    Serial.println(F("Retransmission request completed, processing queued packets..."));
+
+    // Process all queued packets, in order, as long as they are in sequence
+    bool packetProcessed = true;
+    while (packetProcessed) {
+        packetProcessed = false;
+        for (int i = 0; i < newerPacketQueueCount; i++) {
+            // Check if the next expected packet is in the queue
+            if (newerPacketQueue[i].packetCounter == lastReceivedCounter + 1) {
+                // Process the packet
+                Packet packet;
+                if (packet.parsePacket(newerPacketQueue[i].packetData, newerPacketQueue[i].packetLen)) {
+                    Serial.print(F("Processing queued packet: "));
+                    Serial.println(packet.packetCounter);
+                    handlePacket(packet);  // Process the packet
+
+                    // Update the last received counter
+                    lastReceivedCounter = packet.packetCounter;
+                    packetProcessed = true;
+                }
+
+                // Remove the packet from the queue and free memory
+                delete[] newerPacketQueue[i].packetData;
+
+                // Shift the remaining packets in the queue
+                for (int j = i; j < newerPacketQueueCount - 1; j++) {
+                    newerPacketQueue[j] = newerPacketQueue[j + 1];
+                }
+                newerPacketQueueCount--;
+
+                // Break to recheck the queue after processing
+                break;
+            }
+        }
+    }
+}
+
+
+
 // Handle AFH and packet completion
 void checkLoraPacketComplete() {
     if (operationDone) {
@@ -244,8 +354,14 @@ void checkLoraPacketComplete() {
                         Serial.print(F("Packet parsed: "));
                         Serial.println(packet.type);
                         Serial.println(packet.content);
+                        Serial.println(packet.packetCounter);
 
-                        handlePacket(packet);
+                        // Call checkForMissingPackets here
+                        if(checkForMissingPackets(packet, rcv_pkt_buf, packet_len)) {
+                            //True = ok to process. Nothing is missing
+                            handlePacket(packet);
+                        }
+
 
                         // Update quality of the current frequency
                         float rssi = radio->getRSSI();
@@ -417,6 +533,32 @@ String getFormattedDateTime() {
     return String(dateTimeStr);
 }
 
+void storePacketInBuffer(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
+    // Free previous buffer data
+    if (packetBuffer[bufferIndex].packetData) {
+        delete[] packetBuffer[bufferIndex].packetData;
+    }
+
+    // Store new packet
+    packetBuffer[bufferIndex].packetData = new uint8_t[len];
+    memcpy(packetBuffer[bufferIndex].packetData, pkt_buf, len);
+    packetBuffer[bufferIndex].packetLen = len;
+    packetBuffer[bufferIndex].messageCounter = counter;
+
+    bufferIndex = (bufferIndex + 1) % PACKET_BUFFER_SIZE;  // Circular increment
+}
+
+void handleRetransmitRequest(unsigned int requestedCounter) {
+    for (int i = 0; i < PACKET_BUFFER_SIZE; i++) {
+        if (packetBuffer[i].messageCounter == requestedCounter) {
+            Serial.print(F("Resending packet with counter: "));
+            Serial.println(requestedCounter);
+            sendPacket(packetBuffer[i].packetData, packetBuffer[i].packetLen);
+            return;
+        }
+    }
+    Serial.println(F("Requested packet not found in buffer"));
+}
 
 void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     if (transmitFlag) {
@@ -427,6 +569,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
 
     // Increment the message counter for each new packet
     messageCounter++;
+
 
     // The first 3 characters in pkt_buf are the packet type
     char typeBuffer[4];
@@ -479,6 +622,8 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     Serial.println(timeOnAir);
 
     Serial.println(send_pkt_buf);
+
+    storePacketInBuffer((uint8_t*)send_pkt_buf, newLen, messageCounter);  // Store in buffer in case we need to resend
 
     // Start the transmission
     int state = radio->startTransmit((uint8_t*)send_pkt_buf, newLen);
