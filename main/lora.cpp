@@ -225,11 +225,17 @@ void checkLoraPacketComplete() {
             }
         } else {
             uint16_t packet_len = radio->getPacketLength(false);
+            //uint16_t irqStatus = radio->getIrqFlags();  //Radiolib 7.0.0 support, but not working
             uint16_t irqStatus = radio->getIrqStatus();
             unsigned char rcv_pkt_buf[MAX_PKT];
 
             if (irqStatus & RADIOLIB_SX126X_IRQ_RX_DONE) {
+                //radio->clearIrqFlags(irqStatus); //Radiolib 7.0.0 support, but not working
+
+                memset(rcv_pkt_buf, 0, MAX_PKT);  // Clear the receive buffer
                 int state = radio->readData(rcv_pkt_buf, packet_len);
+                //Quickly continue receiving
+                radio->startReceive();
                 if (state == RADIOLIB_ERR_NONE) {
                     rcv_pkt_buf[packet_len] = '\0';  // Null-terminate the received packet
 
@@ -274,7 +280,7 @@ void checkLoraPacketComplete() {
                 setFrequency(hopToFrequency);  // Set the new frequency
             }
             else {
-                radio->startReceive();  // Prepare to receive the next packet
+                //radio->startReceive();  // Prepare to receive the next packet
             }
         }
     }
