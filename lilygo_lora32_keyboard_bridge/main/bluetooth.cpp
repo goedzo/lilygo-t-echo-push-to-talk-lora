@@ -1,23 +1,69 @@
 #include "bluetooth.h"
 #include "utility.h"
 #include "display.h"
+#include "BluetoothSerial.h"
+#include "esp_bt.h"
 #include "esp_bt_device.h"
 #include "esp_bt_main.h"
 #include "esp_gap_bt_api.h"
+#include "esp_hidh.h"  // HID Host API
+#include "esp_hidh_api.h"  // Include HID API
+#include "esp_log.h"
+
+#define TAG "HID_HOST"
+#define TAG "SPP_HOST"
+
 
 BluetoothSerial SerialBT;  // Classic Bluetooth object for scanning and connections
 
+// HID Host Callback to handle HID device events
+void hid_event_handler(esp_hidh_cb_event_t event, esp_hidh_cb_param_t *param);
+void spp_event_handler(esp_spp_cb_event_t event, esp_spp_cb_param_t *param);
+
 void initBluetooth() {
     esp_log_level_set("BT", ESP_LOG_DEBUG);
+
+    // Initialize Classic Bluetooth
     if (!SerialBT.begin("ESP32_BT_Classic")) {
         Serial.println("An error occurred initializing Classic Bluetooth");
         return;
     }
+
+    // Register gap callback for Classic Bluetooth
     esp_bt_gap_register_callback(classicBTDeviceFound);
-    Serial.println("Classic Bluetooth started. Scanning for keyboards...");
-    SerialBT.enableSSP();
-    displayInfo("", "", "", "");  // Initial display message
+
+    // Initialize Bluedroid stack
+    esp_err_t ret = esp_bluedroid_init();
+    if (ret != ESP_OK) {
+        Serial.printf("Bluedroid initialize failed: %s\n", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = esp_bluedroid_enable();
+    if (ret != ESP_OK) {
+        Serial.printf("Bluedroid enable failed: %s\n", esp_err_to_name(ret));
+        return;
+    }
+
+
+    // Initialize SPP (Serial Port Profile)
+    ret = esp_spp_register_callback(spp_event_handler);
+    if (ret != ESP_OK) {
+        Serial.printf("SPP callback registration failed: %s\n", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = esp_spp_init(ESP_SPP_MODE_CB);
+    if (ret != ESP_OK) {
+        Serial.printf("SPP init failed: %s\n", esp_err_to_name(ret));
+        return;
+    }
+
+    Serial.println("Classic Bluetooth started. Scanning for devices...");
+    SerialBT.enableSSP();  // Enable Secure Simple Pairing
 }
+
+
 
 void scanClassicBT() {
     if (!SerialBT.hasClient()) {
@@ -56,17 +102,62 @@ void classicBTDeviceFound(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
                     break;
             }
         }
-        
-        // Retry retrieving device name if still unknown
+
         if (btDeviceName == "(unknown)") {
             btDeviceName = getDeviceNameFromEIR(static_cast<uint8_t*>(param->disc_res.prop[0].val), param->disc_res.prop[0].len);
         }
 
         printFullDeviceInfo(btDeviceName, btDeviceAddr, rawCodStr, deviceClassStr, rssi);
         displayInfo(btDeviceName, btDeviceAddr, rawCodStr, deviceClassStr);
+
         checkAndConnectKeyboard(btDeviceAddr, cod, btDeviceName, rssi);
     }
 }
+
+
+// Callback to handle HID events such as connection, disconnection, and data
+void hid_event_handler(esp_hidh_cb_event_t event, esp_hidh_cb_param_t *param) {
+    switch (event) {
+        case ESP_HIDH_OPEN_EVT:
+            if (param->open.status == ESP_OK) {
+                Serial.println("HID device connected.");
+            } else {
+                Serial.println("Failed to connect to HID device.");
+            }
+            break;
+        case ESP_HIDH_CLOSE_EVT:
+            Serial.println("HID device disconnected.");
+            break;
+        default:
+            break;
+    }
+}
+
+
+// SPP event handler
+void spp_event_handler(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
+    switch (event) {
+        case ESP_SPP_INIT_EVT:
+            Serial.println("SPP initialized successfully.");
+            break;
+        case ESP_SPP_DISCOVERY_COMP_EVT:
+            Serial.println("SPP device discovery completed.");
+            break;
+        case ESP_SPP_OPEN_EVT:
+            Serial.println("SPP connection opened.");
+            break;
+        case ESP_SPP_CLOSE_EVT:
+            Serial.println("SPP connection closed.");
+            break;
+        case ESP_SPP_DATA_IND_EVT:
+            Serial.printf("SPP data received: %.*s\n", param->data_ind.len, (char *)param->data_ind.data);
+            break;
+        default:
+            Serial.println("Unhandled SPP event");
+            break;
+    }
+}
+
 
 // Function to handle Bluetooth PIN code requests (optional for keyboards that require a PIN)
 void btPinCodeRequestCallback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
@@ -82,19 +173,12 @@ void btPinCodeRequestCallback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t
 
 // Function to initiate pairing with the device
 void initBluetoothPairing() {
-
-    // Set up Secure Simple Pairing (SSP) for devices with no input/output like keyboards
     uint8_t ioCapability = ESP_BT_IO_CAP_NONE;  // No input/output capabilities
     esp_bt_gap_set_security_param(ESP_BT_SP_IOCAP_MODE, &ioCapability, sizeof(uint8_t));
 
-    // Enable visibility for the device
     esp_bt_dev_set_device_name("ESP32_Keyboard");
     esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-
-    // Register callback to handle pairing requests, like PIN requests
     esp_bt_gap_register_callback(btPinCodeRequestCallback);
-
-    // Set the Bluetooth device to use a fixed PIN (can be modified as needed)
     esp_bt_gap_set_pin(ESP_BT_PIN_TYPE_VARIABLE, 0, nullptr);
 }
 
@@ -116,6 +200,8 @@ void removeBondedDevice(const String& btDeviceAddrStr) {
 }
 
 void initiatePairing(const String& btDeviceAddr) {
+
+
     esp_bd_addr_t addr;
     sscanf(btDeviceAddr.c_str(), "%02X:%02X:%02X:%02X:%02X:%02X",
            (unsigned int*)&addr[0],
@@ -133,6 +219,7 @@ void initiatePairing(const String& btDeviceAddr) {
 
 
 // Updated function to check and connect to the keyboard with pairing support
+// Check if the device is a keyboard and initiate connection
 void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const String& btDeviceName, int8_t rssi) {
     uint8_t majorDeviceClass = (cod >> 8) & 0x1F;
     uint8_t minorDeviceClass = (cod >> 2) & 0x3F;
@@ -141,21 +228,13 @@ void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const Str
         Serial.printf("Attempting to pair and connect to Bluetooth Keyboard: %s\n", btDeviceName.c_str());
 
         if (!SerialBT.connected()) {
-            // Log the Bluetooth address, class of device, and RSSI
             Serial.printf("Device Address: %s, Class of Device: 0x%X, RSSI: %d dBm\n", btDeviceAddr.c_str(), cod, rssi);
 
-            // Initialize pairing process
             initBluetoothPairing();
-
-            // Remove any previously bonded devices to ensure a clean connection
             removeBondedDevice(btDeviceAddr);
-
-            // Manually initiate pairing
-            Serial.printf("Initiating pairing with %s...\n", btDeviceAddr.c_str());
             initiatePairing(btDeviceAddr);
 
-            // Prepare parameters for connection
-            uint8_t addr[6];  // To hold the device address in byte array
+            uint8_t addr[6];
             sscanf(btDeviceAddr.c_str(), "%02X:%02X:%02X:%02X:%02X:%02X",
                    (unsigned int*)&addr[0],
                    (unsigned int*)&addr[1],
@@ -164,36 +243,18 @@ void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const Str
                    (unsigned int*)&addr[4],
                    (unsigned int*)&addr[5]);
 
-            // Retry connection attempts (3 retries, 10 seconds timeout)
             int retries = 3;
             bool connected = false;
             while (retries-- > 0 && !connected) {
                 Serial.printf("Initiating connection to %s (%d retries left)...\n", btDeviceAddr.c_str(), retries);
 
-                // Use the more advanced `connect` method with channel, security mask, and role
                 if (SerialBT.connect(addr, 1, ESP_SPP_SEC_ENCRYPT | ESP_SPP_SEC_AUTHENTICATE, ESP_SPP_ROLE_MASTER)) {
                     Serial.println("Connected successfully!");
                     connected = true;
                 } else {
                     Serial.println("Failed to connect.");
-
-                    // Check if the failure is due to weak signal strength (RSSI)
-                    if (rssi < -75) {
-                        Serial.println("Potential reason: Signal strength too weak (RSSI < -75 dBm).");
-                    } else {
-                        Serial.println("Potential reason: Device may not be accepting connections or busy.");
-                    }
-
-                    // Additional diagnostics
-                    if (!SerialBT.hasClient()) {
-                        Serial.println("Potential reason: Device no longer visible or out of range.");
-                    } else {
-                        Serial.println("Potential reason: Pairing issue or unsupported Bluetooth protocol.");
-                    }
+                    delay(10000);
                 }
-
-                // Increase delay to 10 seconds between retries
-                delay(10000);
             }
 
             if (!connected) {
@@ -206,4 +267,3 @@ void checkAndConnectKeyboard(const String& btDeviceAddr, uint32_t cod, const Str
         Serial.println("Device is not a Bluetooth keyboard.");
     }
 }
-
