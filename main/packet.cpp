@@ -275,5 +275,5 @@ bool Packet::isTimeOutOfSync() {
     Serial.println(timeDifference);
 
     // Define a threshold (e.g., 5 seconds) to determine if sync is lost
-    return timeDifference > 5;  // Time difference greater than 5 seconds indicates sync loss
+    return timeDifference > 1;  // Time difference greater than 1 seconds indicates sync loss
 }

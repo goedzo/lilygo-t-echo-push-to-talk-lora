@@ -13,6 +13,7 @@
 #include "epd/GxEPD2_150_BN.h"
 #include <GxEPD2_BW.h>  // For black and white displays
 
+#include <Fonts/Org_01.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include "display.h"
@@ -604,6 +605,29 @@ void printFrequencyIcon(bool updateScreen=false) {
   }
 }
 
+void printTimeIcon(bool updateScreen=false) {
+
+  RTC_Date dateTime = rtc.getDateTime();
+  char time_str[9];  // Format: HH:MM:SS
+  snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", dateTime.hour, dateTime.minute, dateTime.second);
+
+  //Let's print the current frequency on the left bottom
+  display->fillRect(5*disp_font_height+3, disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset+disp_font_height -4, 39, disp_font_height, GxEPD_WHITE);
+  display->setCursor(5*disp_font_height+3, disp_height-disp_icon_height-disp_bottom_margin-4+disp_font_height);
+
+  // Set text color and font
+  display->setTextColor(GxEPD_BLACK);
+  display->setFont(&Org_01);
+
+  // Print the new line
+  display->print(time_str);
+  if(updateScreen) {
+      display->displayWindow(0,0,disp_width,disp_height);    
+  }
+}
+
+
+
 void printStatusIcons(){
   uint8_t batteryPercentage = getBatteryPercentage();
   if(batteryPercentage>90) {
@@ -632,6 +656,7 @@ void printStatusIcons(){
   }
   printGPSIcon();
   printFrequencyIcon();
+  printTimeIcon();
 }
 
 void updModeAndChannelDisplay() {

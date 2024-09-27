@@ -237,7 +237,7 @@ void handlePacket(Packet packet) {
           snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
           updDisp(6, buf, false);
           updDisp(7, packet.content.c_str(), true);
-
+          updModeAndChannelDisplay();
       } 
       else if (current_mode == "PTT" && packet.type == "PTT") {
           if(packet.channel== channels[deviceSettings.channel_idx]) {
@@ -258,6 +258,7 @@ void handlePacket(Packet packet) {
               //This is actually meant for my channel
               updDisp(7, packet.content.c_str(), true);
           }
+          updModeAndChannelDisplay();
       }
       else if (current_mode == "PONG" && packet.type == "PING") {
           //We pong this message
@@ -290,6 +291,7 @@ void handlePacket(Packet packet) {
             delay(1000);
             updDisp(5, "Ping!",true);
             sendPacket("Ping!");
+            updModeAndChannelDisplay();
 
       } 
       else if (current_mode == "RANGE" && packet.type == "RANGE") {
@@ -387,8 +389,7 @@ void handlePacket(Packet packet) {
 
                   snprintf(display_msg, sizeof(display_msg), "PLoss: %d/%d ok", range_total_pckt_loss,range_consecutive_ok);
                   updDisp(7, display_msg,true); //test message and counter
-
-
+                  updModeAndChannelDisplay();
 
               }
               else {
@@ -614,6 +615,7 @@ void sendRangeMessage() {
       snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
       updDisp(5, display_msg,true);
 
+      updModeAndChannelDisplay();
 
 
       //Cool of period to allow receiving of messages because of switching from sent to receive takes time
@@ -648,6 +650,7 @@ void sendTestMessage(bool now) {
 
       //Cool of period to allow receiving of messages because of switching from sent to receive takes time
       sendTestMessageTimer = millis();
+      updModeAndChannelDisplay();
     }
 
 }
