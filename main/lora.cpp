@@ -425,25 +425,37 @@ void checkLoraPacketComplete() {
     handleMapSharing();
 }
 
-// Function to set the frequency and update global state
 int setFrequency(float freq) {
+    // Avoid setting frequency if already set to the desired value
+    if (currentFrequency == freq) {
+        return RADIOLIB_ERR_NONE;  // Frequency already set
+    }
+
+    // Try setting the frequency
     int state = radio->setFrequency(freq);
+    
+    // If successful, update state and display
     if (state == RADIOLIB_ERR_NONE) {
         currentFrequency = freq;
         printFrequencyIcon(true);  // Show frequency on screen
-        Serial.print(F("Setting frequency "));
-        Serial.println(freq);
+        Serial.print(F("Frequency set to: "));
     } else {
-        Serial.print(F("Failed to set frequency, code "));
-        Serial.print(freq);
-        Serial.print(F(" - "));
-        Serial.println(state);
+        // If unsuccessful, report error
+        Serial.print(F("Failed to set frequency, code: "));
     }
+
+    // Log frequency and state
+    Serial.print(freq);
+    Serial.print(F(" - "));
+    Serial.println(state);
+    
+    // Reset transmit flag and start receiving
     transmitFlag = false;
-    //Listen to this frequency
-    radio->startReceive();
+    radio->startReceive();  // Always start receiving
+
     return state;
 }
+
 
 // Setup LoRa radio
 bool setupLoRa() {
