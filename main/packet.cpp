@@ -58,14 +58,6 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
         return true;
     }
 
-    // Handle REQ type
-    if (type == "REQ") {
-        // The content will be the requested packet counter (a number)
-        content = String((char*)(buffer + 3));  // After "REQ"
-        Serial.print(F("Requested packet counter: "));
-        Serial.println(content);
-        return true;
-    }
 
 
     // Check if the packet is a "MAP" packet and validate the checksum
@@ -114,6 +106,22 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
     } else {
         testCounter = 0;
     }
+
+    // Handle REQ type. Must be done after parsing the header to correctly extract the content
+    if (type == "REQ") {
+        // The content will be the requested packet counter (a number)
+        Serial.print(F("Requested packet counter: "));
+        Serial.println(content);
+
+        int packetCounter = atoi(content.c_str());  // Convert to integer
+        if (packetCounter>0) {
+            handleRetransmitRequest(packetCounter);
+        }
+
+        //Return false so since we handle this ourselves and not pass it to the app
+        return false;
+    }
+
 
     return true;
 }
@@ -271,8 +279,8 @@ bool Packet::isTimeOutOfSync() {
     // Calculate the time difference in seconds
     long timeDifference = abs(receivedTimeSeconds - currentTimeSeconds);
 
-    Serial.print(F("Time difference: "));
-    Serial.println(timeDifference);
+    //Serial.print(F("Time difference: "));
+    //Serial.println(timeDifference);
 
     // Define a threshold (e.g., 5 seconds) to determine if sync is lost
     return timeDifference > 1;  // Time difference greater than 1 seconds indicates sync loss

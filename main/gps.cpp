@@ -85,7 +85,7 @@ void loopGPS() {
             //Update time if we are longer then a minute out of synch
             rtc.setDateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond);
             time_set = true;
-            SerialMon.println("RTC set from GPS time");
+            //SerialMon.println("RTC set from GPS time");
         }
         if(gps_status==GPS_INIT) {
             gps_status = GPS_TIME;  // Set status to GPS_TIME since we found the time
@@ -179,9 +179,10 @@ void loopGPS() {
                 } else {
                     // Location might not be stable
                     gps_status=GPS_TIME;
-                    SerialMon.print("GPS Loc sattelites too low ");
+                    /*SerialMon.print("GPS Loc sattelites too low ");
                     SerialMon.print(gps->satellites.value());
                     SerialMon.println("");
+                    */
 
                 }
 

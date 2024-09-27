@@ -13,15 +13,22 @@
 #include <time.h>  // For RTC time management
 #include <stdlib.h>  // For random number generation
 
-#define PACKET_BUFFER_SIZE 5
-#define NEWER_PACKET_QUEUE_SIZE 5
+#define RETRANSMIT_BUFFER_SIZE 5
+#define RECEIVE_PACKET_QUEUE_SIZE 5
+#define SEND_PACKET_QUEUE_SIZE 10
 
-PacketQueue receivePacketQueue[NEWER_PACKET_QUEUE_SIZE];
+PacketQueue receivePacketQueue[RECEIVE_PACKET_QUEUE_SIZE];
 int receivePacketQueueCount = 0;
 
-
-PacketBuffer retransmitPacketBuffer[PACKET_BUFFER_SIZE];
+PacketBuffer retransmitPacketBuffer[RETRANSMIT_BUFFER_SIZE];
 int bufferIndex = 0;
+
+PacketQueueEntry packetQueue[SEND_PACKET_QUEUE_SIZE];  // Queue for pending packets
+int queueHead = 0;  // Points to the head of the queue
+int queueTail = 0;  // Points to the tail of the queue
+bool transmitInProgress = false;  // Track transmission state
+
+
 
 
 SX1262* radio = nullptr;
@@ -57,6 +64,7 @@ unsigned int messageCounter = 0;       // The counter I add to each message so t
 unsigned int lastReceivedCounter = 0;  // Global variable to store the last received packet counter
 uint8_t* lastMessageBuffer = nullptr;  // Buffer to store the last message sent
 uint16_t lastMessageLength = 0;        // Length of the last message sent
+unsigned int lastMessageCounter=0;     // The packetCounter of the last message
 
 // Move numFrequencies and frequency calculations to initialization
 void initializeFrequencyMap() {
@@ -76,31 +84,16 @@ float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
 
     // Combine intervalCount and sharedSeed for randomness
     unsigned long randomValue = intervalCount ^ sharedSeed;  // XOR interval count with the seed for randomness
-    Serial.print(F("IntervalCount: ")); 
-    Serial.println(intervalCount);
-    Serial.print(F("SharedSeed: "));
-    Serial.println(sharedSeed);
-    Serial.print(F("RandomValue: "));
-    Serial.println(randomValue);
 
     // Generate a random starting index based on intervalCount
     int startingIndex = randomValue % numFrequencies;
-    Serial.print(F("Starting Index: "));
-    Serial.println(startingIndex);
 
     // Loop through the frequencies starting from the random index
     for (int i = 0; i < numFrequencies; i++) {
         int index = (startingIndex + i) % numFrequencies;  // Wrap around if we exceed the range
-        Serial.print(F("Checking Frequency Index: "));
-        Serial.println(index);
-        Serial.print(F("Frequency: "));
-        Serial.println(frequencyMap[index].frequency);
-        Serial.print(F("Frequency Status: "));
-        Serial.println(frequencyMap[index].status);
-
         if (frequencyMap[index].status == FREQUENCY_GOOD) {
-            Serial.print(F("Selected Frequency: "));
-            Serial.println(frequencyMap[index].frequency);
+            //Serial.print(F("Selected Frequency: "));
+            //Serial.println(frequencyMap[index].frequency);
             return frequencyMap[index].frequency;  // Return the good frequency
         }
     }
@@ -111,27 +104,6 @@ float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
 }
 
 
-// Function to detect loss of synchronization
-bool isSyncLost() {
-    RTC_Date currentTime = rtc.getDateTime();  // Get the current time from RTC
-    unsigned long currentSharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
-
-    // Calculate expected hop time based on last known good map sharing time
-    unsigned long expectedSharedTime = lastMapShareTime + (millis() - syncLossTimer) / 1000;  // Convert to seconds
-    
-    // Calculate the time difference between current and expected
-    long timeDifference = abs((long)(currentSharedTime - expectedSharedTime));
-
-    // Consider sync lost if the time difference exceeds a threshold (e.g., 5 seconds)
-    if (timeDifference > 5) {  // Adjustable threshold
-        Serial.print(F("Sync loss detected. Time difference: "));
-        Serial.println(timeDifference);
-        return true;
-    }
-
-    // If the time difference is within the threshold, sync is not lost
-    return false;
-}
 
 
 // Simple checksum calculation for validating received maps
@@ -190,7 +162,7 @@ void updateFrequencyMap(const unsigned char* receivedData, int len) {
 
 void setFlag(void) {
     operationDone = true;
-}
+ }
 
 // Function to handle map sharing logic
 void handleMapSharing() {
@@ -206,7 +178,7 @@ void handleMapSharing() {
 }
 
 void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
-    if (receivePacketQueueCount < NEWER_PACKET_QUEUE_SIZE) {
+    if (receivePacketQueueCount < RECEIVE_PACKET_QUEUE_SIZE) {
         receivePacketQueue[receivePacketQueueCount].packetData = new uint8_t[len];
         memcpy(receivePacketQueue[receivePacketQueueCount].packetData, pkt_buf, len);
         receivePacketQueue[receivePacketQueueCount].packetLen = len;
@@ -238,19 +210,24 @@ bool checkForMissingPackets(Packet& packet, uint8_t* rcv_pkt_buf, uint16_t packe
     unsigned int missedPackets = packet.packetCounter - lastReceivedCounter - 1;
 
     if (lastReceivedCounter > 0 && missedPackets > 0) {
-        // Check if we missed more than PACKET_BUFFER_SIZE packets
-        if (missedPackets > PACKET_BUFFER_SIZE) {
+        // Check if we missed more than RETRANSMIT_BUFFER_SIZE packets
+        if (missedPackets > RETRANSMIT_BUFFER_SIZE) {
             Serial.println(F("Too many packets missed, unable to request older packets"));
             lastReceivedCounter = packet.packetCounter;  // Skip to the newest packet
             return true;  // Continue processing since no retransmission request is needed
         } else {
             // Request all missed packets sequentially
             for (unsigned int missedCounter = expectedPacketCounter; missedCounter < packet.packetCounter; missedCounter++) {
-                char requestBuf[10];
-                snprintf(requestBuf, sizeof(requestBuf), "REQ%04u", missedCounter);
+                char requestBuf[50];
+                snprintf(requestBuf, sizeof(requestBuf), "REQ%d", missedCounter);  // Format the packet request
                 sendPacket((uint8_t*)requestBuf, strlen(requestBuf));
                 Serial.print(F("Requesting retransmission of packet: "));
                 Serial.println(missedCounter);
+
+                char buf[50];
+                snprintf(buf, sizeof(buf), "Missed: %d", missedCounter);
+                showError(buf);
+
             }
             // Store the newer packet in the queue until all missing packets are received
             storePacketInQueue(rcv_pkt_buf, packet_len, packet.packetCounter);
@@ -279,6 +256,11 @@ void handleRetransmitRequestComplete() {
                 if (packet.parsePacket(receivePacketQueue[i].packetData, receivePacketQueue[i].packetLen)) {
                     Serial.print(F("Processing queued packet: "));
                     Serial.println(packet.packetCounter);
+
+                    char buf[50];
+                    snprintf(buf, sizeof(buf), "Recover: %d", packet.packetCounter);
+                    showError(buf);
+
                     handlePacket(packet);  // Process the packet
 
                     // Update the last received counter
@@ -300,6 +282,9 @@ void handleRetransmitRequestComplete() {
             }
         }
     }
+    //Clear the error
+    showError("");
+
 }
 
 
@@ -324,11 +309,14 @@ void checkLoraPacketComplete() {
                 if (lastMessageBuffer && lastMessageLength > 0) {
                     delay(1000);  // Allow some deviation in other devices
                     Serial.println(F("Resending last message after frequency hop"));
-                    sendPacket(lastMessageBuffer, lastMessageLength);
+                    sendPacket(lastMessageBuffer, lastMessageLength,lastMessageCounter);
                 }
             } else {
                 radio->startReceive();  // Start receiving after transmission
             }
+            //If there are more messages in the queue, send them now
+            handleTransmissionComplete();
+
         } else {
             uint16_t packet_len = radio->getPacketLength(false);
             uint16_t irqStatus = radio->getIrqStatus();
@@ -350,7 +338,7 @@ void checkLoraPacketComplete() {
 
                         // Check if time is out of sync
                         if (packet.isTimeOutOfSync()) {
-                            Serial.println(F("Time is out of sync, adjusting RTC..."));
+                            //Serial.println(F("Time is out of sync, adjusting RTC..."));
                             adjustRTC(packet.sendDateTime);  // Adjust RTC using the received timestamp
                         }
 
@@ -380,7 +368,7 @@ void checkLoraPacketComplete() {
                         // Reset sync loss timer on successful packet
                         syncLossTimer = millis();
                     } else {
-                        Serial.println("Error packet received");
+                        //No need to process
                     }
                 } else if (state != RADIOLIB_ERR_RX_TIMEOUT) {
                     Serial.print(F("Receive failed, code "));
@@ -399,28 +387,15 @@ void checkLoraPacketComplete() {
         RTC_Date currentTime = rtc.getDateTime();  // Get current time from the RTC
         unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
 
-        if (sharedTime != lastHopTime) {
-            float newFrequency = getNextFrequency(sharedTime, sharedSeed);
-
-            if (newFrequency != currentFrequency) {
-                if (isSyncLost()) {
-                    Serial.println(F("Sync lost, reinitializing synchronization..."));
-                    lastMapShareTime = sharedTime;  // Reinitialize sync using the current RTC time
-                    syncLossTimer = millis();  // Reset the sync loss timer
-                    lastHopTime = sharedTime;
-
-                    newFrequency = getNextFrequency(sharedTime, sharedSeed);  // Get the next frequency
-                }
-
-                if (!transmitFlag && operationDone) {
-                    hopToFrequency = newFrequency;
-                    hopAfterTxRx = true;
-                } else {
-                    setFrequency(newFrequency);  // Set the new frequency
-                }
-
-                lastHopTime = sharedTime;  // Update the last hop time
+        float newFrequency = getNextFrequency(sharedTime, sharedSeed);
+        if (newFrequency != currentFrequency) {
+            if (!transmitFlag && operationDone) {
+                hopToFrequency = newFrequency;
+                hopAfterTxRx = true;
+            } else {
+                setFrequency(newFrequency);  // Set the new frequency
             }
+            lastHopTime = sharedTime;  // Update the last hop time
         }
     }
 
@@ -537,31 +512,40 @@ void storePacketInBuffer(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
     retransmitPacketBuffer[bufferIndex].packetLen = len;
     retransmitPacketBuffer[bufferIndex].messageCounter = counter;
 
-    bufferIndex = (bufferIndex + 1) % PACKET_BUFFER_SIZE;  // Circular increment
+    bufferIndex = (bufferIndex + 1) % RETRANSMIT_BUFFER_SIZE;  // Circular increment
 }
 
 void handleRetransmitRequest(unsigned int requestedCounter) {
-    for (int i = 0; i < PACKET_BUFFER_SIZE; i++) {
+    for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
         if (retransmitPacketBuffer[i].messageCounter == requestedCounter) {
             Serial.print(F("Resending packet with counter: "));
             Serial.println(requestedCounter);
-            sendPacket(retransmitPacketBuffer[i].packetData, retransmitPacketBuffer[i].packetLen);
+
+            char buf[50];
+            snprintf(buf, sizeof(buf), "Resend: %d", requestedCounter);
+            showError(buf);
+
+            sendPacket(retransmitPacketBuffer[i].packetData, retransmitPacketBuffer[i].packetLen, requestedCounter);
             return;
         }
     }
     Serial.println(F("Requested packet not found in buffer"));
+    char buf[50];
+    snprintf(buf, sizeof(buf), "Resend 404: %d", requestedCounter);
+    showError(buf);
 }
 
-void sendPacket(uint8_t* pkt_buf, uint16_t len) {
+void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverride) {
     if (transmitFlag) {
-        showError("Already in transmit, skipping");
-        transmitFlag = false;
+        Serial.println(F("Already in transmit, enqueueing packet"));
+        enqueuePacket(pkt_buf, len);
         return;
     }
 
-    // Increment the message counter for each new packet
-    messageCounter++;
 
+
+    // Use the provided message counter or generate a new one if no override is provided
+    unsigned int currentMessageCounter = (messageCounterOverride > 0) ? messageCounterOverride : ++messageCounter;
 
     // The first 3 characters in pkt_buf are the packet type
     char typeBuffer[4];
@@ -572,7 +556,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     String header = String(typeBuffer);  // Initialize with the packet type
 
     // Add message counter with the "~PC" field
-    header += "~PC" + String(messageCounter);  // Ensure 4 digits for messageCounter
+    header += "~PC" + String(currentMessageCounter);  // Ensure 4 digits for messageCounter
 
     // Add sendDateTime from RTC
     header += "~SD" + getFormattedDateTime();  // Example: "20230921183045"
@@ -584,7 +568,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     }
     */
 
-    header += "~~"; //Always end with ~~ before the actual content
+    header += "~~";  // Always end with ~~ before the actual content
 
     // Calculate the new length (header + the remaining content after the first 3 characters)
     uint16_t headerLen = header.length();
@@ -607,6 +591,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     lastMessageBuffer = new uint8_t[newLen];
     memcpy(lastMessageBuffer, send_pkt_buf, newLen);
     lastMessageLength = newLen;
+    lastMessageCounter = currentMessageCounter;
 
     // Get time-on-air for logging
     timeOnAir = radio->getTimeOnAir(newLen);
@@ -615,7 +600,8 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
 
     Serial.println(send_pkt_buf);
 
-    storePacketInBuffer((uint8_t*)send_pkt_buf, newLen, messageCounter);  // Store in buffer in case we need to resend
+    //In case we need to resent, store it in the buffer
+    storePacketInBuffer((uint8_t*)pkt_buf, newLen, currentMessageCounter);  // Store in buffer in case we need to resend
 
     // Start the transmission
     int state = radio->startTransmit((uint8_t*)send_pkt_buf, newLen);
@@ -633,6 +619,8 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len) {
     // Free the dynamically allocated buffer
     delete[] send_pkt_buf;
 }
+
+
 
 // This function converts the string to uint8_t* and calls the main sendPacket
 void sendPacket(const char* str) {
@@ -724,5 +712,74 @@ void adjustRTC(const String& dateTime) {
 
     // Adjust the RTC time
     rtc.setDateTime(year, month, day, hour, minute, second);
-    Serial.println(F("RTC adjusted to new time"));
+    //Serial.println(F("RTC adjusted to new time"));
 }
+
+
+// Function to check if the queue is full
+bool isQueueFull() {
+    return ((queueTail + 1) % SEND_PACKET_QUEUE_SIZE) == queueHead;
+}
+
+// Function to check if the queue is empty
+bool isQueueEmpty() {
+    return queueHead == queueTail;
+}
+
+// Function to enqueue a packet
+void enqueuePacket(uint8_t* pkt_buf, uint16_t len) {
+    if (isQueueFull()) {
+        Serial.println(F("Packet queue full, dropping packet"));
+        return;
+    }
+    
+    packetQueue[queueTail].packetData = new uint8_t[len];
+    memcpy(packetQueue[queueTail].packetData, pkt_buf, len);
+    packetQueue[queueTail].packetLen = len;
+    queueTail = (queueTail + 1) % SEND_PACKET_QUEUE_SIZE;
+}
+
+
+// Function to dequeue the next packet
+bool dequeuePacket(uint8_t*& pkt_buf, uint16_t& len) {
+    if (isQueueEmpty()) {
+        return false;
+    }
+
+    // Get the packet data and length
+    len = packetQueue[queueHead].packetLen;
+
+    // Allocate new memory for the dequeued packet
+    pkt_buf = new uint8_t[len];
+    memcpy(pkt_buf, packetQueue[queueHead].packetData, len);  // Copy the packet data
+
+    // Now it is safe to free the original memory in the queue
+    delete[] packetQueue[queueHead].packetData;
+    packetQueue[queueHead].packetData = nullptr;
+
+    // Move to the next item in the queue
+    queueHead = (queueHead + 1) % SEND_PACKET_QUEUE_SIZE;
+    return true;
+}
+
+
+// Callback function to handle completion of transmission
+void handleTransmissionComplete() {
+    transmitFlag = false;
+
+    uint8_t* nextPacketData = nullptr;
+    uint16_t nextPacketLen = 0;
+
+    // Check if there is a packet in the queue and transmit it
+    if (dequeuePacket(nextPacketData, nextPacketLen)) {
+        Serial.println(F("Sending next packet from queue"));
+        sendPacket(nextPacketData, nextPacketLen);
+
+        // After sending the packet, free the memory allocated for the packet data
+        delete[] nextPacketData;
+    } else {
+        // Packet queue is empty
+        //Serial.println(F("Packet queue is empty"));
+    }
+}
+

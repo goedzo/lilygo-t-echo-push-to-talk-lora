@@ -21,12 +21,12 @@ DeviceSettings deviceSettings = {
     .bitrate_idx = 2,
     .volume_level = 5,
     .channel_idx = 0,
-    .spreading_factor = 9,
+    .spreading_factor = 8,
     .backlight = true,
     .hours = 0,
     .minutes = 0,
     .seconds = 0,
-    .bandwidth_idx = BW_125_KHZ, // Set default bandwidth to 250 kHz
+    .bandwidth_idx = BW_250_KHZ, // Set default bandwidth to 250 kHz
     .coding_rate_idx = CR_6,     // Default coding rate 8, to have as much error recovering as possible
     .frequency_hopping_enabled = true  // Enable frequency hopping by default
 };

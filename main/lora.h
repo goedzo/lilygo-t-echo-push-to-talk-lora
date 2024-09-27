@@ -7,8 +7,8 @@
 #include "packet.h"
 
 #define QUALITY_THRESHOLD 50  // Define a threshold for channel quality (value can be adjusted)
-#define PACKET_BUFFER_SIZE 5  // Buffer size for packet retransmission
-#define NEWER_PACKET_QUEUE_SIZE 5  // Buffer size for storing newer packets
+#define RETRANSMIT_BUFFER_SIZE 5  // Buffer size for packet retransmission
+#define RECEIVE_PACKET_QUEUE_SIZE 5  // Buffer size for storing newer packets
 
 // Enum for Frequency Status
 enum FrequencyStatusEnum {
@@ -38,6 +38,14 @@ struct PacketQueue {
     unsigned int packetCounter;
 };
 
+// Structure for packet queue
+struct PacketQueueEntry {
+    uint8_t* packetData;
+    uint16_t packetLen;
+};
+
+
+
 // External declarations of important LoRa-related variables
 extern SX1262* radio;
 extern float defaultFrequency;
@@ -60,7 +68,7 @@ void initializeFrequencyMap();
 float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed);
 void checkLoraPacketComplete();
 bool setupLoRa();
-void sendPacket(uint8_t* pkt_buf, uint16_t len);
+void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverride = 0);
 void sendPacket(const char* str);
 void sleepLoRa();
 void markFrequencyAsGood(float freq);
@@ -70,7 +78,6 @@ void shareFrequencyMap();  // Function to share the frequency map
 void updateFrequencyMap(const unsigned char* receivedData, int len);  // Function to update the frequency map based on received data
 void handleMapSharing();  // Function to handle map sharing logic
 unsigned char calculateChecksum(const unsigned char* data, int len);  // Function to calculate checksum for data validation
-bool isSyncLost();  // Function to detect loss of synchronization
 int calculateQuality(float rssi, float snr, bool ignoreSNR);
 String getFormattedDateTime();
 
@@ -82,5 +89,7 @@ void processPacketQueue();  // Process the queued packets
 void handleRetransmitRequestComplete();  // Handle retransmission completion and process queued packets
 bool checkForMissingPackets(Packet& packet);  // Check for missing packets and request retransmission if necessary
 void adjustRTC(const String& dateTime);
+void handleTransmissionComplete();
+void enqueuePacket(uint8_t* pkt_buf, uint16_t len);
 
 #endif // LORA_H
