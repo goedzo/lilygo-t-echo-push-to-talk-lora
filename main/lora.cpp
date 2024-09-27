@@ -16,11 +16,11 @@
 #define PACKET_BUFFER_SIZE 5
 #define NEWER_PACKET_QUEUE_SIZE 5
 
-PacketQueue newerPacketQueue[NEWER_PACKET_QUEUE_SIZE];
-int newerPacketQueueCount = 0;
+PacketQueue receivePacketQueue[NEWER_PACKET_QUEUE_SIZE];
+int receivePacketQueueCount = 0;
 
 
-PacketBuffer packetBuffer[PACKET_BUFFER_SIZE];
+PacketBuffer retransmitPacketBuffer[PACKET_BUFFER_SIZE];
 int bufferIndex = 0;
 
 
@@ -207,12 +207,12 @@ void handleMapSharing() {
 }
 
 void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
-    if (newerPacketQueueCount < NEWER_PACKET_QUEUE_SIZE) {
-        newerPacketQueue[newerPacketQueueCount].packetData = new uint8_t[len];
-        memcpy(newerPacketQueue[newerPacketQueueCount].packetData, pkt_buf, len);
-        newerPacketQueue[newerPacketQueueCount].packetLen = len;
-        newerPacketQueue[newerPacketQueueCount].packetCounter = counter;
-        newerPacketQueueCount++;
+    if (receivePacketQueueCount < NEWER_PACKET_QUEUE_SIZE) {
+        receivePacketQueue[receivePacketQueueCount].packetData = new uint8_t[len];
+        memcpy(receivePacketQueue[receivePacketQueueCount].packetData, pkt_buf, len);
+        receivePacketQueue[receivePacketQueueCount].packetLen = len;
+        receivePacketQueue[receivePacketQueueCount].packetCounter = counter;
+        receivePacketQueueCount++;
     } else {
         Serial.println(F("Newer packet queue full, discarding packet."));
     }
@@ -220,17 +220,17 @@ void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
 
 void processPacketQueue() {
     // Sort the packets by counter (optional for ordered processing)
-    for (int i = 0; i < newerPacketQueueCount; i++) {
+    for (int i = 0; i < receivePacketQueueCount; i++) {
         Packet packet;
-        if (packet.parsePacket(newerPacketQueue[i].packetData, newerPacketQueue[i].packetLen)) {
+        if (packet.parsePacket(receivePacketQueue[i].packetData, receivePacketQueue[i].packetLen)) {
             Serial.print(F("Processing queued packet: "));
             Serial.println(packet.packetCounter);
             handlePacket(packet);  // Process the packet
         }
         // Free the memory after processing
-        delete[] newerPacketQueue[i].packetData;
+        delete[] receivePacketQueue[i].packetData;
     }
-    newerPacketQueueCount = 0;  // Reset the queue count after processing
+    receivePacketQueueCount = 0;  // Reset the queue count after processing
 }
 
 
@@ -272,12 +272,12 @@ void handleRetransmitRequestComplete() {
     bool packetProcessed = true;
     while (packetProcessed) {
         packetProcessed = false;
-        for (int i = 0; i < newerPacketQueueCount; i++) {
+        for (int i = 0; i < receivePacketQueueCount; i++) {
             // Check if the next expected packet is in the queue
-            if (newerPacketQueue[i].packetCounter == lastReceivedCounter + 1) {
+            if (receivePacketQueue[i].packetCounter == lastReceivedCounter + 1) {
                 // Process the packet
                 Packet packet;
-                if (packet.parsePacket(newerPacketQueue[i].packetData, newerPacketQueue[i].packetLen)) {
+                if (packet.parsePacket(receivePacketQueue[i].packetData, receivePacketQueue[i].packetLen)) {
                     Serial.print(F("Processing queued packet: "));
                     Serial.println(packet.packetCounter);
                     handlePacket(packet);  // Process the packet
@@ -288,13 +288,13 @@ void handleRetransmitRequestComplete() {
                 }
 
                 // Remove the packet from the queue and free memory
-                delete[] newerPacketQueue[i].packetData;
+                delete[] receivePacketQueue[i].packetData;
 
                 // Shift the remaining packets in the queue
-                for (int j = i; j < newerPacketQueueCount - 1; j++) {
-                    newerPacketQueue[j] = newerPacketQueue[j + 1];
+                for (int j = i; j < receivePacketQueueCount - 1; j++) {
+                    receivePacketQueue[j] = receivePacketQueue[j + 1];
                 }
-                newerPacketQueueCount--;
+                receivePacketQueueCount--;
 
                 // Break to recheck the queue after processing
                 break;
@@ -535,25 +535,25 @@ String getFormattedDateTime() {
 
 void storePacketInBuffer(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
     // Free previous buffer data
-    if (packetBuffer[bufferIndex].packetData) {
-        delete[] packetBuffer[bufferIndex].packetData;
+    if (retransmitPacketBuffer[bufferIndex].packetData) {
+        delete[] retransmitPacketBuffer[bufferIndex].packetData;
     }
 
     // Store new packet
-    packetBuffer[bufferIndex].packetData = new uint8_t[len];
-    memcpy(packetBuffer[bufferIndex].packetData, pkt_buf, len);
-    packetBuffer[bufferIndex].packetLen = len;
-    packetBuffer[bufferIndex].messageCounter = counter;
+    retransmitPacketBuffer[bufferIndex].packetData = new uint8_t[len];
+    memcpy(retransmitPacketBuffer[bufferIndex].packetData, pkt_buf, len);
+    retransmitPacketBuffer[bufferIndex].packetLen = len;
+    retransmitPacketBuffer[bufferIndex].messageCounter = counter;
 
     bufferIndex = (bufferIndex + 1) % PACKET_BUFFER_SIZE;  // Circular increment
 }
 
 void handleRetransmitRequest(unsigned int requestedCounter) {
     for (int i = 0; i < PACKET_BUFFER_SIZE; i++) {
-        if (packetBuffer[i].messageCounter == requestedCounter) {
+        if (retransmitPacketBuffer[i].messageCounter == requestedCounter) {
             Serial.print(F("Resending packet with counter: "));
             Serial.println(requestedCounter);
-            sendPacket(packetBuffer[i].packetData, packetBuffer[i].packetLen);
+            sendPacket(retransmitPacketBuffer[i].packetData, retransmitPacketBuffer[i].packetLen);
             return;
         }
     }
