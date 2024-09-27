@@ -58,9 +58,10 @@ unsigned int lastReceivedCounter = 0;  // Global variable to store the last rece
 uint8_t* lastMessageBuffer = nullptr;  // Buffer to store the last message sent
 uint16_t lastMessageLength = 0;        // Length of the last message sent
 
-// Function to initialize frequency map
+// Move numFrequencies and frequency calculations to initialization
 void initializeFrequencyMap() {
     SerialMon.print("initializeFrequencyMap Initializing ...  ");
+    numFrequencies = (endFreq - startFreq) / stepSize;
     frequencyMap = new FrequencyStatus[numFrequencies];
     for (int i = 0; i < numFrequencies; i++) {
         frequencyMap[i].frequency = startFreq + (i * stepSize);
@@ -68,7 +69,6 @@ void initializeFrequencyMap() {
     }
 }
 
-// Pseudo-random frequency hopping based on a shared time source and randomness
 // Pseudo-random frequency hopping based on a shared time source and randomness
 float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
     // Calculate how many intervals of 'FrequencyHopSeconds' have passed
@@ -109,7 +109,6 @@ float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
     Serial.println(F("No good frequency found, falling back to startFreq"));
     return defaultFrequency;
 }
-
 
 
 // Function to detect loss of synchronization
@@ -305,7 +304,7 @@ void handleRetransmitRequestComplete() {
 
 
 
-// Handle AFH and packet completion
+// Modified checkLoraPacketComplete to avoid redundant sharedTime calculation
 void checkLoraPacketComplete() {
     if (operationDone) {
         operationDone = false;
@@ -319,33 +318,27 @@ void checkLoraPacketComplete() {
                 Serial.print(F("Sent failed, code "));
                 Serial.println(state);
             }
-            if(hopAfterTxRx) {
-                hopAfterTxRx=false;
+            if (hopAfterTxRx) {
+                hopAfterTxRx = false;
                 setFrequency(hopToFrequency);  // Set the new frequency
                 // Resend the last message after hopping to the new frequency
                 if (lastMessageBuffer && lastMessageLength > 0) {
-                    delay(1000); //To allow some deviation in the other devices
+                    delay(1000); // To allow some deviation in the other devices
                     Serial.println(F("Resending last message after frequency hop"));
                     sendPacket(lastMessageBuffer, lastMessageLength);
                 }
-            }
-            else {
+            } else {
                 radio->startReceive();  // Start receiving after transmission
-
             }
         } else {
             uint16_t packet_len = radio->getPacketLength(false);
-            //uint16_t irqStatus = radio->getIrqFlags();  //Radiolib 7.0.0 support, but not working
             uint16_t irqStatus = radio->getIrqStatus();
             unsigned char rcv_pkt_buf[MAX_PKT];
 
             if (irqStatus & RADIOLIB_SX126X_IRQ_RX_DONE) {
-                //radio->clearIrqFlags(irqStatus); //Radiolib 7.0.0 support, but not working
-
                 memset(rcv_pkt_buf, 0, MAX_PKT);  // Clear the receive buffer
                 int state = radio->readData(rcv_pkt_buf, packet_len);
-                //Quickly continue receiving
-                radio->startReceive();
+                radio->startReceive();  // Quickly continue receiving
                 if (state == RADIOLIB_ERR_NONE) {
                     rcv_pkt_buf[packet_len] = '\0';  // Null-terminate the received packet
 
@@ -356,12 +349,10 @@ void checkLoraPacketComplete() {
                         Serial.println(packet.content);
                         Serial.println(packet.packetCounter);
 
-                        // Call checkForMissingPackets here
-                        if(checkForMissingPackets(packet, rcv_pkt_buf, packet_len)) {
-                            //True = ok to process. Nothing is missing
+                        // Check for missing packets and process if nothing is missing
+                        if (checkForMissingPackets(packet, rcv_pkt_buf, packet_len)) {
                             handlePacket(packet);
                         }
-
 
                         // Update quality of the current frequency
                         float rssi = radio->getRSSI();
@@ -391,56 +382,41 @@ void checkLoraPacketComplete() {
                     Serial.println(state);
                 }
             }
-            if(hopAfterTxRx){
-                hopAfterTxRx=false;
+            if (hopAfterTxRx) {
+                hopAfterTxRx = false;
                 setFrequency(hopToFrequency);  // Set the new frequency
-            }
-            else {
-                //radio->startReceive();  // Prepare to receive the next packet
             }
         }
     }
 
-    // Handle frequency hopping using RTC time (hours, minutes, and seconds)
+    // Cache sharedTime calculation to avoid repeating it in multiple places
     if (deviceSettings.frequency_hopping_enabled && time_set) {
         RTC_Date currentTime = rtc.getDateTime();  // Get current time from the RTC
         unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
 
-        if (sharedTime != lastHopTime) {  // Adjust the hop interval if needed
-
-
-            // Use shared time to get the next frequency using the frequency hopping algorithm
+        // Frequency hopping logic based on shared time
+        if (sharedTime != lastHopTime) {
             float newFrequency = getNextFrequency(sharedTime, sharedSeed);
-            if(newFrequency==currentFrequency ) {
-                //No Need to Change
-                lastHopTime = sharedTime;
-            }
-            else {
+
+            if (newFrequency != currentFrequency) {
                 // Check for lost synchronization
                 if (isSyncLost()) {
                     Serial.println(F("Sync lost, reinitializing synchronization..."));
-                    // Reinitialize sync using the current RTC time
-                    lastMapShareTime = sharedTime;
+                    lastMapShareTime = sharedTime;  // Reinitialize sync using the current RTC time
                     syncLossTimer = millis();  // Reset the sync loss timer
+                    lastHopTime = sharedTime;
 
-                    lastHopTime = sharedTime;  // Update the last hop time
-
-                    // Use the reinitialized shared time to get the next frequency
-                    newFrequency = getNextFrequency(sharedTime, sharedSeed);
+                    newFrequency = getNextFrequency(sharedTime, sharedSeed);  // Get the next frequency
                 }
-                if(!transmitFlag && operationDone) {
-                    //We must delay until our next radio action is completed
-                    hopToFrequency=newFrequency;
-                    hopAfterTxRx=true;
 
-                }
-                else {
-                    //We can hop, as nothing is happening on the radio
+                if (!transmitFlag && operationDone) {
+                    hopToFrequency = newFrequency;
+                    hopAfterTxRx = true;
+                } else {
                     setFrequency(newFrequency);  // Set the new frequency
                 }
-                
-                lastHopTime = sharedTime;  // Update the last hop time
 
+                lastHopTime = sharedTime;  // Update the last hop time
             }
         }
     }
