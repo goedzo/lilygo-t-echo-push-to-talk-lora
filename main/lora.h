@@ -81,5 +81,6 @@ void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter);  
 void processPacketQueue();  // Process the queued packets
 void handleRetransmitRequestComplete();  // Handle retransmission completion and process queued packets
 bool checkForMissingPackets(Packet& packet);  // Check for missing packets and request retransmission if necessary
+void adjustRTC(const String& dateTime);
 
 #endif // LORA_H

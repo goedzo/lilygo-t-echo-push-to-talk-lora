@@ -1,3 +1,5 @@
+#include "settings.h"
+
 #include "packet.h"
 #include <cstring>  // For strncpy and memcpy
 
@@ -245,3 +247,33 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
     return true;
 }
 
+// Function to compare device's current time with the received 'sendDateTime'
+bool Packet::isTimeOutOfSync() {
+    if (sendDateTime.length() != 14) {
+        return false;  // Invalid timestamp, skip comparison
+    }
+
+    // Get the current time from the RTC
+    RTC_Date currentTime = rtc.getDateTime();
+
+    // Extract components from sendDateTime (assumed format is "YYYYMMDDHHMMSS")
+    int year = sendDateTime.substring(0, 4).toInt();
+    int month = sendDateTime.substring(4, 6).toInt();
+    int day = sendDateTime.substring(6, 8).toInt();
+    int hour = sendDateTime.substring(8, 10).toInt();
+    int minute = sendDateTime.substring(10, 12).toInt();
+    int second = sendDateTime.substring(12, 14).toInt();
+
+    // Compare the received time with the local RTC time
+    long receivedTimeSeconds = hour * 3600 + minute * 60 + second;
+    long currentTimeSeconds = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
+
+    // Calculate the time difference in seconds
+    long timeDifference = abs(receivedTimeSeconds - currentTimeSeconds);
+
+    Serial.print(F("Time difference: "));
+    Serial.println(timeDifference);
+
+    // Define a threshold (e.g., 5 seconds) to determine if sync is lost
+    return timeDifference > 5;  // Time difference greater than 5 seconds indicates sync loss
+}

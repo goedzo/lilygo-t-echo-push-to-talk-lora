@@ -321,9 +321,8 @@ void checkLoraPacketComplete() {
             if (hopAfterTxRx) {
                 hopAfterTxRx = false;
                 setFrequency(hopToFrequency);  // Set the new frequency
-                // Resend the last message after hopping to the new frequency
                 if (lastMessageBuffer && lastMessageLength > 0) {
-                    delay(1000); // To allow some deviation in the other devices
+                    delay(1000);  // Allow some deviation in other devices
                     Serial.println(F("Resending last message after frequency hop"));
                     sendPacket(lastMessageBuffer, lastMessageLength);
                 }
@@ -348,6 +347,12 @@ void checkLoraPacketComplete() {
                         Serial.println(packet.type);
                         Serial.println(packet.content);
                         Serial.println(packet.packetCounter);
+
+                        // Check if time is out of sync
+                        if (packet.isTimeOutOfSync()) {
+                            Serial.println(F("Time is out of sync, adjusting RTC..."));
+                            adjustRTC(packet.sendDateTime);  // Adjust RTC using the received timestamp
+                        }
 
                         // Check for missing packets and process if nothing is missing
                         if (checkForMissingPackets(packet, rcv_pkt_buf, packet_len)) {
@@ -389,17 +394,15 @@ void checkLoraPacketComplete() {
         }
     }
 
-    // Cache sharedTime calculation to avoid repeating it in multiple places
+    // Handle frequency hopping using RTC time
     if (deviceSettings.frequency_hopping_enabled && time_set) {
         RTC_Date currentTime = rtc.getDateTime();  // Get current time from the RTC
         unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
 
-        // Frequency hopping logic based on shared time
         if (sharedTime != lastHopTime) {
             float newFrequency = getNextFrequency(sharedTime, sharedSeed);
 
             if (newFrequency != currentFrequency) {
-                // Check for lost synchronization
                 if (isSyncLost()) {
                     Serial.println(F("Sync lost, reinitializing synchronization..."));
                     lastMapShareTime = sharedTime;  // Reinitialize sync using the current RTC time
@@ -421,9 +424,10 @@ void checkLoraPacketComplete() {
         }
     }
 
-    // Handle the map sharing logic
+    // Handle map sharing logic
     handleMapSharing();
 }
+
 
 int setFrequency(float freq) {
     // Avoid setting frequency if already set to the desired value
@@ -702,4 +706,23 @@ bool isDuplicatePacket(Packet& packet) {
     }
     lastReceivedCounter = packet.packetCounter;  // Update the last received counter
     return false;
+}
+
+// Function to adjust RTC based on received timestamp
+void adjustRTC(const String& dateTime) {
+    if (dateTime.length() != 14) {
+        return;  // Invalid timestamp, skip adjustment
+    }
+
+    // Extract components from the received timestamp (assumed format is "YYYYMMDDHHMMSS")
+    int year = dateTime.substring(0, 4).toInt();
+    int month = dateTime.substring(4, 6).toInt();
+    int day = dateTime.substring(6, 8).toInt();
+    int hour = dateTime.substring(8, 10).toInt();
+    int minute = dateTime.substring(10, 12).toInt();
+    int second = dateTime.substring(12, 14).toInt();
+
+    // Adjust the RTC time
+    rtc.setDateTime(year, month, day, hour, minute, second);
+    Serial.println(F("RTC adjusted to new time"));
 }

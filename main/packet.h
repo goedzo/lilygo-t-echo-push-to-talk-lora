@@ -31,6 +31,8 @@ public:
     // Check if the packet is a valid range message
     bool isRangeMessage() const;
 
+    bool isTimeOutOfSync();
+
 private:
     bool parseHeader(uint8_t* buffer, uint16_t bufferSize);
 };
