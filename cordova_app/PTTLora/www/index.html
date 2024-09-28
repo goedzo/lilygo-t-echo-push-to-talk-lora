@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: https://ssl.gstatic.com 'unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src *; img-src 'self' data: content:;">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="msapplication-tap-highlight" content="no">
+    <meta name="viewport" content="initial-scale=1, width=device-width, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <link rel="stylesheet" href="css/index.css">
+    <title>PTTLora BLE Communication</title>
+</head>
+<body>
+
+    <div class="container">
+        <h1>PTTLora BLE Communication</h1>
+        
+        <!-- Device Status -->
+        <div class="device-status">
+            Status: <span id="deviceStatus">Connecting to device...</span>
+        </div>
+
+        <!-- Console Messages -->
+        <div class="console" id="console">
+            <!-- Console messages will appear here -->
+        </div>
+
+        <!-- Input to Send Data -->
+        <div class="input-container">
+            <input type="text" id="inputField" placeholder="Enter text to send to device" />
+            <button id="sendButton">Send</button>
+        </div>
+
+        <!-- Received Information -->
+        <div>
+            <h3>Information from Device</h3>
+            <p id="deviceInfo" class="info">No data received yet.</p>
+        </div>
+    </div>
+
+    <script src="cordova.js"></script>
+    <script src="js/index.js"></script>
+
+</body>
+</html>

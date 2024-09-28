@@ -22,6 +22,8 @@
 #include "app_modes.h"
 #include "lora.h"
 #include "audio.h"
+#include "ble.h"
+
 
 
 void configVDD(void);
@@ -29,7 +31,6 @@ void boardInit();
 
 uint32_t        blinkMillis = 0;
 uint8_t rgb = 0;
-
 int count=0;
 
 void setup()
@@ -60,6 +61,11 @@ void setup()
     updDisp(5, "Setup app modes");
     setupAppModes();
 
+
+    updDisp(5, "Setup bluetooth");
+    setupBLE();
+
+
     updDisp(5, "Setup ok!");
 
     //setupPingPong();
@@ -72,6 +78,7 @@ void setup()
 void loop()
 {
     handleAppModes();
+    handleBLE();  // BLE handling
     if (millis() - blinkMillis > 1000) {
         blinkMillis = millis();
         switch (rgb) {
