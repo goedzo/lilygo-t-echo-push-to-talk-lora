@@ -8,12 +8,12 @@ function onDeviceReady() {
 
 // Add message to console
 function logMessage(message) {
+	console.log(message);
     const consoleDiv = document.getElementById('console');
     const newMessage = document.createElement('p');
     newMessage.textContent = message;
     consoleDiv.appendChild(newMessage);
     consoleDiv.scrollTop = consoleDiv.scrollHeight; // Auto-scroll to the bottom
-	console.log(newMessage);
 }
 
 // Function to update the device status
@@ -32,8 +32,10 @@ function sendData() {
     const data = inputField.value;
     if (data) {
         logMessage('Sending: ' + data);
-        // Call the BLE write function here (replace with actual function from your BLE logic)
-        app.writeToBLEDevice(data);
+        
+        // Use the correct BLE write function from the app object
+        app.sendDataToDevice(data);  // New function to send the data to BLE device
+
         inputField.value = ''; // Clear input after sending
     } else {
         logMessage('Please enter some text to send.');
@@ -41,10 +43,11 @@ function sendData() {
 }
 
 var app = {
-    reconnectDelay: 5000, // Delay before attempting to reconnect (5 seconds)
+    connectedDeviceId: null,  // Store the connected device ID
+    reconnectDelay: 5000,     // Delay before attempting to reconnect (5 seconds)
+
     initialize: function() {
         this.bindEvents();
-        // Initialize the "Send" button event listener
         const sendButton = document.getElementById('sendButton');
         sendButton.addEventListener('click', sendData);
     },
@@ -72,15 +75,26 @@ var app = {
         return pattern.test(deviceName);
     },
     connectToDevice: function(deviceId) {
+        logMessage("Attempting to connect to device with ID: " + deviceId);
         ble.connect(deviceId, function(peripheral) {
-            logMessage("Connected to " + peripheral.name);
-            updateDeviceStatus("Connected to " + peripheral.name);
-            app.readWriteBLE(peripheral.id);
+            // Verify if we are getting the peripheral object and deviceId
+            if (peripheral && peripheral.id) {
+                logMessage("Successfully connected to " + peripheral.name);
+                logMessage("Device ID: " + peripheral.id);
+                updateDeviceStatus("Connected to " + peripheral.name);
+
+                // Store the connected device ID
+                app.connectedDeviceId = peripheral.id;
+
+                app.readWriteBLE(peripheral.id);
+            } else {
+                logMessage("Connected, but peripheral.id is not available.");
+            }
         }, function(error) {
             logMessage("Error connecting: " + error);
             updateDeviceStatus("Error connecting to device.");
 
-            // Automatically attempt to reconnect after a delay
+            // Re-attempt connection after a delay
             setTimeout(function() {
                 logMessage("Re-attempting to connect...");
                 app.scanForDevice();
@@ -91,7 +105,6 @@ var app = {
         var serviceUUID = "1234";
         var characteristicUUID = "ABCD";
 
-        // Attempt to read data from the device
         ble.read(deviceId, serviceUUID, characteristicUUID, function(data) {
             var receivedValue = app.bytesToString(data);
             logMessage("Received: " + receivedValue);
@@ -100,25 +113,35 @@ var app = {
             logMessage("Error reading: " + error);
         });
 
-        // Send a message to the device
-        var data = "Hello Device!";
-        var bytes = app.stringToBytes(data);
-        ble.write(deviceId, serviceUUID, characteristicUUID, bytes, function() {
-            logMessage("Data written");
-        }, function(error) {
-            logMessage("Error writing: " + error);
-        });
-
-        // Handle disconnection
+        // Monitor disconnection and automatically restart scanning
         ble.isConnected(deviceId, function(connected) {
             if (!connected) {
                 logMessage("Device disconnected.");
                 updateDeviceStatus("Device disconnected.");
+
                 // Automatically start scanning again after a delay
                 setTimeout(function() {
                     app.scanForDevice();
                 }, app.reconnectDelay);
             }
+        });
+    },
+    // Function to send data to the connected device
+    sendDataToDevice: function(data) {
+        if (!app.connectedDeviceId) {
+            logMessage("No device connected to send data.");
+            return;
+        }
+
+        var serviceUUID = "1234";
+        var characteristicUUID = "ABCD";
+        var bytes = app.stringToBytes(data);
+
+        // Use the connected device ID for writing data
+        ble.write(app.connectedDeviceId, serviceUUID, characteristicUUID, bytes, function() {
+            logMessage("Data written: " + data);
+        }, function(error) {
+            logMessage("Error writing data: " + error);
         });
     },
     stringToBytes: function(string) {
@@ -132,4 +155,3 @@ var app = {
         return String.fromCharCode.apply(null, new Uint8Array(buffer));
     }
 };
-
