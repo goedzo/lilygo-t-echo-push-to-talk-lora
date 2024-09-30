@@ -3,8 +3,7 @@ document.addEventListener('deviceready', onDeviceReady, false);
 function onDeviceReady() {
     logMessage('Cordova is ready.');
     updateDeviceStatus('Device ready, scanning for BLE devices...');
-    app.initialize();
-	initializeApp();
+    app.initialize();  // This now handles everything, including button event listeners
 }
 
 // Add message to console
@@ -40,15 +39,12 @@ function sendData() {
     }
 }
 
-// Initialize the app: setting event listeners, and any other startup logic
-function initializeApp() {
-    const sendButton = document.getElementById('sendButton');
-    sendButton.addEventListener('click', sendData);
-}
-
 var app = {
     initialize: function() {
         this.bindEvents();
+        // Initialize the "Send" button event listener
+        const sendButton = document.getElementById('sendButton');
+        sendButton.addEventListener('click', sendData);
     },
     bindEvents: function() {
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
@@ -114,4 +110,3 @@ var app = {
     }
 };
 
-app.initialize();

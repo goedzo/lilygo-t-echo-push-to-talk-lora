@@ -1,6 +1,6 @@
 #pragma once
-#include <Arduino.h>
-#include <BLEPeripheral.h>
+#include <bluefruit.h>
 
 void setupBLE();
 void handleBLE();
+bool isDataPrintable(const uint8_t* data, int length);

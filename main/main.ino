@@ -78,7 +78,7 @@ void setup()
 void loop()
 {
     handleAppModes();
-    handleBLE();  // BLE handling
+    //handleBLE();  // BLE handling
     if (millis() - blinkMillis > 1000) {
         blinkMillis = millis();
         switch (rgb) {
