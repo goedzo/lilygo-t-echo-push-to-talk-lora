@@ -6,6 +6,7 @@ BLEService bleService("1234");
 BLECharacteristic bleCharacteristic("ABCD");
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len);
+void sendNotificationToApp(const char* message);  // Function to send message to app
 
 // Renamed helper function to check if the data contains printable characters
 bool isDataPrintable(const uint8_t* data, int length);
@@ -25,7 +26,7 @@ void setupBLE() {
     bleService.begin();
 
     // Define the properties and permissions of the characteristic
-    bleCharacteristic.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    bleCharacteristic.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);  // Enable notifications
     bleCharacteristic.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     bleCharacteristic.setFixedLen(20);  // Set fixed length if needed
     bleCharacteristic.setWriteCallback(onCharacteristicWritten);  // Set the write callback
@@ -56,6 +57,10 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
         }
         Serial.print("Received string: ");
         Serial.println(receivedValue);
+
+        // Respond back to the app with a notification
+        sendNotificationToApp("Message received!");
+
     } else {
         // Handle as binary data
         Serial.print("Received binary data: ");
@@ -67,6 +72,28 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
         }
         Serial.println();
     }
+}
+
+// Function to send a notification to the app
+// Function to send a notification to the app
+void sendNotificationToApp(const char* message) {
+    // Get the message length
+    size_t messageLength = strlen(message);
+
+    // Create a buffer to hold the message plus a null terminator
+    uint8_t buffer[messageLength + 1];  // Extra byte for the null terminator
+
+    // Copy the message into the buffer
+    memcpy(buffer, message, messageLength);
+
+    // Ensure the last character is a null terminator
+    buffer[messageLength] = '\0';  // Null-terminate the string
+
+    // Send the buffer, including the null terminator
+    bleCharacteristic.notify(buffer,messageLength);  // Send with null terminator
+
+    Serial.print("Sent notification to app: ");
+    Serial.println(message);
 }
 
 // Helper function to check if the data contains printable characters

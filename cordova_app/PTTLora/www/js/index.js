@@ -8,7 +8,7 @@ function onDeviceReady() {
 
 // Add message to console
 function logMessage(message) {
-	console.log(message);
+    console.log(message);
     const consoleDiv = document.getElementById('console');
     const newMessage = document.createElement('p');
     newMessage.textContent = message;
@@ -32,7 +32,7 @@ function sendData() {
     const data = inputField.value;
     if (data) {
         logMessage('Sending: ' + data);
-        
+
         // Use the correct BLE write function from the app object
         app.sendDataToDevice(data);  // New function to send the data to BLE device
 
@@ -86,7 +86,8 @@ var app = {
                 // Store the connected device ID
                 app.connectedDeviceId = peripheral.id;
 
-                app.readWriteBLE(peripheral.id);
+                app.readWriteBLE(peripheral.id);  // Set up reading and writing
+                app.startNotification(peripheral.id);  // Start listening for notifications
             } else {
                 logMessage("Connected, but peripheral.id is not available.");
             }
@@ -106,7 +107,8 @@ var app = {
         var characteristicUUID = "ABCD";
 
         ble.read(deviceId, serviceUUID, characteristicUUID, function(data) {
-            var receivedValue = app.bytesToString(data);
+            var byteArray = new Uint8Array(data);  // Convert to Uint8Array
+            var receivedValue = app.bytesToString(byteArray);  // Convert only the valid part
             logMessage("Received: " + receivedValue);
             updateDeviceInfo(receivedValue);  // Show received data in the UI
         }, function(error) {
@@ -144,6 +146,21 @@ var app = {
             logMessage("Error writing data: " + error);
         });
     },
+    // Function to start notifications
+    startNotification: function(deviceId) {
+        var serviceUUID = "1234";
+        var characteristicUUID = "ABCD";
+
+        logMessage("Starting notifications from device...");
+        ble.startNotification(deviceId, serviceUUID, characteristicUUID, function(data) {
+			logMessage("RawData: " + data);
+            var byteArray = new Uint8Array(data);  // Convert to Uint8Array
+            var receivedNotification = app.bytesToString(byteArray);
+            logMessage("Notification from device: " + receivedNotification);
+        }, function(error) {
+            logMessage("Error receiving notification: " + error);
+        });
+    },
     stringToBytes: function(string) {
         var array = new Uint8Array(string.length);
         for (var i = 0, l = string.length; i < l; i++) {
@@ -151,7 +168,15 @@ var app = {
         }
         return array.buffer;
     },
-    bytesToString: function(buffer) {
-        return String.fromCharCode.apply(null, new Uint8Array(buffer));
-    }
+	bytesToString: function(byteArray) {
+		var result = "";
+		for (var i = 0; i < byteArray.length; i++) {
+			if (byteArray[i] === 0) {
+				// Stop if we encounter a null terminator
+				break;
+			}
+			result += String.fromCharCode(byteArray[i]);
+		}
+		return result;
+	}
 };
