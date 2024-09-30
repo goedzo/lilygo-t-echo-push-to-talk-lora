@@ -4,6 +4,46 @@ function onDeviceReady() {
     logMessage('Cordova is ready.');
     updateDeviceStatus('Device ready, scanning for BLE devices...');
     app.initialize();
+	initializeApp();
+}
+
+// Add message to console
+function logMessage(message) {
+    const consoleDiv = document.getElementById('console');
+    const newMessage = document.createElement('p');
+    newMessage.textContent = message;
+    consoleDiv.appendChild(newMessage);
+    consoleDiv.scrollTop = consoleDiv.scrollHeight; // Auto-scroll to the bottom
+}
+
+// Function to update the device status
+function updateDeviceStatus(status) {
+    document.getElementById('deviceStatus').textContent = status;
+}
+
+// Function to update device information display
+function updateDeviceInfo(info) {
+    document.getElementById('deviceInfo').textContent = info;
+}
+
+// Function to send data to device
+function sendData() {
+    const inputField = document.getElementById('inputField');
+    const data = inputField.value;
+    if (data) {
+        logMessage('Sending: ' + data);
+        // Call the BLE write function here (replace with actual function from your BLE logic)
+        app.writeToBLEDevice(data);
+        inputField.value = ''; // Clear input after sending
+    } else {
+        logMessage('Please enter some text to send.');
+    }
+}
+
+// Initialize the app: setting event listeners, and any other startup logic
+function initializeApp() {
+    const sendButton = document.getElementById('sendButton');
+    sendButton.addEventListener('click', sendData);
 }
 
 var app = {
