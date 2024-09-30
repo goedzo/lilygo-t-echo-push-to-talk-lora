@@ -105,6 +105,7 @@ h1 {
     height: 200px;
     overflow-y: scroll;
     margin-bottom: 20px;
+    color: black; /* Set console text color to black */
 }
 
 .device-status {
@@ -143,5 +144,5 @@ h1 {
 
 .info {
     font-weight: bold;
-    color: #333333;
+    color: #FFFFFF;
 }

@@ -47,16 +47,17 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
     Serial.print("Characteristic written, length: ");
     Serial.println(len);
 
-    // Check if the data is string-compatible (contains printable characters)
-    bool isString = (data[len - 1] == '\0');  // Check for null-terminated string
-
-    if (isString && isDataPrintable(data, len - 1)) {
-        // Convert byte array to String
-        String receivedValue = (char*)data;
+    // Check if the data is fully printable
+    if (isDataPrintable(data, len)) {
+        // Convert byte array to String assuming it is printable
+        String receivedValue;
+        for (int i = 0; i < len; i++) {
+            receivedValue += (char)data[i];
+        }
         Serial.print("Received string: ");
         Serial.println(receivedValue);
     } else {
-        // Handle binary data
+        // Handle as binary data
         Serial.print("Received binary data: ");
         for (int i = 0; i < len; i++) {
             Serial.print("0x");
@@ -77,4 +78,3 @@ bool isDataPrintable(const uint8_t* data, int length) {
     }
     return true;
 }
-

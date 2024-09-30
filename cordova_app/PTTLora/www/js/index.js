@@ -13,6 +13,7 @@ function logMessage(message) {
     newMessage.textContent = message;
     consoleDiv.appendChild(newMessage);
     consoleDiv.scrollTop = consoleDiv.scrollHeight; // Auto-scroll to the bottom
+	console.log(newMessage);
 }
 
 // Function to update the device status
@@ -40,6 +41,7 @@ function sendData() {
 }
 
 var app = {
+    reconnectDelay: 5000, // Delay before attempting to reconnect (5 seconds)
     initialize: function() {
         this.bindEvents();
         // Initialize the "Send" button event listener
@@ -62,6 +64,7 @@ var app = {
             }
         }, function(error) {
             logMessage("Error scanning: " + error);
+            updateDeviceStatus("Error scanning for devices.");
         });
     },
     isValidDeviceName: function(deviceName) {
@@ -76,12 +79,19 @@ var app = {
         }, function(error) {
             logMessage("Error connecting: " + error);
             updateDeviceStatus("Error connecting to device.");
+
+            // Automatically attempt to reconnect after a delay
+            setTimeout(function() {
+                logMessage("Re-attempting to connect...");
+                app.scanForDevice();
+            }, app.reconnectDelay);
         });
     },
     readWriteBLE: function(deviceId) {
         var serviceUUID = "1234";
         var characteristicUUID = "ABCD";
 
+        // Attempt to read data from the device
         ble.read(deviceId, serviceUUID, characteristicUUID, function(data) {
             var receivedValue = app.bytesToString(data);
             logMessage("Received: " + receivedValue);
@@ -90,12 +100,25 @@ var app = {
             logMessage("Error reading: " + error);
         });
 
+        // Send a message to the device
         var data = "Hello Device!";
         var bytes = app.stringToBytes(data);
         ble.write(deviceId, serviceUUID, characteristicUUID, bytes, function() {
             logMessage("Data written");
         }, function(error) {
             logMessage("Error writing: " + error);
+        });
+
+        // Handle disconnection
+        ble.isConnected(deviceId, function(connected) {
+            if (!connected) {
+                logMessage("Device disconnected.");
+                updateDeviceStatus("Device disconnected.");
+                // Automatically start scanning again after a delay
+                setTimeout(function() {
+                    app.scanForDevice();
+                }, app.reconnectDelay);
+            }
         });
     },
     stringToBytes: function(string) {
