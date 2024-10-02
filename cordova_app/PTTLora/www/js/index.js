@@ -44,8 +44,11 @@ function sendData() {
 
 var app = {
     connectedDeviceId: null,  // Store the connected device ID
-    reconnectDelay: 5000,     // Delay before attempting to reconnect (5 seconds)
-
+    reconnectDelay: 3000,     // Delay before attempting to reconnect (3 seconds)
+    isDeviceConnected: false,  // Flag to track the connection status
+    serviceUUID: "1235",
+    characteristicUUID: "ABCE",
+	notificationBuffer: "",
     initialize: function() {
         this.bindEvents();
         const sendButton = document.getElementById('sendButton');
@@ -58,6 +61,18 @@ var app = {
         this.scanForDevice();
     },
     scanForDevice: function() {
+        if (this.isDeviceConnected) {
+            // If already connected, don't scan
+            //logMessage("Device is already connected. No need to scan.");
+            return;
+        }
+		else {
+			setTimeout(function() {
+				//logMessage("Re-attempting to scan...");
+				app.scanForDevice();
+			}, app.reconnectDelay);
+		}
+
         logMessage("Scanning for BLE devices...");
         ble.scan([], 10, function(device) {
             if (device.name && app.isValidDeviceName(device.name)) {
@@ -68,6 +83,12 @@ var app = {
         }, function(error) {
             logMessage("Error scanning: " + error);
             updateDeviceStatus("Error scanning for devices.");
+            
+            // Restart scanning if no device was found or if there's an error
+            setTimeout(function() {
+                logMessage("Re-attempting to scan...");
+                app.scanForDevice();
+            }, app.reconnectDelay);
         });
     },
     isValidDeviceName: function(deviceName) {
@@ -83,8 +104,9 @@ var app = {
                 logMessage("Device ID: " + peripheral.id);
                 updateDeviceStatus("Connected to " + peripheral.name);
 
-                // Store the connected device ID
+                // Store the connected device ID and set the flag
                 app.connectedDeviceId = peripheral.id;
+                app.isDeviceConnected = true;
 
                 app.readWriteBLE(peripheral.id);  // Set up reading and writing
                 app.startNotification(peripheral.id);  // Start listening for notifications
@@ -94,23 +116,20 @@ var app = {
         }, function(error) {
             logMessage("Error connecting: " + error);
             updateDeviceStatus("Error connecting to device.");
-
             // Re-attempt connection after a delay
+			app.isDeviceConnected = false;
             setTimeout(function() {
                 logMessage("Re-attempting to connect...");
-                app.scanForDevice();
+                app.scanForDevice();  // Restart scanning if connection fails
             }, app.reconnectDelay);
         });
     },
     readWriteBLE: function(deviceId) {
-        var serviceUUID = "1234";
-        var characteristicUUID = "ABCD";
-
-        ble.read(deviceId, serviceUUID, characteristicUUID, function(data) {
+        ble.read(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
             var byteArray = new Uint8Array(data);  // Convert to Uint8Array
             var receivedValue = app.bytesToString(byteArray);  // Convert only the valid part
-            logMessage("Received: " + receivedValue);
-            updateDeviceInfo(receivedValue);  // Show received data in the UI
+            //logMessage("Received: " + receivedValue);
+            //updateDeviceInfo(receivedValue);  // Show received data in the UI
         }, function(error) {
             logMessage("Error reading: " + error);
         });
@@ -120,8 +139,9 @@ var app = {
             if (!connected) {
                 logMessage("Device disconnected.");
                 updateDeviceStatus("Device disconnected.");
-
-                // Automatically start scanning again after a delay
+                
+                // Reset the connection status and restart scanning
+                app.isDeviceConnected = false;
                 setTimeout(function() {
                     app.scanForDevice();
                 }, app.reconnectDelay);
@@ -134,33 +154,71 @@ var app = {
             logMessage("No device connected to send data.");
             return;
         }
-
-        var serviceUUID = "1234";
-        var characteristicUUID = "ABCD";
         var bytes = app.stringToBytes(data);
 
         // Use the connected device ID for writing data
-        ble.write(app.connectedDeviceId, serviceUUID, characteristicUUID, bytes, function() {
+        ble.write(app.connectedDeviceId, app.serviceUUID, app.characteristicUUID, bytes, function() {
             logMessage("Data written: " + data);
         }, function(error) {
             logMessage("Error writing data: " + error);
         });
     },
-    // Function to start notifications
-    startNotification: function(deviceId) {
-        var serviceUUID = "1234";
-        var characteristicUUID = "ABCD";
+	// This is called when we receive a BLE message (notification) from the device
+	startNotification: function(deviceId) {
+		logMessage("Starting notifications from device...");
+		app.notificationBuffer = '';  // Buffer to accumulate message chunks
 
-        logMessage("Starting notifications from device...");
-        ble.startNotification(deviceId, serviceUUID, characteristicUUID, function(data) {
-			logMessage("RawData: " + data);
-            var byteArray = new Uint8Array(data);  // Convert to Uint8Array
-            var receivedNotification = app.bytesToString(byteArray);
-            logMessage("Notification from device: " + receivedNotification);
-        }, function(error) {
-            logMessage("Error receiving notification: " + error);
-        });
-    },
+		ble.startNotification(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
+			var byteArray = new Uint8Array(data);
+			var receivedNotification = app.bytesToString(byteArray);
+			//logMessage("Notification chunk received: " + receivedNotification);
+
+			// Accumulate the received chunks in the buffer
+			app.notificationBuffer += receivedNotification;
+
+			// Check if the buffer contains the end marker "~~"
+			var endMarkerIndex = app.notificationBuffer.indexOf("~~");
+
+			// If the end marker "~~" is found, extract and process the complete message
+			while (endMarkerIndex !== -1) {
+				// Extract the complete message up to the end marker "~~"
+				var completeMessage = app.notificationBuffer.slice(0, endMarkerIndex);
+
+				//logMessage("Complete message received: " + completeMessage);
+
+				// Process the complete message
+				app.processCompleteMessage(completeMessage);
+
+				// Remove the processed message and "~~" marker from the buffer
+				app.notificationBuffer = app.notificationBuffer.slice(endMarkerIndex + 2);
+
+				// Check again if there is another complete message in the buffer
+				endMarkerIndex = app.notificationBuffer.indexOf("~~");
+			}
+		}, function(error) {
+			logMessage("Error receiving notification: " + error);
+		});
+	},
+	processCompleteMessage: function(message) {
+		// Process the complete message
+		//logMessage("Processing complete message: " + message);
+		
+		var lineRegex = /LINE:(\d+)/;
+		var textRegex = /TEXT:(.*)/;
+
+		var lineMatch = message.match(lineRegex);
+		var textMatch = message.match(textRegex);
+
+		if (lineMatch && textMatch) {
+			var lineNumber = parseInt(lineMatch[1]);
+			var text = textMatch ? textMatch[1] : '';  // Handle the case where TEXT: is empty
+			document.getElementById('line' + lineNumber).textContent = text;
+		} else {
+			//Normal device message
+			updateDeviceInfo(message);
+			logMessage("Received message: " + message);
+		}
+	},
     stringToBytes: function(string) {
         var array = new Uint8Array(string.length);
         for (var i = 0, l = string.length; i < l; i++) {
@@ -168,9 +226,16 @@ var app = {
         }
         return array.buffer;
     },
-	bytesToString: function(byteArray) {
+    bytesToString: function(byteArray) {
 		var result = "";
 		for (var i = 0; i < byteArray.length; i++) {
+			// Stop if we encounter the "~~" marker or null terminator
+			if (i < byteArray.length - 1 && byteArray[i] === 126 && byteArray[i + 1] === 126) {  // Check for "~~"
+				// Process the message up to "~~"
+				result += String.fromCharCode(byteArray[i]);  // Add the first "~"
+				result += String.fromCharCode(byteArray[i + 1]);  // Add the second "~"
+				break;  // Stop reading further
+			}
 			if (byteArray[i] === 0) {
 				// Stop if we encounter a null terminator
 				break;
@@ -180,3 +245,4 @@ var app = {
 		return result;
 	}
 };
+

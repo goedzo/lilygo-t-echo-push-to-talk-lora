@@ -5,6 +5,7 @@
 #include "battery.h"
 #include "gps.h"
 #include "lora.h"
+#include "ble.h"
 
 
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
@@ -539,6 +540,11 @@ void updDisp(uint8_t line, const char* msg, bool updateScreen) {
         if(updateScreen) {
             display->displayWindow(0,0,disp_width,disp_height);
         }
+
+        // Send the structured data to the phone app
+        char formattedMessage[100];
+        snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
+        sendNotificationToApp(formattedMessage);
 
     }
 }

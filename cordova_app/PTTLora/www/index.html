@@ -13,16 +13,27 @@
 <body>
 
     <div class="container">
-        <h1>PTTLora BLE Communication</h1>
+        <h1>PTTLora for Lilygo T-Echo</h1>
+
+		<div>
+			<h3>Device Screen</h3>
+			<div id="screen">
+				<span id="line0">&nbsp;</span><br>
+				<span id="line1">&nbsp;</span><br>
+				<span id="line2">&nbsp;</span><br>
+				<span id="line3">&nbsp;</span><br>
+				<span id="line4">&nbsp;</span><br>
+				<span id="line5">&nbsp;</span><br>
+				<span id="line6">&nbsp;</span><br>
+				<span id="line7">&nbsp;</span><br>
+				<span id="line8">&nbsp;</span><br>
+				<span id="line9">&nbsp;</span>
+			</div>
+		</div>
         
         <!-- Device Status -->
         <div class="device-status">
             Status: <span id="deviceStatus">Connecting to device...</span>
-        </div>
-
-        <!-- Console Messages -->
-        <div class="console" id="console">
-            <!-- Console messages will appear here -->
         </div>
 
         <!-- Input to Send Data -->
@@ -36,6 +47,12 @@
             <h3>Information from Device</h3>
             <p id="deviceInfo" class="info">No data received yet.</p>
         </div>
+
+        <!-- Console Messages -->
+        <div class="console" id="console">
+            <!-- Console messages will appear here -->
+        </div>
+
     </div>
 
     <script src="cordova.js"></script>

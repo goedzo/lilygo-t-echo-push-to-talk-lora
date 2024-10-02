@@ -102,7 +102,7 @@ h1 {
     background: #eee;
     border: 1px solid #ccc;
     padding: 10px;
-    height: 200px;
+    height: 100px;
     overflow-y: scroll;
     margin-bottom: 20px;
     color: black; /* Set console text color to black */

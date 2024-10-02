@@ -2,8 +2,8 @@
 #include <bluefruit.h>
 
 // Create BLE service and characteristic
-BLEService bleService("1234");
-BLECharacteristic bleCharacteristic("ABCD");
+BLEService bleService("1235");
+BLECharacteristic bleCharacteristic("ABCE");
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len);
 void sendNotificationToApp(const char* message);  // Function to send message to app
@@ -28,7 +28,8 @@ void setupBLE() {
     // Define the properties and permissions of the characteristic
     bleCharacteristic.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);  // Enable notifications
     bleCharacteristic.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    bleCharacteristic.setFixedLen(20);  // Set fixed length if needed
+    bleCharacteristic.setMaxLen(100);  // Set max length of messages
+    bleCharacteristic.setFixedLen(100);
     bleCharacteristic.setWriteCallback(onCharacteristicWritten);  // Set the write callback
     bleCharacteristic.begin();
 
@@ -75,25 +76,25 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
 }
 
 // Function to send a notification to the app
-// Function to send a notification to the app
 void sendNotificationToApp(const char* message) {
     // Get the message length
     size_t messageLength = strlen(message);
 
-    // Create a buffer to hold the message plus a null terminator
-    uint8_t buffer[messageLength + 1];  // Extra byte for the null terminator
+    // Create a buffer to hold the message, the "~~" marker, and the null terminator
+    uint8_t buffer[messageLength + 3];  // Extra 2 bytes for "~~" and 1 byte for the null terminator
 
     // Copy the message into the buffer
     memcpy(buffer, message, messageLength);
 
-    // Ensure the last character is a null terminator
-    buffer[messageLength] = '\0';  // Null-terminate the string
+    // Append the "~~" marker to indicate the end of the message
+    buffer[messageLength] = '~';
+    buffer[messageLength + 1] = '~';
 
-    // Send the buffer, including the null terminator
-    bleCharacteristic.notify(buffer,messageLength);  // Send with null terminator
+    // Null-terminate the string
+    buffer[messageLength + 2] = '\0';  // Null-terminator
 
-    Serial.print("Sent notification to app: ");
-    Serial.println(message);
+    // Send the buffer, excluding the null terminator
+    bleCharacteristic.notify(buffer, messageLength + 3);  // Send only the message + "~~"
 }
 
 // Helper function to check if the data contains printable characters
