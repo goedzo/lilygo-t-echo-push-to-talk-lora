@@ -30,4 +30,5 @@ void sleepDisplay();
 void printStatusIcons();
 void printGPSIcon();
 void printFrequencyIcon(bool updateScreen);
+void printStatusOnApp();
 #endif

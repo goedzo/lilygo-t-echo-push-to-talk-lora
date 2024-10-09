@@ -543,9 +543,25 @@ void updDisp(uint8_t line, const char* msg, bool updateScreen) {
 
         // Send the structured data to the phone app
         char formattedMessage[100];
-        snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
+        if(line<10) {
+            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
+        }
+        else {
+            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
+        }
         sendNotificationToApp(formattedMessage);
+    }
+    else {
+        //Always make sure we sent it to the phone
+        char formattedMessage[100];
 
+        if(line<10) {
+            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
+        }
+        else {
+            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
+        }
+        sendNotificationToApp(formattedMessage);
     }
 }
 
@@ -592,6 +608,23 @@ void printGPSIcon() {
   }
 }
 
+void printStatusOnApp() {
+  RTC_Date dateTime = rtc.getDateTime();
+  float batteryPercentage = getBatteryPercentage();
+
+  char displayString[50];
+  snprintf(displayString, sizeof(displayString), "%.2f   %02d:%02d:%02d   GPS:%d     BAT:%.2f", currentFrequency,dateTime.hour, dateTime.minute, dateTime.second,gps_satellites,batteryPercentage);
+
+
+  //Send it also to BLE
+  // Send the structured data to the phone app
+  char formattedMessage[100];
+  snprintf(formattedMessage, sizeof(formattedMessage), "LINE:10|TEXT:%s", displayString);
+  sendNotificationToApp(formattedMessage);
+
+}
+
+
 void printFrequencyIcon(bool updateScreen=false) {
   //Let's print the current frequency on the left bottom
   display->fillRect(0, disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset+disp_font_height, 78, disp_font_height, GxEPD_WHITE);
@@ -610,11 +643,6 @@ void printFrequencyIcon(bool updateScreen=false) {
       display->displayWindow(0,0,disp_width,disp_height);    
   }
 
-  //Send it also to BLE
-  // Send the structured data to the phone app
-  char formattedMessage[100];
-  snprintf(formattedMessage, sizeof(formattedMessage), "LINE:9|TEXT:%s", displayString);
-  sendNotificationToApp(formattedMessage);
 }
 
 void printTimeIcon(bool updateScreen=false) {
@@ -669,6 +697,7 @@ void printStatusIcons(){
   printGPSIcon();
   printFrequencyIcon();
   printTimeIcon();
+  printStatusOnApp();
 }
 
 void updModeAndChannelDisplay() {

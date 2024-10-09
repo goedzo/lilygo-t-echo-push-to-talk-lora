@@ -210,9 +210,12 @@ var app = {
 		var textMatch = message.match(textRegex);
 
 		if (lineMatch && textMatch) {
-			var lineNumber = parseInt(lineMatch[1]);
+			var lineNumber = parseInt(lineMatch[1]+lineMatch[2]);
 			var text = textMatch ? textMatch[1] : '';  // Handle the case where TEXT: is empty
-			document.getElementById('line' + lineNumber).textContent = text;
+			//Max lines = 10
+			if(lineNumber<11) {
+				document.getElementById('line' + lineNumber).textContent = text;
+			}
 		} else {
 			//Normal device message
 			updateDeviceInfo(message);
