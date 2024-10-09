@@ -1,6 +1,7 @@
 #include "ble.h"
 #include <bluefruit.h>
 #include "display.h"
+#include "app_modes.h"
 
 // Create BLE service and characteristic
 BLEService bleService("1235");
@@ -80,8 +81,27 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
         Serial.print("Received string: ");
         Serial.println(receivedValue);
 
-        // Respond back to the app with a notification
-        sendNotificationToApp("Message received!");
+        // Process the received message if it contains a ':'
+        int delimiterIndex = receivedValue.indexOf(':');
+        if (delimiterIndex != -1) {
+            String action = receivedValue.substring(0, delimiterIndex);
+            String value = receivedValue.substring(delimiterIndex + 1);
+
+            Serial.print("Action: ");
+            Serial.println(action);
+            Serial.print("Value: ");
+            Serial.println(value);
+
+            // Handle the action and value accordingly
+            if (action == "SETMODE") {
+                // Call the switchMode function with the value
+                switchMode(value);
+            } else {
+                Serial.println("Unknown action");
+            }
+        } else {
+            Serial.println("Invalid format. Missing ':' delimiter.");
+        }
 
     } else {
         // Handle as binary data
@@ -121,7 +141,9 @@ void sendNotificationToApp(const char* message) {
         Serial.print((char)buffer[i]);
     }
     Serial.println();
-    }
+    //To avoid the device hangs when sending too quickly
+    delay(100);
+}
 
 // Helper function to check if the data contains printable characters
 bool isDataPrintable(const uint8_t* data, int length) {

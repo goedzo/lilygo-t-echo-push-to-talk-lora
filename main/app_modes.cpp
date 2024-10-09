@@ -65,6 +65,31 @@ unsigned long debounceDelay = 50;     // Debounce time in milliseconds
 bool touchButtonPressed = false;      // Flag to track the debounced state
 
 
+void switchMode(String receivedMode) {
+    // Find the index of the received mode
+    int newModeIndex = -1;
+    for (int i = 0; i < numModes; i++) {
+        if (receivedMode == modes[i]) {
+            if(i==0) {
+              newModeIndex = numModes-1;
+            }
+            else {
+              newModeIndex = i-1;
+            }
+            break;
+        }
+    }
+
+    // If the mode is found, update the modeIndex and current_mode
+    if (newModeIndex != -1) {
+        modeIndex = newModeIndex;
+        current_mode = modes[modeIndex];
+        updMode();  // Update mode based on the new selection
+    } else {
+        Serial.println("Received mode is not valid.");
+    }
+}
+
 // Function to cycle through modes
 void updMode() {
     // Increment the mode index and wrap around if necessary

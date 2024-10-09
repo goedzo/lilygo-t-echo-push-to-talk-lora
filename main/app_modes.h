@@ -27,4 +27,5 @@ void powerOff(); //Powers off the device
 void sleepAudio();
 void turnoffLed();
 void printRangeStatus();
+void switchMode(String receivedMode);
 #endif

@@ -26,6 +26,10 @@ function updateDeviceInfo(info) {
     document.getElementById('deviceInfo').textContent = info;
 }
 
+function switchMode(aMode) {
+	app.sendDataToDevice("SETMODE:"+aMode);  // New function to send the data to BLE device
+}
+
 // Function to send data to device
 function sendData() {
     const inputField = document.getElementById('inputField');
@@ -53,6 +57,13 @@ var app = {
         this.bindEvents();
         const sendButton = document.getElementById('sendButton');
         sendButton.addEventListener('click', sendData);
+		const modeButtons = document.querySelectorAll('.modeButton');
+			modeButtons.forEach(button => {
+				button.addEventListener('click', function() {
+					const mode = this.getAttribute('data-mode');
+					switchMode(mode);
+				});
+			});
     },
     bindEvents: function() {
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
