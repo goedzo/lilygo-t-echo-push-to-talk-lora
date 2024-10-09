@@ -1,11 +1,14 @@
 #include "ble.h"
 #include <bluefruit.h>
+#include "display.h"
 
 // Create BLE service and characteristic
 BLEService bleService("1235");
 BLECharacteristic bleCharacteristic("ABCE");
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len);
+void onConnect(uint16_t conn_handle);
+void onDisconnect(uint16_t conn_handle, uint8_t reason);
 void sendNotificationToApp(const char* message);  // Function to send message to app
 
 // Renamed helper function to check if the data contains printable characters
@@ -33,6 +36,10 @@ void setupBLE() {
     bleCharacteristic.setWriteCallback(onCharacteristicWritten);  // Set the write callback
     bleCharacteristic.begin();
 
+    // Set the connect and disconnect callbacks
+    Bluefruit.Periph.setConnectCallback(onConnect);
+    Bluefruit.Periph.setDisconnectCallback(onDisconnect);
+
     // Add service to the advertising packet
     Bluefruit.Advertising.addService(bleService);
     Bluefruit.Advertising.addName();  // Advertise device name
@@ -42,6 +49,20 @@ void setupBLE() {
 
     Serial.print("BLE Initialized with device name: ");
     Serial.println(deviceName);
+}
+
+void onConnect(uint16_t conn_handle) {
+    Serial.println("Phone connected!");
+    //We need to wait until it is initialized before we send the screen contents.
+    delay(1000);
+    //Refresh screen to show it in app
+    updModeAndChannelDisplay();
+
+
+}
+
+void onDisconnect(uint16_t conn_handle, uint8_t reason) {
+    Serial.println("Phone disconnected!");
 }
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
@@ -95,7 +116,12 @@ void sendNotificationToApp(const char* message) {
 
     // Send the buffer, excluding the null terminator
     bleCharacteristic.notify(buffer, messageLength + 3);  // Send only the message + "~~"
-}
+    Serial.print("Sending notification: ");
+    for (size_t i = 0; i < messageLength + 2; i++) {
+        Serial.print((char)buffer[i]);
+    }
+    Serial.println();
+    }
 
 // Helper function to check if the data contains printable characters
 bool isDataPrintable(const uint8_t* data, int length) {

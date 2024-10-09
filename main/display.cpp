@@ -609,6 +609,12 @@ void printFrequencyIcon(bool updateScreen=false) {
   if(updateScreen) {
       display->displayWindow(0,0,disp_width,disp_height);    
   }
+
+  //Send it also to BLE
+  // Send the structured data to the phone app
+  char formattedMessage[100];
+  snprintf(formattedMessage, sizeof(formattedMessage), "LINE:9|TEXT:%s", displayString);
+  sendNotificationToApp(formattedMessage);
 }
 
 void printTimeIcon(bool updateScreen=false) {

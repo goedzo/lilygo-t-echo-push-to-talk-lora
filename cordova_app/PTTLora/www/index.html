@@ -15,8 +15,12 @@
     <div class="container">
         <h1>PTTLora for Lilygo T-Echo</h1>
 
+        <!-- Device Status -->
+        <div class="device-status">
+            Status: <span id="deviceStatus">Connecting to device...</span>
+        </div>
+
 		<div>
-			<h3>Device Screen</h3>
 			<div id="screen">
 				<span id="line0">&nbsp;</span><br>
 				<span id="line1">&nbsp;</span><br>
@@ -31,11 +35,6 @@
 			</div>
 		</div>
         
-        <!-- Device Status -->
-        <div class="device-status">
-            Status: <span id="deviceStatus">Connecting to device...</span>
-        </div>
-
         <!-- Input to Send Data -->
         <div class="input-container">
             <input type="text" id="inputField" placeholder="Enter text to send to device" />
