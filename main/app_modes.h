@@ -28,4 +28,5 @@ void sleepAudio();
 void turnoffLed();
 void printRangeStatus();
 void switchMode(String receivedMode);
+void sendTxtMessage(const char* message);
 #endif

@@ -84,7 +84,12 @@ If you don't already have the Android SDK installed, follow these steps to downl
 
 ---
 
-### 4. **Building and Running the Cordova App:**
+### 4. **Building the Cordova App:**
+
+1. **Run the build script**: 
+   If you're using the provided batch file, simply run `02_build_project.bat`.
+
+    Alternatively, follow the manual steps below:
 
 1. Build the Cordova app:
     ```bash
@@ -97,6 +102,11 @@ If you don't already have the Android SDK installed, follow these steps to downl
     ```
 
 Make sure you have an Android device connected to your system with **Developer Mode** and **USB Debugging** enabled.
+
+### 5. **Running the Cordova App:**
+Copy the .apk file to the phone and install. 
+
+Or you can open the project in android studio if you want to debug the app. cordova_app\PTTLora\platforms\android
 
 ---
 

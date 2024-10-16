@@ -190,16 +190,37 @@ void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
 }
 
 void processPacketQueue() {
-    // Sort the packets by counter (optional for ordered processing)
+    // Sort the packets by packetCounter (ascending order)
+    for (int i = 0; i < receivePacketQueueCount - 1; i++) {
+        for (int j = 0; j < receivePacketQueueCount - i - 1; j++) {
+            // Compare packet counters and swap if needed
+            if (receivePacketQueue[j].packetCounter > receivePacketQueue[j + 1].packetCounter) {
+                // Swap the queue entries
+                PacketQueue temp = receivePacketQueue[j];
+                receivePacketQueue[j] = receivePacketQueue[j + 1];
+                receivePacketQueue[j + 1] = temp;
+            }
+        }
+    }
+
+    // Now process the sorted packets
     for (int i = 0; i < receivePacketQueueCount; i++) {
         Packet packet;
         if (packet.parsePacket(receivePacketQueue[i].packetData, receivePacketQueue[i].packetLen)) {
             Serial.print(F("Processing queued packet: "));
             Serial.println(packet.packetCounter);
-            handlePacket(packet);  // Process the packet
+      
+            // Only process this queue when we have the next packet available
+            unsigned int expectedPacketCounter = lastReceivedCounter + 1;
+            if (packet.packetCounter == expectedPacketCounter) {
+                // Ok to process!
+                handlePacket(packet);  // Process the packet
+                // Set the last received counter to the actual packet number
+                lastReceivedCounter = packet.packetCounter;
+                // Free the memory after processing
+                delete[] receivePacketQueue[i].packetData;
+            }
         }
-        // Free the memory after processing
-        delete[] receivePacketQueue[i].packetData;
     }
     receivePacketQueueCount = 0;  // Reset the queue count after processing
 }
@@ -345,6 +366,8 @@ void checkLoraPacketComplete() {
                         // Check for missing packets and process if nothing is missing
                         if (checkForMissingPackets(packet, rcv_pkt_buf, packet_len)) {
                             handlePacket(packet);
+                            //Also make sure we process saved messages.
+                            processPacketQueue();
                         }
 
                         // Update quality of the current frequency

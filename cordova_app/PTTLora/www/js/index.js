@@ -38,7 +38,7 @@ function sendData() {
         logMessage('Sending: ' + data);
 
         // Use the correct BLE write function from the app object
-        app.sendDataToDevice(data);  // New function to send the data to BLE device
+        app.sendDataToDevice("SENDTXT:"+data);  // New function to send the data to BLE device
 
         inputField.value = ''; // Clear input after sending
     } else {
@@ -107,6 +107,12 @@ var app = {
         return pattern.test(deviceName);
     },
     connectToDevice: function(deviceId) {
+		if(app.isDeviceConnected) {
+			logMessage("Already connected. Ignoring: " + deviceId);
+			return;
+		}
+		//Avoid multiple connections to device
+		app.isDeviceConnected = true;
         logMessage("Attempting to connect to device with ID: " + deviceId);
         ble.connect(deviceId, function(peripheral) {
             // Verify if we are getting the peripheral object and deviceId
@@ -123,6 +129,7 @@ var app = {
                 app.startNotification(peripheral.id);  // Start listening for notifications
             } else {
                 logMessage("Connected, but peripheral.id is not available.");
+				app.isDeviceConnected = false;
             }
         }, function(error) {
             logMessage("Error connecting: " + error);
@@ -233,13 +240,18 @@ var app = {
 			logMessage("Received message: " + message);
 		}
 	},
-    stringToBytes: function(string) {
+    stringToBytesUtf16: function(string) {
         var array = new Uint8Array(string.length);
         for (var i = 0, l = string.length; i < l; i++) {
             array[i] = string.charCodeAt(i);
         }
         return array.buffer;
     },
+	stringToBytes: function(string) {
+		// Encode the string as UTF-8
+		var utf8Encoder = new TextEncoder();
+		return utf8Encoder.encode(string).buffer; // Returns an ArrayBuffer
+	},
     bytesToString: function(byteArray) {
 		var result = "";
 		for (var i = 0; i < byteArray.length; i++) {

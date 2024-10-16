@@ -96,7 +96,13 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
             if (action == "SETMODE") {
                 // Call the switchMode function with the value
                 switchMode(value);
-            } else {
+            } 
+            // Handle the action and value accordingly
+            else if (action == "SENDTXT") {
+                // We must send this text
+                sendTxtMessage(value.c_str());
+            } 
+            else {
                 Serial.println("Unknown action");
             }
         } else {

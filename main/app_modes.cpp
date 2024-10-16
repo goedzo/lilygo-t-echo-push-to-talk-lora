@@ -281,7 +281,7 @@ void handlePacket(Packet packet) {
       else if (current_mode == "TXT" && packet.type == "TXT") {
           if(packet.channel== channels[deviceSettings.channel_idx]) {
               //This is actually meant for my channel
-              updDisp(7, packet.content.c_str(), true);
+              updDisp(4, packet.content.c_str(), true);
           }
           updModeAndChannelDisplay();
       }
@@ -650,34 +650,36 @@ void sendRangeMessage() {
 }
 
 
+void sendTxtMessage(const char* message) {
+    char send_pkt_buf[50];
+    snprintf((char*)send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s", channels[deviceSettings.channel_idx], message);
+
+    char display_msg[30];
+    snprintf(display_msg, sizeof(display_msg), "Sent: %s", message);
+    updDisp(2, display_msg, true);
+
+    sendPacket(send_pkt_buf);
+    // Small delay to process sending
+    delay(100);
+    snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
+    updDisp(3, display_msg, true);
+    updModeAndChannelDisplay();
+}
+
 void sendTestMessage(bool now) {
-    //Only do this every 2 seconds or when now=true
-
+    //Only do this every 5 seconds or when now=true
     if (millis() - sendTestMessageTimer > 5000 || now) {
-      sendTestMessageTimer = millis();
+        sendTestMessageTimer = millis();
 
-      test_message_counter++;
-      char test_msg[50];
-      snprintf(test_msg, sizeof(test_msg), "test%d", test_message_counter);
+        test_message_counter++;
+        char test_msg[50];
+        snprintf(test_msg, sizeof(test_msg), "test%d", test_message_counter);
 
-      char send_pkt_buf[50];
-      snprintf((char*)send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s%d", channels[deviceSettings.channel_idx], "test", test_message_counter);
+        sendTxtMessage(test_msg);
 
-      char display_msg[30];
-      snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
-      updDisp(2, display_msg,true);
-
-      sendPacket(send_pkt_buf);
-      //Give the device some small time to process sending
-      delay(100);
-      snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
-      updDisp(3, display_msg,true);
-
-      //Cool of period to allow receiving of messages because of switching from sent to receive takes time
-      sendTestMessageTimer = millis();
-      updModeAndChannelDisplay();
+        // Update mode and channel display after sending
+        sendTestMessageTimer = millis();
     }
-
 }
 
 
