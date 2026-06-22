@@ -45,6 +45,13 @@ int numFrequencies = (endFreq - startFreq) / stepSize;
 FrequencyStatus* frequencyMap = nullptr;
 int FrequencyHopSeconds = 47; //After how many seconds do we hop to the next frequency?
 
+// Epoch-aligned hop interval computation — seconds in a day for cycling
+#define HOP_EPOCH_SECONDS 86400UL
+
+// Time convergence parameters — allows devices within ±hop_interval to agree on phase
+#define TIME_CONVERGENCE_TOLERANCE 5  // Seconds tolerance for gradual time sync
+#define TIME_CONVERGENCE_MAX_JUMP 3   // Max seconds to adjust per packet (prevents large jumps)
+
 volatile bool operationDone = false;  // Flag to indicate radio operation is done
 bool transmitFlag = false;            // Flag for transmission state
 size_t timeOnAir = 0;                 // Time-on-air for transmitted packets
@@ -79,8 +86,9 @@ void initializeFrequencyMap() {
 
 // Pseudo-random frequency hopping based on a shared time source and randomness
 float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
-    // Calculate how many intervals of 'FrequencyHopSeconds' have passed
-    unsigned long intervalCount = sharedTime / FrequencyHopSeconds;  // Count of hop intervals passed
+    // Use epoch-aligned interval count so devices within ±hop_interval agree on phase
+    unsigned long totalSeconds = sharedTime % HOP_EPOCH_SECONDS;
+    unsigned long intervalCount = totalSeconds / FrequencyHopSeconds;
 
     // Combine intervalCount and sharedSeed for randomness
     unsigned long randomValue = intervalCount ^ sharedSeed;  // XOR interval count with the seed for randomness
@@ -357,10 +365,49 @@ void checkLoraPacketComplete() {
                         Serial.println(packet.content);
                         Serial.println(packet.packetCounter);
 
-                        // Check if time is out of sync
-                        if (packet.isTimeOutOfSync()) {
-                            //Serial.println(F("Time is out of sync, adjusting RTC..."));
-                            adjustRTC(packet.sendDateTime);  // Adjust RTC using the received timestamp
+                        // Extract sender's time from the packet for gradual convergence
+                        long receiverTimeSeconds = 0;
+                        if (packet.sendDateTime.length() == 14) {
+                            receiverTimeSeconds = packet.sendDateTime.substring(8, 10).toInt() * 3600
+                                                + packet.sendDateTime.substring(10, 12).toInt() * 60
+                                                + packet.sendDateTime.substring(12, 14).toInt();
+                        }
+
+                        long localSeconds = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
+
+                        // Check if time is out of sync and converge gradually
+                        long timeDiff = abs(receiverTimeSeconds - localSeconds);
+                        if (timeDiff > TIME_CONVERGENCE_TOLERANCE) {
+                            long jump = constrain(receiverTimeSeconds - localSeconds, -TIME_CONVERGENCE_MAX_JUMP, TIME_CONVERGENCE_MAX_JUMP);
+                            RTC_Date currentRtc = rtc.getDateTime();
+                            long currentRtcSeconds = currentRtc.hour * 3600 + currentRtc.minute * 60 + currentRtc.second;
+                            long newRtcSeconds = currentRtcSeconds + jump;
+
+                            // Handle day wraparound
+                            if (newRtcSeconds < 0) {
+                                newRtcSeconds += HOP_EPOCH_SECONDS;
+                            } else if (newRtcSeconds >= HOP_EPOCH_SECONDS) {
+                                newRtcSeconds -= HOP_EPOCH_SECONDS;
+                            }
+
+                            long hours = newRtcSeconds / 3600;
+                            long minutes = (newRtcSeconds % 3600) / 60;
+                            long seconds = newRtcSeconds % 60;
+
+                            rtc.setDateTime(currentRtc.year, currentRtc.month, currentRtc.day, hours, minutes, seconds);
+                        } else {
+                            // Within tolerance — just nudge toward sender's time
+                            long jump = constrain(receiverTimeSeconds - localSeconds, -1, 1);
+                            if (jump != 0) {
+                                RTC_Date currentRtc = rtc.getDateTime();
+                                long newSeconds = currentRtc.hour * 3600 + currentRtc.minute * 60 + currentRtc.second + jump;
+                                if (newSeconds < 0) newSeconds += HOP_EPOCH_SECONDS;
+                                if (newSeconds >= HOP_EPOCH_SECONDS) newSeconds -= HOP_EPOCH_SECONDS;
+                                long h = newSeconds / 3600;
+                                long m = (newSeconds % 3600) / 60;
+                                long s = newSeconds % 60;
+                                rtc.setDateTime(currentRtc.year, currentRtc.month, currentRtc.day, h, m, s);
+                            }
                         }
 
                         // Check for missing packets and process if nothing is missing
