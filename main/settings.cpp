@@ -136,30 +136,18 @@ void setupSettings() {
     Wire.begin();
     SerialMon.println("[RTC] Wire.begin() step 2 done");
 
-    // Probe I2C bus for RTC device
-    SerialMon.print("[RTC] Scanning I2C bus for PCF8563 addr ");
-    SerialMon.print(PCF8563_SLAVE_ADDRESS, HEX);
-    SerialMon.println(" ...");
-    bool rtc_found = false;
-    for (int addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        uint8_t err = Wire.endTransmission();
-        if (err == 0) {
-            SerialMon.print("[RTC] I2C device found at addr 0x");
-            SerialMon.println(addr, HEX);
-            if (addr == PCF8563_SLAVE_ADDRESS) rtc_found = true;
-        }
-    }
+    // Probe I2C bus for RTC device (targeted probe, not exhaustive scan)
+    SerialMon.print("[RTC] probing PCF8563 at addr 0x");
+    SerialMon.println(PCF8563_SLAVE_ADDRESS, HEX);
 
     int retry = 3, ret = 0;
     do {
-        SerialMon.print("[RTC] beginTransmission(PCF8563_ADDR=0x");
-        SerialMon.print(PCF8563_SLAVE_ADDRESS, HEX);
-        SerialMon.println(") ...");
         Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);
         delay(100);
         ret = Wire.endTransmission();
-        SerialMon.print("[RTC] endTransmission() ret=");
+        SerialMon.print("[RTC] endTransmission() attempt=");
+        SerialMon.print(4 - retry);
+        SerialMon.print(" ret=");
         SerialMon.println(ret);
     } while (ret != 0 && retry-- > 0);
 
@@ -174,10 +162,8 @@ void setupSettings() {
     SerialMon.println("[RTC] rtc.disableAlarm() ... ");
     rtc.disableAlarm();
     
-    // Read back RTC status register to verify it's alive
-    uint8_t status = rtc.readRam(0x00);  // Best-effort probe
-    (void)status;
-
+    // RTC init complete
+    
     // Read default settings from RTC for verification
     SerialMon.println("[RTC] >>> setupSettings() DONE");
 }

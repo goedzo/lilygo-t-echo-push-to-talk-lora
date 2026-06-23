@@ -19,55 +19,55 @@ void setupBLE() {
     Serial.println("[BLE] >>> setupBLE() START");
 
     // Initialize BLE
-    SerialMon.println("[BLE] Bluefruit.begin() ... ");
+    Serial.println("[BLE] Bluefruit.begin() ... ");
     Bluefruit.begin();
-    SerialMon.println("[BLE] Bluefruit.begin() done");
+    Serial.println("[BLE] Bluefruit.begin() done");
 
     Bluefruit.setTxPower(4);  // Set the TX power to max (4dBm)
-    SerialMon.println("[BLE] setTxPower(4dBm) done");
+    Serial.println("[BLE] setTxPower(4dBm) done");
 
     // Set device name using a unique MAC address
     char deviceName[25];
     uint64_t mac = NRF_FICR->DEVICEID[0];  // Get unique ID like MAC address
     snprintf(deviceName, sizeof(deviceName), "LilygoT-Echo-%08X", (unsigned long)mac);
-    SerialMon.print("[BLE] device name: ");
-    SerialMon.println(deviceName);
+    Serial.print("[BLE] device name: ");
+    Serial.println(deviceName);
 
     Bluefruit.setName(deviceName);
-    SerialMon.println("[BLE] setName() done");
+    Serial.println("[BLE] setName() done");
 
     // Set up BLE service and characteristic
-    SerialMon.println("[BLE] bleService.begin() ... ");
+    Serial.println("[BLE] bleService.begin() ... ");
     bleService.begin();
-    SerialMon.println("[BLE] bleService.begin() done");
+    Serial.println("[BLE] bleService.begin() done");
 
     // Define the properties and permissions of the characteristic
-    SerialMon.println("[BLE] configuring bleCharacteristic ...");
+    Serial.println("[BLE] configuring bleCharacteristic ...");
     bleCharacteristic.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);  // Enable notifications
     bleCharacteristic.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     bleCharacteristic.setMaxLen(100);  // Set max length of messages
     bleCharacteristic.setFixedLen(100);
     bleCharacteristic.setWriteCallback(onCharacteristicWritten);  // Set the write callback
-    SerialMon.println("[BLE] characteristic configured");
+    Serial.println("[BLE] characteristic configured");
 
-    SerialMon.println("[BLE] bleCharacteristic.begin() ... ");
+    Serial.println("[BLE] bleCharacteristic.begin() ... ");
     bleCharacteristic.begin();
-    SerialMon.println("[BLE] bleCharacteristic.begin() done");
+    Serial.println("[BLE] bleCharacteristic.begin() done");
 
     // Set the connect and disconnect callbacks
     Bluefruit.Periph.setConnectCallback(onConnect);
     Bluefruit.Periph.setDisconnectCallback(onDisconnect);
-    SerialMon.println("[BLE] connect/disconnect callbacks set");
+    Serial.println("[BLE] connect/disconnect callbacks set");
 
     // Add service to the advertising packet
-    SerialMon.println("[BLE] adding service + name to advertising ...");
+    Serial.println("[BLE] adding service + name to advertising ...");
     Bluefruit.Advertising.addService(bleService);
     Bluefruit.Advertising.addName();  // Advertise device name
 
     // Start advertising
-    SerialMon.println("[BLE] starting advertising ... ");
+    Serial.println("[BLE] starting advertising ... ");
     Bluefruit.Advertising.start();
-    SerialMon.println("[BLE] <<< setupBLE() DONE - advertising started");
+    Serial.println("[BLE] <<< setupBLE() DONE - advertising started");
 
     Serial.print("BLE Initialized with device name: ");
     Serial.println(deviceName);

@@ -48,6 +48,11 @@ echo.
 REM ---- Compile firmware ----
 echo [3/3] Building firmware...
 rd /s /q %BUILD_DIR% 2>nul
+if exist "%BUILD_DIR%" (
+    echo [WARN] Build dir still locked (T-Echo USB active), waiting 5s ...
+ping -n 6 127.0.0.1 >nul
+rd /s /q %BUILD_DIR% 2>nul
+)
 call "%ARDUINO_CLI%" compile -b %BOARD% --build-path %BUILD_DIR% %SKETCH_DIR% 2>&1
 
 if !errorlevel! neq 0 (
