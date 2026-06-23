@@ -75,13 +75,23 @@ unsigned int lastMessageCounter=0;     // The packetCounter of the last message
 
 // Move numFrequencies and frequency calculations to initialization
 void initializeFrequencyMap() {
-    SerialMon.print("initializeFrequencyMap Initializing ...  ");
+    SerialMon.print("[LoRa] initializeFrequencyMap: start=");
+    SerialMon.print(startFreq);
+    SerialMon.print(" end=");
+    SerialMon.print(endFreq);
+    SerialMon.print(" step=");
+    SerialMon.print(stepSize);
+    SerialMon.print(" count=");
+
     numFrequencies = (endFreq - startFreq) / stepSize;
+    SerialMon.println(numFrequencies);
+
     frequencyMap = new FrequencyStatus[numFrequencies];
     for (int i = 0; i < numFrequencies; i++) {
         frequencyMap[i].frequency = startFreq + (i * stepSize);
         frequencyMap[i].status = FREQUENCY_GOOD;  // Start by assuming all frequencies are good
     }
+    SerialMon.println("[LoRa] initializeFrequencyMap: map allocated, all freqs marked GOOD");
 }
 
 // Pseudo-random frequency hopping based on a shared time source and randomness
@@ -373,7 +383,8 @@ void checkLoraPacketComplete() {
                                                 + packet.sendDateTime.substring(12, 14).toInt();
                         }
 
-                        long localSeconds = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
+                        RTC_Date rtc_time = rtc.getDateTime();
+                        long localSeconds = rtc_time.hour * 3600 + rtc_time.minute * 60 + rtc_time.second;
 
                         // Check if time is out of sync and converge gradually
                         long timeDiff = abs(receiverTimeSeconds - localSeconds);
@@ -508,53 +519,102 @@ int setFrequency(float freq) {
 
 // Setup LoRa radio
 bool setupLoRa() {
-    Serial.print(F("Initializing Lora ... "));
+    SerialMon.println("[LoRa] >>> setupLoRa() START");
 
     hopAfterTxRx=false;
 
     transmitFlag = false;
     operationDone = false;
 
+    SerialMon.print("[LoRa] creating SPIClass on NRF_SPIM3 (MISO=");
+    SerialMon.print(LoRa_Miso);
+    SerialMon.print(" SCLK=");
+    SerialMon.print(LoRa_Sclk);
+    SerialMon.print(" MOSI=");
+    SerialMon.println(LoRa_Mosi);
+    
     rfPort = new SPIClass(NRF_SPIM3, LoRa_Miso, LoRa_Sclk, LoRa_Mosi);
     rfPort->begin();
+    SerialMon.println("[LoRa] SPIClass begin() done");
+
     SPISettings spiSettings;
 
+    SerialMon.print("[LoRa] creating SX1262 Module (CS=");
+    SerialMon.print(LoRa_Cs);
+    SerialMon.print(" DIO1=");
+    SerialMon.print(LoRa_Dio1);
+    SerialMon.print(" RST=");
+    SerialMon.print(LoRa_Rst);
+    SerialMon.print(" BUSY=");
+    SerialMon.println(LoRa_Busy);
+    
     radio = new SX1262(new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *rfPort, spiSettings));
 
+    SerialMon.print("[LoRa] calling radio->begin(freq=");
+    SerialMon.print(defaultFrequency);
+    SerialMon.println(") ...");
+    
     int state = radio->begin(defaultFrequency);  // Use currentFrequency
         if (state == RADIOLIB_ERR_NONE) {
-            Serial.println(F("success!"));
+            SerialMon.println("[LoRa] radio->begin() success!");
         } else {
-            Serial.print(F("failed, code "));
-            Serial.println(state);
+            SerialMon.print("[LoRa] radio->begin() FAILED, code ");
+            SerialMon.println(state);
     }
 
+    SerialMon.print("[LoRa] registering DIO1 interrupt ... ");
     radio->setDio1Action(setFlag);
+    SerialMon.println("done");
 
+    SerialMon.print("[LoRa] setSpreadingFactor(SF=");
+    SerialMon.print(deviceSettings.spreading_factor);
+    
     state = radio->setSpreadingFactor(deviceSettings.spreading_factor);
+    
+    SerialMon.print(") => ");
+    SerialMon.print(state == RADIOLIB_ERR_NONE ? "OK" : String("ERR") + state);
+    SerialMon.print(" | setBandwidth(BW=");
+    SerialMon.print(deviceSettings.bandwidth_idx / 1000.0);
+    
     state |= radio->setBandwidth(deviceSettings.bandwidth_idx / 1000.0);
+    
+    SerialMon.print(") => ");
+    SerialMon.print(state == RADIOLIB_ERR_NONE ? "OK" : String("ERR") + state);
+    SerialMon.print(" | setCodingRate(CR=");
+    SerialMon.print(deviceSettings.coding_rate_idx);
+    
     state |= radio->setCodingRate(deviceSettings.coding_rate_idx);
+    SerialMon.print(") => ");
+    SerialMon.println(state == RADIOLIB_ERR_NONE ? "OK" : String("ERR") + state);
 
     if (state != RADIOLIB_ERR_NONE) {
-        Serial.print(F("Failed to set LoRa parameters, code "));
-        Serial.println(state);
+        SerialMon.print("[LoRa] WARNING: some LoRa params failed, code ");
+        SerialMon.println(state);
     }
 
+    SerialMon.print("[LoRa] setPreambleLength(24) ... ");
     radio->setPreambleLength(24);
-    radio->setOutputPower(20);
-    radio->setCurrentLimit(120);
-/*
-    state = setFrequency(defaultFrequency);
-    if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("Setup lora success!"));
-    } else {
-        Serial.print(F("failed, code "));
-        Serial.println(state);
-    }
-*/
+    SerialMon.println("done");
 
-    Serial.println(F("LoRa setup completed successfully!"));
-    return radio->startReceive() == RADIOLIB_ERR_NONE;
+    SerialMon.print("[LoRa] setOutputPower(20dBm) ... ");
+    radio->setOutputPower(20);
+    SerialMon.println("done");
+
+    SerialMon.print("[LoRa] setCurrentLimit(120mA) ... ");
+    radio->setCurrentLimit(120);
+    SerialMon.println("done");
+
+    SerialMon.println("[LoRa] calling radio->startReceive() ...");
+    bool lora_ready = radio->startReceive() == RADIOLIB_ERR_NONE;
+    
+    if (lora_ready) {
+        SerialMon.println("[LoRa] radio->startReceive() OK - LoRa ready!");
+    } else {
+        SerialMon.println("[LoRa] radio->startReceive() FAILED!");
+    }
+
+    SerialMon.println("[LoRa] <<< setupLoRa() END");
+    return lora_ready;
 }
 
 String getFormattedDateTime() {

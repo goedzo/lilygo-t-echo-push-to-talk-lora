@@ -30,29 +30,45 @@ extern bool time_set;  // Ensure 'time_set' is declared in settings.h
 //extern PCF8563_Class rtc;  // RTC instance from your RTC code
 
 bool setupGPS() {
-    SerialMon.println("[GPS] Initializing ... ");
-    SerialMon.flush();
+    SerialMon.println("[GPS] >>> setupGPS() START");
 
-#ifndef PCA10056
-    SerialGPS.setPins(Gps_Rx_Pin, Gps_Tx_Pin);  // Use pin definitions from utilities.h
-#endif
+    SerialMon.print("[GPS] begin SerialGPS at 9600 baud (RX=P");
+    SerialMon.print(Gps_Rx_Pin);
+    SerialMon.print(" TX=P");
+    SerialMon.println(Gps_Tx_Pin);
     SerialGPS.begin(9600);
+    SerialMon.println("[GPS] SerialGPS.begin() done, flushing ...");
     SerialGPS.flush();
+    SerialMon.println("[GPS] flush done");
 
+    SerialMon.print("[GPS] pinMode(Gps_pps_Pin=");
+    SerialMon.print(Gps_pps_Pin);
+    SerialMon.println(", INPUT)");
     pinMode(Gps_pps_Pin, INPUT);
 
+    SerialMon.print("[GPS] pinMode(Gps_Wakeup_Pin=");
+    SerialMon.print(Gps_Wakeup_Pin);
+    SerialMon.println(", OUTPUT), driving HIGH");
     pinMode(Gps_Wakeup_Pin, OUTPUT);
     digitalWrite(Gps_Wakeup_Pin, HIGH);
 
+    SerialMon.println("[GPS] delay(10) ms ...");
     delay(10);
+
+    SerialMon.print("[GPS] pinMode(Gps_Reset_Pin=");
+    SerialMon.print(Gps_Reset_Pin);
+    SerialMon.println(", OUTPUT), soft reset sequence");
     pinMode(Gps_Reset_Pin, OUTPUT);
-    digitalWrite(Gps_Reset_Pin, HIGH); delay(10);
-    digitalWrite(Gps_Reset_Pin, LOW); delay(10);
+    digitalWrite(Gps_Reset_Pin, HIGH); 
+    delay(10);
+    digitalWrite(Gps_Reset_Pin, LOW); 
+    delay(10);
     digitalWrite(Gps_Reset_Pin, HIGH);
 
     gps_status = GPS_INIT;  // GPS module has been initialized
-    gps = new TinyGPSPlus();  // Create a new instance of TinyGPSPlus
-
+    SerialMon.println("[GPS] creating TinyGPSPlus instance ...");
+    gps = new TinyGPSPlus();
+    SerialMon.println("[GPS] <<< setupGPS() DONE - status=GPS_INIT");
     return true;
 }
 

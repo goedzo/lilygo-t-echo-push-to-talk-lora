@@ -6,29 +6,67 @@ Three codebases live in this repo:
 
 | Directory | What it is |
 |---|---|
-| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino IDE or PlatformIO. No platformio.ini present — project was designed for the Arduino IDE. |
+| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino IDE or PlatformIO (see build instructions below). |
 | `cordova_app/PTTLora/` | Android companion app built with **Cordova** (`cordova-android 13`). BLE plugin only. Build: `02_build_project.bat` (Windows) or `cordova build android`. Output APK copied to `cordova_app/pttlora.apk`. |
 | `lilygo_lora32_keyboard_bridge/main/` | Separate **bridge firmware** for a LilyGO LoRa32 board — relays BLE ↔ LoRa. Independent from the main firmware, but uses similar patterns. |
 | `libraries/` | Vendored Arduino libraries (Adafruit, RadioLib, GxEPD2, Codec2, MCCI_LoRaWAN_LMIC, etc.). Must be copied to Arduino's `libraries` directory when building outside this repo. |
 
 ## Firmware build / flash
 
-**Arduino IDE:**
-1. Install `Adafruit nRF52` board package via Board Manager URL in Preferences.
-2. Select board: `Nordic nRF52840 (PCA10056)`.
-3. Copy all folders from `libraries/` into your Arduino `libraries` directory.
-4. Open `main/main.ino`, verify, upload.
+### Arduino CLI (primary — full automation)
 
-**PlatformIO / VSCode:**
-1. Create a `platformio.ini` targeting the `adafruit_nrf52` platform with board `adafruit_feather_nrf52840_s2`.
-2. The project has **no pre-existing platformio.ini** — you must create one.
+Used for all CI/CD, command-line builds, and deployment. Verified working: **zero errors, 27% flash, 8% RAM**.
 
-## Build gotchas
+```bash
+# Build
+arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main
+
+# Upload (T-Echo in DFU mode)
+arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin
+
+# Install dependencies
+arduino-cli core install adafruit:nrf52@1.7.0
+arduino-cli lib install "RadioLib GxEPD2 AceButton Codec2 TinyGPSPlus"
+```
+
+Windows batch scripts in `build_scripts/`:
+| Script | Purpose |
+|---|---|
+| `01_build_firmware.bat` | Full build with dependency check |
+| `02_upload_firmware.bat` | DFU upload to T-Echo |
+| `03_ci_pipeline.bat` | Build > Verify > Flash pipeline |
+
+**Prerequisites**: Arduino CLI is bundled with Arduino IDE (path: `D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe`) or standalone. Adafruit nRF52 core 1.7.0 installed via `core update-index`.
+
+### PlatformIO / VSCode (NOT recommended)
+
+The project has a `platformio.ini` at the repo root but **BLE compilation fails** due to a known incompatibility between PlatformIO's Nordic nRF52 v10+ framework and Bluefruit52Lib. Use Arduino CLI instead for automation.
+
+### Build gotchas (Arduino CLI)
 
 - The display is a **GxDEPG0150BN** 1.54" e-paper (not GxEPD2 stock). `display.cpp` includes a vendored header from `epd/GxEPD2_150_BN.h`. If this file changes, update both `main.ino` and `display.cpp` accordingly.
 - Pin definitions differ between **VERSION_1** (commented out in `utilities.h`) and the default revision. Check which hardware revision you have before changing pin assignments.
-- **DFU upload**: Double-click the T-Echo reset button to enter DFU mode, then upload via USB (`upload_protocol = nrfutil` on PlatformIO).
+- **DFU upload**: Double-click the T-Echo reset button to enter DFU mode, then upload via USB (`arduino-cli upload -b adafruit:nrf52:feather52840 --port auto main.bin`).
 - The bootloader is Adafruit_nRF52_Arduino's default. Using nRF5-SDK will overwrite it — do not mix toolchains without restoring the bootloader first.
+
+### PlatformIO configuration details (reference only)
+
+| Setting | Value |
+|---|---|
+| Platform | `nordicnrf52@8.0.1` |
+| Board | `adafruit_feather_nrf52840` |
+| Framework | `arduino` |
+| Upload | `nrfutil` (DFU) |
+| Monitor speed | `115200` |
+
+Libraries linked via `-I` include paths to `libraries/`. Source filter includes `main/lib/src` for RadioLib.
+
+### PlatformIO environments
+
+| Environment | Purpose |
+|---|---|
+| `t-echo` | Release build (optimized) |
+| `t-echo-debug` | Debug build (`-O0 -g3`) |
 
 ## Firmware codebase entrypoints
 
@@ -64,7 +102,7 @@ Key vendored libraries in `libraries/`:
 ## No test harness
 
 This repo has **no automated tests**. Verification is done by:
-1. Compiling firmware in Arduino IDE
+1. Compiling firmware in Arduino IDE or PlatformIO
 2. Flashing to physical T-Echo hardware
 3. Testing BLE connection from the companion APK
 
@@ -162,6 +200,7 @@ When the user requests a durable behavior change, record it here or in the relev
 | Path | Scope |
 |---|---|
 | `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, PTT/TXT/RAW/TST modes) |
+| `build_scripts/AGENTS.md` | Arduino CLI build/upload/CI scripts (primary automation path) |
 | `cordova_app/AGENTS.md` | Android companion app (Cordova + BLE plugin) |
 | `lilygo_lora32_keyboard_bridge/AGENTS.md` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) |
 | `libraries/AGENTS.md` | Vendored Arduino libraries (RadioLib, GxEPD2, Codec2, TinyGPSPlus, etc.) |

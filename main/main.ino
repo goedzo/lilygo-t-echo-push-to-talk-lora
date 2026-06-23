@@ -24,6 +24,9 @@
 #include "audio.h"
 #include "ble.h"
 
+// GPS SoftwareSerial on P1.8 (TX) / P1.9 (RX)
+SoftwareSerial SerialGPS(Gps_Tx_Pin, Gps_Rx_Pin);  // RX pin, TX pin
+
 
 
 void configVDD(void);
@@ -35,44 +38,82 @@ int count=0;
 
 void setup()
 {
+    SerialMon.println();
+    SerialMon.print("========================================\n");
+    SerialMon.print("[BOOT] Starting firmware boot sequence\n");
+    SerialMon.print("[BOOT] millis(): ");
+    SerialMon.println(millis());
+    SerialMon.print("========================================\n");
+
+    SerialMon.print("[BOOT] begin Serial at 115200 baud\n");
     Serial.begin(115200);
+    SerialMon.print("[BOOT] Serial.begin() done\n");
+    
     //while (!Serial);
 
+    SerialMon.print("[BOOT] delay(200) ms\n");
     delay(200);
+    SerialMon.print("[BOOT] delay done, starting boardInit()\n");
     boardInit();
+    SerialMon.print("[BOOT] boardInit() done\n");
+    
+    SerialMon.print("[BOOT] display: showing Booting...\n");
     updDisp(4, "Booting...");
 
+    // ---------- Frequency Map ----------
+    SerialMon.print("[BOOT] === Step 1/7: initializeFrequencyMap()\n");
     updDisp(5, "Init frequencymap");
     initializeFrequencyMap();
+    SerialMon.println("[BOOT] initializeFrequencyMap() done");
 
+    // ---------- LoRa ----------
+    SerialMon.print("[BOOT] === Step 2/7: setupLoRa()\n");
     updDisp(5, "Init lora...");
-    setupLoRa();
+    bool lora_ok = setupLoRa();
+    SerialMon.print("[BOOT] setupLoRa() returned: ");
+    SerialMon.println(lora_ok ? "OK" : "FAIL");
 
+    // ---------- Settings (RTC) ----------
+    SerialMon.print("[BOOT] === Step 3/7: setupSettings()\n");
     //We need a delay so that all devices can be initialized properly
-    Serial.println("Init settings\n");
+    SerialMon.println("[BOOT] setupSettings() entering...");
     updDisp(5, "Init settings..");
     setupSettings();
+    SerialMon.println("[BOOT] setupSettings() done");
 
+    // ---------- GPS ----------
+    SerialMon.print("[BOOT] === Step 4/7: setupGPS()\n");
     updDisp(5, "Init gps...");
-    Serial.println("Init settings\n");
-    setupGPS();
+    SerialMon.println("[BOOT] setupGPS() entering...");
+    bool gps_ok = setupGPS();
+    SerialMon.print("[BOOT] setupGPS() returned: ");
+    SerialMon.println(gps_ok ? "OK" : "FAIL");
 
-
+    // ---------- App Modes ----------
+    SerialMon.print("[BOOT] === Step 5/7: setupAppModes()\n");
     updDisp(5, "Setup app modes");
     setupAppModes();
+    SerialMon.println("[BOOT] setupAppModes() done");
 
-
+    // ---------- BLE ----------
+    SerialMon.print("[BOOT] === Step 6/7: setupBLE()\n");
     updDisp(5, "Setup bluetooth");
     setupBLE();
+    SerialMon.println("[BOOT] setupBLE() done");
 
-
+    // ---------- Done ----------
+    SerialMon.println("[BOOT] === All init steps complete ===");
     updDisp(5, "Setup ok!");
+    SerialMon.print("[BOOT] clearScreen()\n");
 
     //setupPingPong();
 
-
     clearScreen();
+    SerialMon.println("[BOOT] clearScreen() done, updating mode/channel display");
     updModeAndChannelDisplay();
+    SerialMon.print("\n[BOOT] ========================================\n");
+    SerialMon.print("[BOOT] Boot sequence finished - entering loop()\n");
+    SerialMon.print("[BOOT] ========================================\n\n");
 }
 
 void loop()
@@ -144,23 +185,45 @@ void boardInit()
     configVDD();
 #endif
 
+    SerialMon.println("[Board] >>> boardInit() START");
+
+    SerialMon.print("[Board] begin SerialMon at ");
+    SerialMon.print(MONITOR_SPEED);
+    SerialMon.println(" baud");
     SerialMon.begin(MONITOR_SPEED);
+    
     // delay(5000);
     // while (!SerialMon);
-    SerialMon.println("Start\n");
+    SerialMon.println("[Board] SerialMon.println(\"Start\")");
 
     uint32_t reset_reason;
     sd_power_reset_reason_get(&reset_reason);
-    SerialMon.print("sd_power_reset_reason_get:");
+    SerialMon.print("[Board] reset_reason=0x");
     SerialMon.println(reset_reason, HEX);
+    
+    // Decode reset reason bits
+    if (reset_reason & 0x01) SerialMon.println("[Board]   -> Power-up");
+    if (reset_reason & 0x02) SerialMon.println("[Board]   -> External pin");
+    if (reset_reason & 0x04) SerialMon.println("[Board]   -> Watchdog");
+    if (reset_reason & 0x08) SerialMon.println("[Board]   -> SVD");
+    if (reset_reason & 0x10) SerialMon.println("[Board]   -> CPU lockup");
+    if (reset_reason & 0x40) SerialMon.println("[Board]   -> LRWICTO from System OFF");
+    if (reset_reason & 0x80) SerialMon.println("[Board]   -> CRITERIASE from System OFF");
 
+    SerialMon.print("[Board] pinMode(Power_Enable_Pin=");
+    SerialMon.print(Power_Enable_Pin);
+    SerialMon.println(", OUTPUT) HIGH");
     pinMode(Power_Enable_Pin, OUTPUT);
     digitalWrite(Power_Enable_Pin, HIGH);
 
+    SerialMon.print("[Board] pinMode(ePaper_Backlight=P");
+    SerialMon.print(ePaper_Backlight);
+    SerialMon.println(") OUTPUT, enabling ...");
     pinMode(ePaper_Backlight, OUTPUT);
     //enableBacklight(true); //ON backlight
     enableBacklight(false); //OFF  backlight
 
+    SerialMon.println("[Board] configuring LEDs ...");
     pinMode(GreenLed_Pin, OUTPUT);
     pinMode(RedLed_Pin, OUTPUT);
     pinMode(BlueLed_Pin, OUTPUT);
@@ -168,6 +231,8 @@ void boardInit()
     pinMode(UserButton_Pin, INPUT_PULLUP);
     pinMode(Touch_Pin, INPUT_PULLUP);
 
+    // Blink pattern to confirm board is alive
+    SerialMon.print("[Board] LED blink pattern starting (10 cycles) ... ");
     int i = 10;
     while (i--) {
         digitalWrite(GreenLed_Pin, !digitalRead(GreenLed_Pin));
@@ -178,6 +243,11 @@ void boardInit()
     digitalWrite(GreenLed_Pin, HIGH);
     digitalWrite(RedLed_Pin, HIGH);
     digitalWrite(BlueLed_Pin, HIGH);
+    SerialMon.println("done");
 
+    // Call setupDisplay which now has its own detailed prints
+    SerialMon.println("[Board] calling setupDisplay() ...");
     setupDisplay();
+    
+    SerialMon.println("[Board] <<< boardInit() DONE");
 }

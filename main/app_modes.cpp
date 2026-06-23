@@ -465,25 +465,55 @@ bool debouncedTouchPress() {
 }
 
 void setupAppModes() {
+    SerialMon.println("[Modes] >>> setupAppModes() START");
+
     // Initialize buttons
+    SerialMon.println("[Modes] getting ButtonConfig ... ");
     ButtonConfig* config = ButtonConfig::getSystemButtonConfig();
+    
+    SerialMon.println("[Modes] setting handleEvent callback ...");
     config->setEventHandler(handleEvent);
+    
+    SerialMon.println("[Modes] enabling kFeatureLongPress ...");
     config->setFeature(ButtonConfig::kFeatureLongPress);  // Enable long press detection
+    
+    SerialMon.println("[Modes] enabling kFeatureDoubleClick ...");
     config->setFeature(ButtonConfig::kFeatureDoubleClick); // Enable double click detection
+    
+    SerialMon.println("[Modes] enabling kFeatureSuppressAfterClick ...");
     config->setFeature(ButtonConfig::kFeatureSuppressAfterClick);
+    
+    SerialMon.println("[Modes] enabling kFeatureSuppressAfterDoubleClick ...");
     config->setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
 
     config->setClickDelay(125);  
+    SerialMon.println("[Modes] setClickDelay(125ms) done");
 
-    /*
-    config->setLongPressDelay(1000);  // Set long press delay to 1 second
-    config->setDoubleClickDelay(300);
-    */
-
+    SerialMon.print("[Modes] modeButton.init(MODE_PIN=");
+    SerialMon.print(MODE_PIN);
+    SerialMon.println(") ... ");
     modeButton.init(MODE_PIN);
+    SerialMon.println("[Modes] modeButton.init() done");
+
+    SerialMon.print("[Modes] touchButton.init(TOUCH_PIN=");
+    SerialMon.print(TOUCH_PIN);
+    SerialMon.println(") ... ");
     touchButton.init(TOUCH_PIN);
+    SerialMon.println("[Modes] touchButton.init() done");
+
     //To avoid power-off when just being booted
     actionButtonTimer=millis();
+    SerialMon.print("[Modes] actionButtonTimer set to millis=");
+    SerialMon.println(actionButtonTimer);
+
+    // Print initial mode index for verification
+    SerialMon.print("[Modes] initial modeIndex=");
+    SerialMon.println(modeIndex);
+    SerialMon.print("[Modes] current_mode='");
+    SerialMon.print(current_mode);
+    SerialMon.println("'");
+
+    SerialMon.println("[Modes] <<< setupAppModes() DONE");
 }
 
 void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState) {

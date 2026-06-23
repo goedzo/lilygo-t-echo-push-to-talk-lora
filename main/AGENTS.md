@@ -22,10 +22,28 @@ Takes care of the T-Echo firmware: `main/` directory. The core device that runs 
 ## Local Contracts
 
 - Board: `Nordic nRF52840 (PCA10056)`, target `adafruit_feather_nrf52840_s2`
-- Compile via Arduino IDE or PlatformIO (no platformio.ini — create one per project)
+- Compile via Arduino IDE or PlatformIO (see build instructions below)
 - Debug output: `SerialMon` at 115200 baud
 - Display updates: call `updDisp()` from app_modes or other modules that change state
 - Header guards: `#pragma once`
+
+### Build instructions
+
+**Arduino CLI (primary — full automation):**
+```bash
+arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main
+arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin
+```
+
+**Arduino IDE:**
+1. Install `Adafruit nRF52` board package via Board Manager URL in Preferences
+2. Select board: `Adafruit Feather nRF52840 Express`
+3. Copy all folders from `libraries/` into your Arduino `libraries` directory
+4. Open `main/main.ino`, verify, upload
+
+**PlatformIO (NOT recommended):** BLE does not compile with PlatformIO's Nordic nRF52 v10+ due to Bluefruit52Lib/SDK config incompatibility. Use Arduino CLI instead.
+
+The project includes a `platformio.ini` at the repo root with two environments: `t-echo` (release) and `t-echo-debug`. All vendored libraries are referenced via `-I` include paths. Build uses `build_src_filter` to also compile RadioLib source from `main/lib/src`.
 
 ## Build Gotchas
 
@@ -50,11 +68,13 @@ GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-
 
 ## Verification
 
-1. Verify in Arduino IDE — must compile clean (no warnings from pin defines or missing includes)
+1. Build with `arduino-cli compile` — must produce zero errors, 27% flash / 8% RAM on release build
 2. Flash to physical T-Echo hardware
-3. Test BLE connection from `pttlora.apk`
+3. Test BLE connection from companion APK
 4. No automated tests exist; manual device testing is the only verification path
 
 ## Child DOX Index
 
-None yet. Create when a subfolder becomes a durable boundary with its own rules or workflow.
+| Path | Scope |
+|---|---|
+| `build_scripts/` | Arduino CLI build/upload/CI scripts (`01_build_firmware.bat`, `02_upload_firmware.bat`, `03_ci_pipeline.bat`) |

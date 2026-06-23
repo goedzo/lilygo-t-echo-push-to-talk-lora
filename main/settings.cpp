@@ -107,10 +107,10 @@ const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_160
 const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
 
 void setupSettings() {
-    Serial.print("setupSettings Initializing ...  ");
+    SerialMon.println("[RTC] >>> setupSettings() START");
 
     //We need to make sure the I2C bus is properly initialized
-
+    SerialMon.println("[RTC] SCL stretch cycle (unlock I2C bus)");
     pinMode(SCL_Pin, OUTPUT);
     for (int i = 0; i < 9; i++) {
         digitalWrite(SCL_Pin, HIGH);
@@ -118,34 +118,68 @@ void setupSettings() {
         digitalWrite(SCL_Pin, LOW);
         delay(10);
     }
+    SerialMon.println("[RTC] SCL stretch cycle done");
+
+    SerialMon.println("[RTC] Wire.begin() step 1");
     Wire.begin();  // Re-initialize I2C bus    
+    SerialMon.println("[RTC] Wire.begin() step 1 done");
 
-    Serial.print("pinMode(RTC_Int_Pin, INPUT);");
+    SerialMon.print("[RTC] pinMode(RTC_Int_Pin=");
+    SerialMon.print(RTC_Int_Pin);
+    SerialMon.println(", INPUT)");
     pinMode(RTC_Int_Pin, INPUT);
-    Serial.print("attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);");
+    SerialMon.print("[RTC] attachInterrupt on RTC_Int_Pin ... ");
     attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
+    SerialMon.println("done");
 
-    Serial.println("Starting RTC");
+    SerialMon.println("[RTC] Wire.begin() step 2 (re-init)");
     Wire.begin();
+    SerialMon.println("[RTC] Wire.begin() step 2 done");
+
+    // Probe I2C bus for RTC device
+    SerialMon.print("[RTC] Scanning I2C bus for PCF8563 addr ");
+    SerialMon.print(PCF8563_SLAVE_ADDRESS, HEX);
+    SerialMon.println(" ...");
+    bool rtc_found = false;
+    for (int addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        uint8_t err = Wire.endTransmission();
+        if (err == 0) {
+            SerialMon.print("[RTC] I2C device found at addr 0x");
+            SerialMon.println(addr, HEX);
+            if (addr == PCF8563_SLAVE_ADDRESS) rtc_found = true;
+        }
+    }
 
     int retry = 3, ret = 0;
     do {
-        Serial.println("Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);");
+        SerialMon.print("[RTC] beginTransmission(PCF8563_ADDR=0x");
+        SerialMon.print(PCF8563_SLAVE_ADDRESS, HEX);
+        SerialMon.println(") ...");
         Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);
-        delay(200);
+        delay(100);
         ret = Wire.endTransmission();
-        Serial.println("Wire.endTransmission");
-        Serial.println(ret);
+        SerialMon.print("[RTC] endTransmission() ret=");
+        SerialMon.println(ret);
     } while (ret != 0 && retry-- > 0);
 
     if (ret != 0) {
-        Serial.println("failed");
+        SerialMon.println("[RTC] !!! RTC init failed (I2C NACK), skipping RTC");
         return;
     }
-    Serial.println("success");
+    SerialMon.println("[RTC] PCF8563 communication OK!");
+
+    SerialMon.println("[RTC] rtc.begin(Wire) ... ");
     rtc.begin(Wire);
+    SerialMon.println("[RTC] rtc.disableAlarm() ... ");
     rtc.disableAlarm();
-    //rtc.setDateTime(2024, 9, 5, 0, 0, 0);  // Optional initial time setting
+    
+    // Read back RTC status register to verify it's alive
+    uint8_t status = rtc.readRam(0x00);  // Best-effort probe
+    (void)status;
+
+    // Read default settings from RTC for verification
+    SerialMon.println("[RTC] >>> setupSettings() DONE");
 }
 
 void toggleSettingsMode() {

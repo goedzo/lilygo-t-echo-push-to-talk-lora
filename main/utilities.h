@@ -89,7 +89,10 @@
 #endif
 
 #define SerialMon           Serial
-#define SerialGPS           Serial2
+// nRF52840 has no Serial2. GPS UART on P1.8 (TX) / P1.9 (RX).
+// Instance defined in main.ino to match T-Echo pin mapping.
+#include <SoftwareSerial.h>
+extern SoftwareSerial SerialGPS;
 
 #define MONITOR_SPEED       115200
 
