@@ -1,9 +1,6 @@
 #include "Adafruit_SSD1619.h"
 #include "Adafruit_EPD.h"
 
-#define EPD_RAM_BW 0x10
-#define EPD_RAM_RED 0x13
-
 #define BUSY_WAIT 500
 
 // clang-format off
@@ -43,10 +40,10 @@ const uint8_t ssd1619_default_init_code[] {
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_SSD1619::Adafruit_SSD1619(int width, int height, int16_t SID,
-                                   int16_t SCLK, int16_t DC, int16_t RST,
-                                   int16_t CS, int16_t SRCS, int16_t MISO,
-                                   int16_t BUSY)
+Adafruit_SSD1619::Adafruit_SSD1619(int width, int height, int8_t SID,
+                                   int8_t SCLK, int8_t DC, int8_t RST,
+                                   int8_t CS, int8_t SRCS, int8_t MISO,
+                                   int8_t BUSY)
     : Adafruit_EPD(width, height, SID, SCLK, DC, RST, CS, SRCS, MISO, BUSY) {
   if ((height % 8) != 0) {
     height += 8 - (height % 8);
@@ -82,9 +79,9 @@ Adafruit_SSD1619::Adafruit_SSD1619(int width, int height, int16_t SID,
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_SSD1619::Adafruit_SSD1619(int width, int height, int16_t DC,
-                                   int16_t RST, int16_t CS, int16_t SRCS,
-                                   int16_t BUSY, SPIClass *spi)
+Adafruit_SSD1619::Adafruit_SSD1619(int width, int height, int8_t DC, int8_t RST,
+                                   int8_t CS, int8_t SRCS, int8_t BUSY,
+                                   SPIClass *spi)
     : Adafruit_EPD(width, height, DC, RST, CS, SRCS, BUSY, spi) {
   if ((height % 8) != 0) {
     height += 8 - (height % 8);
@@ -230,9 +227,6 @@ uint8_t Adafruit_SSD1619::writeRAMCommand(uint8_t index) {
 */
 /**************************************************************************/
 void Adafruit_SSD1619::setRAMAddress(uint16_t x, uint16_t y) {
-  (void)x;
-  (void)y;
-
   uint8_t buf[2];
 
   // set RAM x address count

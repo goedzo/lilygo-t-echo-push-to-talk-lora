@@ -392,21 +392,21 @@ void GxGDEW0213I5F::updateToWindow(uint16_t xs, uint16_t ys, uint16_t xd, uint16
         swap(xs, ys);
         swap(xd, yd);
         swap(w, h);
-        xs = GxGDEW0213I5F_WIDTH - xs - w;
-        xd = GxGDEW0213I5F_WIDTH - xd - w;
+        xs = GxGDEW0213I5F_WIDTH - xs - w - 1;
+        xd = GxGDEW0213I5F_WIDTH - xd - w - 1;
         break;
       case 2:
-        xs = GxGDEW0213I5F_WIDTH - xs - w;
-        ys = GxGDEW0213I5F_HEIGHT - ys - h;
-        xd = GxGDEW0213I5F_WIDTH - xd - w;
-        yd = GxGDEW0213I5F_HEIGHT - yd - h;
+        xs = GxGDEW0213I5F_WIDTH - xs - w - 1;
+        ys = GxGDEW0213I5F_HEIGHT - ys - h - 1;
+        xd = GxGDEW0213I5F_WIDTH - xd - w - 1;
+        yd = GxGDEW0213I5F_HEIGHT - yd - h - 1;
         break;
       case 3:
         swap(xs, ys);
         swap(xd, yd);
         swap(w, h);
-        ys = GxGDEW0213I5F_HEIGHT - ys  - h;
-        yd = GxGDEW0213I5F_HEIGHT - yd  - h;
+        ys = GxGDEW0213I5F_HEIGHT - ys  - h - 1;
+        yd = GxGDEW0213I5F_HEIGHT - yd  - h - 1;
         break;
     }
   }
@@ -772,16 +772,16 @@ void GxGDEW0213I5F::_rotate(uint16_t& x, uint16_t& y, uint16_t& w, uint16_t& h)
     case 1:
       swap(x, y);
       swap(w, h);
-      x = GxGDEW0213I5F_WIDTH - x - w;
+      x = GxGDEW0213I5F_WIDTH - x - w - 1;
       break;
     case 2:
-      x = GxGDEW0213I5F_WIDTH - x - w;
-      y = GxGDEW0213I5F_HEIGHT - y - h;
+      x = GxGDEW0213I5F_WIDTH - x - w - 1;
+      y = GxGDEW0213I5F_HEIGHT - y - h - 1;
       break;
     case 3:
       swap(x, y);
       swap(w, h);
-      y = GxGDEW0213I5F_HEIGHT - y - h;
+      y = GxGDEW0213I5F_HEIGHT - y - h - 1;
       break;
   }
 }

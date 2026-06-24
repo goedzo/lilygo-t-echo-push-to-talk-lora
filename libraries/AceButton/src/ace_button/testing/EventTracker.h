@@ -25,8 +25,6 @@ SOFTWARE.
 #ifndef ACE_BUTTON_EVENT_TRACKER_H
 #define ACE_BUTTON_EVENT_TRACKER_H
 
-#include <Arduino.h> // LOW
-
 namespace ace_button {
 namespace testing {
 
@@ -36,35 +34,26 @@ namespace testing {
 class EventRecord {
   public:
     EventRecord():
-        mPin(0),
         mEventType(0),
         mButtonState(LOW) {}
 
-    EventRecord(uint8_t pin, uint8_t eventType, uint8_t buttonState):
-        mPin(pin),
+    EventRecord(uint8_t eventType, uint8_t buttonState):
         mEventType(eventType),
         mButtonState(buttonState) {}
 
-    uint8_t getPin() const {
-      return mPin;
-    }
-
-    uint8_t getEventType() const {
+    uint8_t getEventType() {
       return mEventType;
     }
 
-    uint8_t getButtonState() const {
+    uint8_t getButtonState() {
       return mButtonState;
     }
 
-    void printTo(Print& printer) const;
-
-    // Accept the default copy-constructor and assignment operator.
-    EventRecord(const EventRecord&) = default;
-    EventRecord& operator=(const EventRecord&) = default;
-
   private:
-    uint8_t mPin;
+    // Accept the default copy-constructor and assignment operator.
+    //EventRecord(const EventRecord&) = delete;
+    //EventRecord& operator=(const EventRecord&) = delete;
+
     uint8_t mEventType;
     uint8_t mButtonState;
 };
@@ -80,9 +69,9 @@ class EventTracker {
         mNumEvents(0) {}
       
     /** Add event to a buffer of records, stopping when the buffer fills up. */
-    void addEvent(uint8_t pin, uint8_t eventType, uint8_t buttonState) {
+    void addEvent(uint8_t eventType, uint8_t buttonState) {
       if (mNumEvents < kMaxEvents) {
-        mRecords[mNumEvents] = EventRecord(pin, eventType, buttonState);
+        mRecords[mNumEvents] = EventRecord(eventType, buttonState);
         mNumEvents++;
       }
     }
@@ -92,8 +81,6 @@ class EventTracker {
     int getNumEvents() { return mNumEvents; }
 
     EventRecord& getRecord(int i) { return mRecords[i]; }
-
-    void printTo(Print& printer) const;
 
   private:
     // Disable copy-constructor and assignment operator

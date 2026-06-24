@@ -1,9 +1,6 @@
 #include "Adafruit_SSD1681.h"
 #include "Adafruit_EPD.h"
 
-#define EPD_RAM_BW 0x10
-#define EPD_RAM_RED 0x13
-
 #define BUSY_WAIT 500
 
 // clang-format off
@@ -35,16 +32,16 @@ const uint8_t ssd1681_default_init_code[] {
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_SSD1681::Adafruit_SSD1681(int width, int height, int16_t SID,
-                                   int16_t SCLK, int16_t DC, int16_t RST,
-                                   int16_t CS, int16_t SRCS, int16_t MISO,
-                                   int16_t BUSY)
+Adafruit_SSD1681::Adafruit_SSD1681(int width, int height, int8_t SID,
+                                   int8_t SCLK, int8_t DC, int8_t RST,
+                                   int8_t CS, int8_t SRCS, int8_t MISO,
+                                   int8_t BUSY)
     : Adafruit_EPD(width, height, SID, SCLK, DC, RST, CS, SRCS, MISO, BUSY) {
   if ((height % 8) != 0) {
     height += 8 - (height % 8);
   }
 
-  buffer1_size = ((uint32_t)width * (uint32_t)height) / 8;
+  buffer1_size = width * height / 8;
   buffer2_size = buffer1_size;
 
   if (SRCS >= 0) {
@@ -74,15 +71,15 @@ Adafruit_SSD1681::Adafruit_SSD1681(int width, int height, int16_t SID,
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_SSD1681::Adafruit_SSD1681(int width, int height, int16_t DC,
-                                   int16_t RST, int16_t CS, int16_t SRCS,
-                                   int16_t BUSY, SPIClass *spi)
+Adafruit_SSD1681::Adafruit_SSD1681(int width, int height, int8_t DC, int8_t RST,
+                                   int8_t CS, int8_t SRCS, int8_t BUSY,
+                                   SPIClass *spi)
     : Adafruit_EPD(width, height, DC, RST, CS, SRCS, BUSY, spi) {
   if ((height % 8) != 0) {
     height += 8 - (height % 8);
   }
 
-  buffer1_size = ((uint32_t)width * (uint32_t)height) / 8;
+  buffer1_size = width * height / 8;
   buffer2_size = buffer1_size;
 
   if (SRCS >= 0) {
@@ -168,6 +165,9 @@ void Adafruit_SSD1681::updatePartial(void) {
 
 void Adafruit_SSD1681::displayPartial(uint16_t x1, uint16_t y1, uint16_t x2,
                                       uint16_t y2) {
+  uint8_t buf[7];
+  uint8_t c;
+
   // check rotation, move window around if necessary
   switch (getRotation()) {
   case 0:

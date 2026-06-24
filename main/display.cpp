@@ -420,15 +420,6 @@ void printline(const char* msg) {
 }
 
 void setupDisplay() {
-    SerialMon.println("[Disp] >>> setupDisplay() START");
-
-    SerialMon.print("[Disp] creating GxIO SPI on MISO=P");
-    SerialMon.print(ePaper_Miso);
-    SerialMon.print(" SCLK=P");
-    SerialMon.print(ePaper_Sclk);
-    SerialMon.print(" MOSI=P");
-    SerialMon.println(ePaper_Mosi);
-    
     dispPort = new SPIClass(
         /*SPIPORT*/NRF_SPIM2,
         /*MISO*/ ePaper_Miso,
@@ -436,51 +427,21 @@ void setupDisplay() {
         /*MOSI*/ePaper_Mosi);
 
     dispPort->begin();
-    SerialMon.println("[Disp] GxIO SPI begin() done");
     
     // Create SPI settings with speed, data order, and mode
     SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);  // 4 MHz speed, MSB first, SPI mode 0
-    SerialMon.print("[Disp] SPI settings: 4MHz MSBFIRST MODE0\n");
 
     //Now let's create the display class
-    SerialMon.println("[Disp] creating GxEPD2_150_BN (CS=P");
-    SerialMon.print(ePaper_Cs);
-    SerialMon.print(" DC=P");
-    SerialMon.print(ePaper_Dc);
-    SerialMon.print(" RST=P");
-    SerialMon.print(ePaper_Rst);
-    SerialMon.print(" BUSY=P");
-    SerialMon.println(ePaper_Busy);
-
     display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
 
-    SerialMon.println("[Disp] display->init(115200, true, 20, false) ... ");
     display->init(115200, true, 20, false, *dispPort, spiSettings);
-    SerialMon.println("[Disp] init() done");
-
     display->setRotation(3); // Set display rotation
-    SerialMon.println("[Disp] setRotation(3) done");
-
     enableBacklight(true);
-    SerialMon.println("[Disp] backlight ON");
-
-    SerialMon.println("[Disp] clearScreen() ... ");
     display->clearScreen();
-    SerialMon.println("[Disp] clearScreen() done");
-
     display->setFullWindow(); // Use the full display window
-    SerialMon.println("[Disp] setFullWindow() done");
-
     display->fillScreen(GxEPD_WHITE); // Clear the screen
-    SerialMon.println("[Disp] fillScreen(WHITE) done");
-
     display->setTextColor(GxEPD_BLACK); // Set text color
-    SerialMon.println("[Disp] setTextColor(BLACK) done");
-
-    display->setFont(&FreeMonoBold9pt7b); // Set default font
-    SerialMon.println("[Disp] setFont(FreeMonoBold9pt7b) done");
-
-    SerialMon.println("[Disp] <<< setupDisplay() DONE");
+    display->setFont(&FreeMonoBold9pt7b);
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {

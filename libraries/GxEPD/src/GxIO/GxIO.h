@@ -7,8 +7,6 @@
 
 #include <Arduino.h>
 
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
 class GxIO
 {
   public:
@@ -40,3 +38,4 @@ class GxIO
 };
 
 #endif
+

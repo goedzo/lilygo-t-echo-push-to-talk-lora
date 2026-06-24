@@ -1,8 +1,6 @@
 #include "Adafruit_UC8151D.h"
 #include "Adafruit_EPD.h"
 
-#define EPD_RAM_BW 0x10
-
 #define BUSY_WAIT 500
 
 /**************************************************************************/
@@ -20,10 +18,10 @@
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_UC8151D::Adafruit_UC8151D(int width, int height, int16_t SID,
-                                   int16_t SCLK, int16_t DC, int16_t RST,
-                                   int16_t CS, int16_t SRCS, int16_t MISO,
-                                   int16_t BUSY)
+Adafruit_UC8151D::Adafruit_UC8151D(int width, int height, int8_t SID,
+                                   int8_t SCLK, int8_t DC, int8_t RST,
+                                   int8_t CS, int8_t SRCS, int8_t MISO,
+                                   int8_t BUSY)
     : Adafruit_EPD(width, height, SID, SCLK, DC, RST, CS, SRCS, MISO, BUSY) {
 
   if ((width % 8) != 0) {
@@ -57,9 +55,9 @@ Adafruit_UC8151D::Adafruit_UC8151D(int width, int height, int16_t SID,
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_UC8151D::Adafruit_UC8151D(int width, int height, int16_t DC,
-                                   int16_t RST, int16_t CS, int16_t SRCS,
-                                   int16_t BUSY, SPIClass *spi)
+Adafruit_UC8151D::Adafruit_UC8151D(int width, int height, int8_t DC, int8_t RST,
+                                   int8_t CS, int8_t SRCS, int8_t BUSY,
+                                   SPIClass *spi)
     : Adafruit_EPD(width, height, DC, RST, CS, SRCS, BUSY, spi) {
 
   if ((height % 8) != 0) {
@@ -105,6 +103,8 @@ void Adafruit_UC8151D::begin(bool reset) {
   Adafruit_EPD::begin(reset);
   setBlackBuffer(1, true); // black defaults to inverted
   setColorBuffer(0, true); // red defaults to inverted
+
+  powerDown();
 }
 
 /**************************************************************************/
@@ -124,6 +124,8 @@ void Adafruit_UC8151D::update() {
 */
 /**************************************************************************/
 void Adafruit_UC8151D::powerUp() {
+  uint8_t buf[5];
+
   // Demo code resets 3 times!
   hardwareReset();
   delay(10);
@@ -190,10 +192,7 @@ uint8_t Adafruit_UC8151D::writeRAMCommand(uint8_t index) {
     @param y Y address counter value
 */
 /**************************************************************************/
-void Adafruit_UC8151D::setRAMAddress(uint16_t x, uint16_t y) {
-  (void)x;
-  (void)y;
-}
+void Adafruit_UC8151D::setRAMAddress(uint16_t x, uint16_t y) {}
 
 /**************************************************************************/
 /*!
@@ -203,6 +202,7 @@ void Adafruit_UC8151D::setRAMAddress(uint16_t x, uint16_t y) {
 void Adafruit_UC8151D::displayPartial(uint16_t x1, uint16_t y1, uint16_t x2,
                                       uint16_t y2) {
   uint8_t buf[7];
+  uint8_t c;
 
   // check rotation, move window around if necessary
   switch (getRotation()) {
@@ -305,7 +305,7 @@ void Adafruit_UC8151D::displayPartial(uint16_t x1, uint16_t y1, uint16_t x2,
     uint32_t offset = 0;
     uint8_t mcp_buf[16];
     while (remaining) {
-      uint8_t to_xfer = min((uint32_t)sizeof(mcp_buf), remaining);
+      uint8_t to_xfer = min(sizeof(mcp_buf), remaining);
 
       sram.read(buffer2_addr + offset, mcp_buf, to_xfer);
       sram.write(buffer1_addr + offset, mcp_buf, to_xfer);

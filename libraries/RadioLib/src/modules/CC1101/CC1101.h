@@ -8,7 +8,7 @@
 
 // CC1101 physical layer properties
 #define RADIOLIB_CC1101_FREQUENCY_STEP_SIZE                     396.7285156
-#define RADIOLIB_CC1101_MAX_PACKET_LENGTH                       63
+#define RADIOLIB_CC1101_MAX_PACKET_LENGTH                       64
 #define RADIOLIB_CC1101_CRYSTAL_FREQ                            26.0
 #define RADIOLIB_CC1101_DIV_EXPONENT                            16
 
@@ -190,9 +190,6 @@
 
 // RADIOLIB_CC1101_REG_SYNC0
 #define RADIOLIB_CC1101_SYNC_WORD_LSB                           0x91        //  7     0   sync word LSB
-
-// RADIOLIB_CC1101_REG_PKTLEN
-#define RADIOLIB_CC1101_PACKET_LENGTH                           0xFF        //  7     0   packet length in bytes
 
 // RADIOLIB_CC1101_REG_PKTCTRL1
 #define RADIOLIB_CC1101_PQT                                     0x00        //  7     5   preamble quality threshold
@@ -563,6 +560,24 @@ class CC1101: public PhysicalLayer {
       uint8_t preambleLength = RADIOLIB_CC1101_DEFAULT_PREAMBLELEN);
     
     /*!
+      \brief Initialization method for 4-FSK modulation.
+      \param freq Carrier frequency in MHz. Defaults to 434 MHz.
+      \param br Bit rate to be used in kbps. Defaults to 4.8 kbps.
+      \param freqDev Frequency deviation from carrier frequency in kHz Defaults to 5.0 kHz.
+      \param rxBw Receiver bandwidth in kHz. Defaults to 135.0 kHz.
+      \param pwr Output power in dBm. Defaults to 10 dBm.
+      \param preambleLength Preamble Length in bits. Defaults to 16 bits.
+      \returns \ref status_codes
+    */
+    int16_t beginFSK4(
+      float freq = RADIOLIB_CC1101_DEFAULT_FREQ,
+      float br = RADIOLIB_CC1101_DEFAULT_BR,
+      float freqDev = RADIOLIB_CC1101_DEFAULT_FREQDEV,
+      float rxBw = RADIOLIB_CC1101_DEFAULT_RXBW,
+      int8_t pwr = RADIOLIB_CC1101_DEFAULT_POWER,
+      uint8_t preambleLength = RADIOLIB_CC1101_DEFAULT_PREAMBLELEN);
+
+    /*!
       \brief Reset method - resets the chip using manual reset sequence (without RESET pin).
     */
     void reset();
@@ -575,7 +590,7 @@ class CC1101: public PhysicalLayer {
       \param addr Address to send the data to. Will only be added if address filtering was enabled.
       \returns \ref status_codes
     */
-    int16_t transmit(uint8_t* data, size_t len, uint8_t addr = 0) override;
+    int16_t transmit(const uint8_t* data, size_t len, uint8_t addr = 0) override;
 
     /*!
       \brief Blocking binary receive method.
@@ -687,7 +702,7 @@ class CC1101: public PhysicalLayer {
       \param addr Address to send the data to. Will only be added if address filtering was enabled.
       \returns \ref status_codes
     */
-    int16_t startTransmit(uint8_t* data, size_t len, uint8_t addr = 0) override;
+    int16_t startTransmit(const uint8_t* data, size_t len, uint8_t addr = 0) override;
 
     /*!
       \brief Clean up after transmission is done.
@@ -737,6 +752,13 @@ class CC1101: public PhysicalLayer {
       \returns \ref status_codes
     */
     int16_t setBitRate(float br) override;
+
+    /*!
+      \brief Sets bit rate tolerance in BSCFG register. Allowed values are 0:(0%), 1(3,125%), 2:(6,25%) and 3:(12,5%).
+      \param brt Bit rate tolerance to be set.
+      \returns \ref status_codes
+    */
+    int16_t setBitRateTolerance(uint8_t brt);
 
     /*!
       \brief Sets receiver bandwidth. Allowed values are 58, 68, 81, 102, 116, 135, 162,
@@ -845,7 +867,7 @@ class CC1101: public PhysicalLayer {
 
     /*!
       \brief Gets RSSI (Recorded Signal Strength Indicator) of the last received packet.
-      In asynchronous direct mode, returns the current RSSI level.
+      In direct or asynchronous direct mode, returns the current RSSI level.
       \returns RSSI in dBm.
     */
     float getRSSI() override;
@@ -1003,10 +1025,11 @@ class CC1101: public PhysicalLayer {
 
     bool promiscuous = false;
     bool crcOn = true;
-    bool directModeEnabled = true;
+    bool directModeEnabled = false;
 
     int8_t power = RADIOLIB_CC1101_DEFAULT_POWER;
 
+    int16_t beginCommon(float freq, float br, float freqDev, float rxBw, int8_t pwr, uint8_t preambleLength);
     int16_t config();
     int16_t transmitDirect(bool sync, uint32_t frf);
     int16_t receiveDirect(bool sync);

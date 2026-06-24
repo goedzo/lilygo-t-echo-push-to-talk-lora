@@ -15,12 +15,12 @@ void setup() {
   }
 
   Adafruit_BusIO_Register id_reg = Adafruit_BusIO_Register(&spi_dev, 0x0F, ADDRBIT8_HIGH_TOREAD);
-  uint8_t id = 0;
+  uint8_t id;
   id_reg.read(&id);
   Serial.print("ID register = 0x"); Serial.println(id, HEX);
 
   Adafruit_BusIO_Register thresh_reg = Adafruit_BusIO_Register(&spi_dev, 0x0C, ADDRBIT8_HIGH_TOREAD, 2, LSBFIRST);
-  uint16_t thresh = 0;
+  uint16_t thresh;
   thresh_reg.read(&thresh);
   Serial.print("Initial threshold register = 0x"); Serial.println(thresh, HEX);
 

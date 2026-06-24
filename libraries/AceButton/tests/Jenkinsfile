@@ -36,8 +36,7 @@ pipeline {
                     verify \
                     --sketchbook $WORKSPACE \
                     $BOARDS \
-                    \$(find libraries/AceButton/examples -type d \
-                      -mindepth 1 -maxdepth 2)"
+                    libraries/AceButton/examples/*"
             }
         }
         stage('Verify Tests') {
@@ -47,7 +46,7 @@ pipeline {
                     verify \
                     --sketchbook $WORKSPACE \
                     $BOARDS \
-                    libraries/AceButton/tests/*Test"
+                    libraries/AceButton/tests/AceButtonTest"
             }
         }
         stage('Test') {
@@ -58,7 +57,7 @@ pipeline {
                     --skip_missing_port \
                     --sketchbook $WORKSPACE \
                     $BOARDS \
-                    libraries/AceButton/tests/*Test"
+                    libraries/AceButton/tests/AceButtonTest"
             }
         }
     }

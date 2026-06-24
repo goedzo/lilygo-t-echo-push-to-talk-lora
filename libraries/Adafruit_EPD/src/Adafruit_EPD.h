@@ -64,11 +64,11 @@ typedef enum {
 /**************************************************************************/
 class Adafruit_EPD : public Adafruit_GFX {
 public:
-  Adafruit_EPD(int width, int height, int16_t SID, int16_t SCLK, int16_t DC,
-               int16_t RST, int16_t CS, int16_t SRCS, int16_t MISO,
-               int16_t BUSY = -1);
-  Adafruit_EPD(int width, int height, int16_t DC, int16_t RST, int16_t CS,
-               int16_t SRCS, int16_t BUSY = -1, SPIClass *spi = &SPI);
+  Adafruit_EPD(int width, int height, int8_t SID, int8_t SCLK, int8_t DC,
+               int8_t RST, int8_t CS, int8_t SRCS, int8_t MISO,
+               int8_t BUSY = -1);
+  Adafruit_EPD(int width, int height, int8_t DC, int8_t RST, int8_t CS,
+               int8_t SRCS, int8_t BUSY = -1, SPIClass *spi = &SPI);
   ~Adafruit_EPD();
 
   void begin(bool reset = true);
@@ -132,7 +132,7 @@ protected:
   virtual void powerDown(void) = 0;
   void hardwareReset(void);
 
-  int16_t _dc_pin,                    ///< data/command pin
+  int8_t _dc_pin,                     ///< data/command pin
       _reset_pin,                     ///< reset pin
       _cs_pin,                        ///< chip select pin
       _busy_pin;                      ///< busy pin
@@ -155,8 +155,8 @@ protected:
 
   uint8_t layer_colors[EPD_NUM_COLORS];
 
-  uint32_t buffer1_size; ///< size of the primary buffer
-  uint32_t buffer2_size; ///< size of the secondary buffer
+  uint16_t buffer1_size; ///< size of the primary buffer
+  uint16_t buffer2_size; ///< size of the secondary buffer
   uint8_t *buffer1; ///< the pointer to the primary buffer if using on-chip ram
   uint8_t
       *buffer2; ///< the pointer to the secondary buffer if using on-chip ram

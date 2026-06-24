@@ -4,6 +4,9 @@
 #include "Adafruit_EPD.h"
 #include <Arduino.h>
 
+#define EPD_RAM_BW 0x10
+#define EPD_RAM_RED 0x13
+
 #define SSD1619_DRIVER_CONTROL 0x01
 #define SSD1619_GATE_VOLTAGE 0x03
 #define SSD1619_SOURCE_VOLTAGE 0x04
@@ -40,11 +43,11 @@
 /**************************************************************************/
 class Adafruit_SSD1619 : public Adafruit_EPD {
 public:
-  Adafruit_SSD1619(int width, int height, int16_t SID, int16_t SCLK, int16_t DC,
-                   int16_t RST, int16_t CS, int16_t SRCS, int16_t MISO,
-                   int16_t BUSY = -1);
-  Adafruit_SSD1619(int width, int height, int16_t DC, int16_t RST, int16_t CS,
-                   int16_t SRCS, int16_t BUSY = -1, SPIClass *spi = &SPI);
+  Adafruit_SSD1619(int width, int height, int8_t SID, int8_t SCLK, int8_t DC,
+                   int8_t RST, int8_t CS, int8_t SRCS, int8_t MISO,
+                   int8_t BUSY = -1);
+  Adafruit_SSD1619(int width, int height, int8_t DC, int8_t RST, int8_t CS,
+                   int8_t SRCS, int8_t BUSY = -1, SPIClass *spi = &SPI);
 
   void begin(bool reset = true);
   void powerUp();

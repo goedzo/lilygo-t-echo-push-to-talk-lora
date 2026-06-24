@@ -25,7 +25,12 @@ SOFTWARE.
 #ifndef ACE_BUTTON_ACE_BUTTON_H
 #define ACE_BUTTON_ACE_BUTTON_H
 
+#if !defined(RASPBERRY_PI)
 #include <Arduino.h>
+#else
+#include <raspi/raspi.h>
+#endif /* RASPBERRY_PI */
+
 #include "ButtonConfig.h"
 
 namespace ace_button {
@@ -41,8 +46,6 @@ namespace ace_button {
  * - kEventDoubleClicked
  * - kEventLongPressed
  * - kEventRepeatPressed
- * - kEventLongReleased
- * - kEventHeartBeat
  *
  * The check() method should be called from the loop() at least 2-3 times during
  * the debouncing time period. For 20 ms delay, the check() method should be
@@ -86,42 +89,10 @@ class AceButton {
     static const uint8_t kEventRepeatPressed = 5;
 
     /**
-     * Button was released after a long press. This event becomes the
-     * replacement for kEventReleased if kFeatureSuppressAfterLongPress is
-     * enabled. The kFeatureSuppressAfterLongPress allows us to distinguish a
-     * simple Pressed from a LongPressed, by using the Released event as a
-     * replacement of Pressed. But the suppression prevents us from detecting a
-     * Released event from a LongPress (which is sometimes needed). This event
-     * can be used as a replacement.
-     */
-    static const uint8_t kEventLongReleased = 6;
-
-    /**
-     * An event that fires every time interval defined by
-     * `getHeartBeatInterval()`. This is intended to allow custom subclasses of
-     * `IEventHandler` to track the progression of time even when no other
-     * event is occurring with a button. For example, this allows the
-     * IEventHandler to store the timestamp of the last kEventReleased, then
-     * trigger a custom kCustomLongReleased event after (say) 30 seconds after
-     * the last kEventReleased. Without the heart beat event, the IEventHandler
-     * would not be able to fire off a custom event.
-     */
-    static const uint8_t kEventHeartBeat = 7;
-
-    /**
      * Button state is unknown. This is a third state (different from LOW or
-     * HIGH) used when the class is first initialized upon reboot. No longer
-     * able to use '2' because the new PinStatus enum API contains 'CHANGE'
-     * which has a value of 2.
+     * HIGH) used when the class is first initialized upon reboot.
      */
-    static const uint8_t kButtonStateUnknown = 127;
-
-    /**
-     * Return the human-readable name of the event. This is intended to
-     * help debugging. If this function is not used, the underlying table of
-     * strings will not be compiled into the resulting binary.
-     */
-    static __FlashStringHelper* eventName(uint8_t event);
+    static const uint8_t kButtonStateUnknown = 2;
 
     /**
      * Constructor defines parameters of the button that changes from button to
@@ -155,70 +126,26 @@ class AceButton {
      * button. For example, this could be an index into an array of data that is
      * associated with the button.
      */
-    explicit AceButton(
-        uint8_t pin = 0,
-        uint8_t defaultReleasedState = HIGH,
-        uint8_t id = 0
-    ) :
-        mButtonConfig(ButtonConfig::getSystemButtonConfig()) {
-      init(pin, defaultReleasedState, id);
-    }
+    explicit AceButton(uint8_t pin = 0, uint8_t defaultReleasedState = HIGH,
+        uint8_t id = 0);
 
     /**
-     * Constructor that accepts a ButtonConfig as a dependency. The
-     * pin, defaultReleasedState, and id parameters have default values,
-     * so do not need to be explicitly set. Dependency injection of ButtonConfig
-     * using this constructor is now recommended over using the
-     * setButtonConfig() method because it makes the dependency more clear. If
-     * this constructor is used to set the pin, defaultReleasedState, and id,
-     * then the init() method does not need to be called in the setup().
-     *
-     * If you know at compile-time that you will use an alternate ButtonConfig
-     * (such as EncodedButtonConfig or LadderButtonConfig) instead of the
-     * default system ButtonConfig (getSystemButtonConfig()), then you can save
-     * about 30 bytes of flash and 26 bytes of RAM on an AVR processor by using
-     * this 4-parameter constructor and passing a `nullptr` for the
-     * `buttonConfig` in this constructor, instead of the using the 3-parameter
-     * `AceButton()` constructor. The 3-parameter constructor automatically
-     * creates and assigns the `buttonConfig` parameter to be the default system
-     * ButtonConfig, and the system ButtonConfig sticks around even if it is
-     * never used after the constructor. In retrospect, automatically creating a
-     * system ButtonConfig in an attempt to simplify the single-button use case
-     * was not the best idea, but it is too late to change that behavior without
-     * breaking backwards compatibility.
+     * Constructor that accepts a ButtonConfig as a dependency. Dependency
+     * injection using this constructor is now recommended over using the
+     * setButtonConfig() method because it makes the dependency more clear.
      */
-    explicit AceButton(
-        ButtonConfig* buttonConfig,
-        uint8_t pin = 0,
-        uint8_t defaultReleasedState = HIGH,
-        uint8_t id = 0) {
-      init(buttonConfig, pin, defaultReleasedState, id);
-    }
+    explicit AceButton(ButtonConfig* buttonConfig);
 
     /**
      * Reset the button to the initial constructed state. In particular,
      * getLastButtonState() returns kButtonStateUnknown. The parameters are
      * identical as the parameters in the AceButton() constructor.
      */
-    void init(
-        uint8_t pin = 0,
-        uint8_t defaultReleasedState = HIGH,
-        uint8_t id = 0);
-
-    /**
-     * Similar to init(uint8_t, uint8_t, uint8_t) but takes a (ButtonConfig*) as
-     * the first parameter. Sometimes it is more convenient to initialize the
-     * button in the global setup() function using this method instead of using
-     * the constructor.
-     */
-    void init(
-        ButtonConfig* buttonConfig,
-        uint8_t pin = 0,
-        uint8_t defaultReleasedState = HIGH,
+    void init(uint8_t pin = 0, uint8_t defaultReleasedState = HIGH,
         uint8_t id = 0);
 
     /** Get the ButtonConfig associated with this Button. */
-    ButtonConfig* getButtonConfig() const {
+    ButtonConfig* getButtonConfig() ACE_BUTTON_INLINE {
       return mButtonConfig;
     }
 
@@ -227,7 +154,7 @@ class AceButton {
      * the AceButton(ButtonConfig*) constructor is used instead to make the
      * dependency to ButtonConfig more explicit.
      */
-    void setButtonConfig(ButtonConfig* buttonConfig) {
+    void setButtonConfig(ButtonConfig* buttonConfig) ACE_BUTTON_INLINE {
       mButtonConfig = buttonConfig;
     }
 
@@ -239,40 +166,20 @@ class AceButton {
      * you are using multiple ButtonConfig objects, you should call the
      * ButtonConfig::setEventHandler() method on those objects directly, instead
      * of using this method.
-     *
-     * Since v1.6, the event handler can be either a function pointer or an
-     * object pointer. The recommended way to set the event handler is to call
-     * the setEventHanlder() or the setIEventHandler() on the ButtonConfig
-     * object directly using one of the following:
-     *
-     * @code
-     * ButtonConfig* config = button.getButtonConfig();
-     * config->setEventHandler(eventHandler);
-     * @endcode
-     *
-     * OR
-     *
-     * @code
-     * ButtonConfig* config = button.getButtonConfig();
-     * config->setIEventHandler(&eventHandler);
-     * @endcode
-     *
-     * I decided against deprecating this method because it allows someone to
-     * write the simple HelloButton.ino program without having any knowledge of
-     * the ButtonConfig object.
      */
-    void setEventHandler(ButtonConfig::EventHandler eventHandler) {
+    void setEventHandler(ButtonConfig::EventHandler eventHandler)
+        ACE_BUTTON_INLINE {
       mButtonConfig->setEventHandler(eventHandler);
     }
 
     /** Get the button's pin number. */
-    uint8_t getPin() const { return mPin; }
+    uint8_t getPin() ACE_BUTTON_INLINE { return mPin; }
 
     /** Get the custom identifier of the button. */
-    uint8_t getId() const { return mId; }
+    uint8_t getId() ACE_BUTTON_INLINE { return mId; }
 
     /** Get the initial released state of the button, HIGH or LOW. */
-    uint8_t getDefaultReleasedState() const;
+    uint8_t getDefaultReleasedState();
 
     /**
      * Return the button state that was last valid. This is a tri-state
@@ -287,7 +194,7 @@ class AceButton {
      * from the value of buttonState provided to the event handler. In other
      * words, there is a race-condition.
      */
-    uint8_t getLastButtonState() const {
+    uint8_t getLastButtonState() ACE_BUTTON_INLINE {
       return mLastButtonState;
     }
 
@@ -299,12 +206,6 @@ class AceButton {
      * correctly, which may cause other event detection algorithms to fail.
      */
     void check();
-
-    /**
-     * Version of check() used by EncodedButtonConfig. NOT for public
-     * consumption.
-     */
-    void checkState(uint8_t buttonState);
 
     /**
      * Returns true if the given buttonState represents a 'Released' state for
@@ -321,7 +222,7 @@ class AceButton {
      * because the value of the eventType already encodes this information.
      * This method is provided just in case.
      */
-    bool isReleased(uint8_t buttonState) const {
+    bool isReleased(uint8_t buttonState) ACE_BUTTON_INLINE {
       return buttonState == getDefaultReleasedState();
     }
 
@@ -332,7 +233,7 @@ class AceButton {
      * was booted. This method does not use the check() method, does not perform
      * any debouncing, and does not dispatch events to the EventHandler.
      */
-    bool isPressedRaw() const {
+    bool isPressedRaw() ACE_BUTTON_INLINE {
       return !isReleased(mButtonConfig->readButton(mPin));
     }
 
@@ -348,7 +249,7 @@ class AceButton {
     AceButton& operator=(const AceButton&) = delete;
 
     /** Set the pin number of the button. */
-    void setPin(uint8_t pin) { mPin = pin; }
+    void setPin(uint8_t pin) ACE_BUTTON_INLINE { mPin = pin; }
 
     /**
      * Set the initial released state of the button.
@@ -360,32 +261,113 @@ class AceButton {
     void setDefaultReleasedState(uint8_t state);
 
     /** Set the identifier of the button. */
-    void setId(uint8_t id) { mId = id; }
+    void setId(uint8_t id) ACE_BUTTON_INLINE { mId = id; }
 
     // Various bit masks to store a boolean flag in the 'mFlags' field.
     // We use bit masks to save static RAM. If we had used a 'bool' type, each
     // of these would consume one byte.
-    typedef uint16_t FlagType;
-    static const FlagType kFlagDefaultReleasedState = 0x01;
-    static const FlagType kFlagDebouncing = 0x02;
-    static const FlagType kFlagPressed = 0x04; // mLastPressTime is valid
-    static const FlagType kFlagClicked = 0x08; // mLastClickTime valid
-    static const FlagType kFlagDoubleClicked = 0x10;
-    static const FlagType kFlagLongPressed = 0x20;
-    static const FlagType kFlagRepeatPressed = 0x40; // mLastRepeatPressTime
-    static const FlagType kFlagClickPostponed = 0x80;
-    static const FlagType kFlagHeartRunning = 0x100; // mLastHeartBeatTime valid
+    static const uint8_t kFlagDefaultReleasedState = 0x01;
+    static const uint8_t kFlagDebouncing = 0x02;
+    static const uint8_t kFlagPressed = 0x04;
+    static const uint8_t kFlagClicked = 0x08;
+    static const uint8_t kFlagDoubleClicked = 0x10;
+    static const uint8_t kFlagLongPressed = 0x20;
+    static const uint8_t kFlagRepeatPressed = 0x40;
+    static const uint8_t kFlagClickPostponed = 0x80;
 
-    bool isFlag(FlagType flag) const {
-      return mFlags & flag;
+    // Methods for accessing the button's internal states.
+    // I don't expect these to be useful to the outside world.
+
+    // If this is set, then mLastDebounceTime is valid.
+    bool isDebouncing() ACE_BUTTON_INLINE {
+      return mFlags & kFlagDebouncing;
     }
 
-    void setFlag(FlagType flag) {
-      mFlags |= flag;
+    void setDebouncing() ACE_BUTTON_INLINE {
+      mFlags |= kFlagDebouncing;
     }
 
-    void clearFlag(FlagType flag) {
-      mFlags &= ~flag;
+    void clearDebouncing() ACE_BUTTON_INLINE {
+      mFlags &= ~kFlagDebouncing;
+    }
+
+    // If this is set, then mLastPressTime is valid.
+    bool isPressed() ACE_BUTTON_INLINE {
+      return mFlags & kFlagPressed;
+    }
+
+    void setPressed() ACE_BUTTON_INLINE {
+      mFlags |= kFlagPressed;
+    }
+
+    void clearPressed() ACE_BUTTON_INLINE {
+      mFlags &= ~kFlagPressed;
+    }
+
+    // If this is set, then mLastClickTime is valid.
+    bool isClicked() ACE_BUTTON_INLINE {
+      return mFlags & kFlagClicked;
+    }
+
+    void setClicked() ACE_BUTTON_INLINE {
+      mFlags |= kFlagClicked;
+    }
+
+    void clearClicked() ACE_BUTTON_INLINE {
+      mFlags &= ~kFlagClicked;
+    }
+
+    // A double click was detected. No need to store the last double-clicked
+    // time because we don't support a triple-click event (yet).
+    bool isDoubleClicked() ACE_BUTTON_INLINE {
+      return mFlags & kFlagDoubleClicked;
+    }
+
+    void setDoubleClicked() ACE_BUTTON_INLINE {
+      mFlags |= kFlagDoubleClicked;
+    }
+
+    void clearDoubleClicked() ACE_BUTTON_INLINE {
+      mFlags &= ~kFlagDoubleClicked;
+    }
+
+    // If this is set, then mLastPressTime can be treated as the start
+    // of a long press.
+    bool isLongPressed() ACE_BUTTON_INLINE {
+      return mFlags & kFlagLongPressed;
+    }
+
+    void setLongPressed() ACE_BUTTON_INLINE {
+      mFlags |= kFlagLongPressed;
+    }
+
+    void clearLongPressed() ACE_BUTTON_INLINE {
+      mFlags &= ~kFlagLongPressed;
+    }
+
+    // If this is set, then mLastRepeatPressTime is valid.
+    bool isRepeatPressed() ACE_BUTTON_INLINE {
+      return mFlags & kFlagRepeatPressed;
+    }
+
+    void setRepeatPressed() ACE_BUTTON_INLINE {
+      mFlags |= kFlagRepeatPressed;
+    }
+
+    void clearRepeatPressed() ACE_BUTTON_INLINE {
+      mFlags &= ~kFlagRepeatPressed;
+    }
+
+    bool isClickPostponed() ACE_BUTTON_INLINE {
+      return mFlags & kFlagClickPostponed;
+    }
+
+    void setClickPostponed() ACE_BUTTON_INLINE {
+      mFlags |= kFlagClickPostponed;
+    }
+
+    void clearClickPostponed() ACE_BUTTON_INLINE {
+      mFlags &= ~kFlagClickPostponed;
     }
 
     /**
@@ -449,9 +431,6 @@ class AceButton {
      */
     void checkPostponedClick(uint16_t now);
 
-    /** Check if a heart beat should be sent. */
-    void checkHeartBeat(uint16_t now);
-
     /**
      * Dispatch to the event handler defined in the mButtonConfig.
      *
@@ -496,34 +475,12 @@ class AceButton {
      * longer to evaluate than an empty function call, so we should do some
      * profiling before making this change.
      *
-     * Note: This probably should have been a const function. But that would
-     * require the ButtonConfig::EventHandler callback function to accept a
-     * `const AceButton*` instead of a `AceButton*`. Unfortunately, that
-     * signature is part of the API, and I cannot change it without
-     * breaking backwards compatibility.
-     *
      * @param eventType the type of event given by the kEvent* constants
      */
     void handleEvent(uint8_t eventType);
 
-  private:
-    /** ButtonConfig associated with this button. */
-    ButtonConfig* mButtonConfig;
-
-    /** button pin number */
-    uint8_t mPin;
-
-    /** identifier, e.g. an index into an array */
-    uint8_t mId;
-
-    /** Internal flags. Bit masks are defined by the kFlag* constants. */
-    FlagType mFlags;
-
-    /**
-     * Last button state. This is a tri-state variable: LOW, HIGH or
-     * kButtonStateUnknown.
-     */
-    uint8_t mLastButtonState;
+    uint8_t mPin; // button pin number
+    uint8_t mId; // identifier, e.g. an index into an array
 
     // Internal states of the button debouncing and event handling.
     // NOTE: We don't keep track of the lastDoubleClickTime, because we
@@ -532,7 +489,18 @@ class AceButton {
     uint16_t mLastClickTime; // ms
     uint16_t mLastPressTime; // ms
     uint16_t mLastRepeatPressTime; // ms
-    uint16_t mLastHeartBeatTime; // ms
+
+    /** Internal flags. Bit masks are defined by the kFlag* constants. */
+    uint8_t mFlags;
+
+    /**
+     * Last button state. This is a tri-state variable: LOW, HIGH or
+     * kButtonStateUnknown.
+     */
+    uint8_t mLastButtonState;
+
+    /** ButtonConfig associated with this button. */
+    ButtonConfig* mButtonConfig;
 };
 
 }

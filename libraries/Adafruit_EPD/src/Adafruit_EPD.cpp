@@ -53,10 +53,9 @@ bool Adafruit_EPD::_isInTransaction = false;
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_EPD::Adafruit_EPD(int width, int height, int16_t spi_mosi,
-                           int16_t spi_clock, int16_t DC, int16_t RST,
-                           int16_t CS, int16_t SRCS, int16_t spi_miso,
-                           int16_t BUSY)
+Adafruit_EPD::Adafruit_EPD(int width, int height, int8_t spi_mosi,
+                           int8_t spi_clock, int8_t DC, int8_t RST, int8_t CS,
+                           int8_t SRCS, int8_t spi_miso, int8_t BUSY)
     : Adafruit_GFX(width, height), sram(spi_mosi, spi_miso, spi_clock, SRCS) {
   _cs_pin = CS;
   _reset_pin = RST;
@@ -95,9 +94,8 @@ Adafruit_EPD::Adafruit_EPD(int width, int height, int16_t spi_mosi,
     @param spi the SPI bus to use
 */
 /**************************************************************************/
-Adafruit_EPD::Adafruit_EPD(int width, int height, int16_t DC, int16_t RST,
-                           int16_t CS, int16_t SRCS, int16_t BUSY,
-                           SPIClass *spi)
+Adafruit_EPD::Adafruit_EPD(int width, int height, int8_t DC, int8_t RST,
+                           int8_t CS, int8_t SRCS, int8_t BUSY, SPIClass *spi)
     : Adafruit_GFX(width, height), sram(SRCS) {
   _cs_pin = CS;
   _reset_pin = RST;
@@ -160,7 +158,7 @@ void Adafruit_EPD::begin(bool reset) {
     sram.write8(0, K640_SEQUENTIAL_MODE, MCPSRAM_WRSR);
   }
 
-  // Serial.println("set pins");
+  Serial.println("set pins");
   // set pin directions
   pinMode(_dc_pin, OUTPUT);
   pinMode(_cs_pin, OUTPUT);
@@ -178,16 +176,16 @@ void Adafruit_EPD::begin(bool reset) {
     return;
   }
 
-  // Serial.println("hard reset");
+  Serial.println("hard reset");
   if (reset) {
     hardwareReset();
   }
 
-  // Serial.println("busy");
+  Serial.println("busy");
   if (_busy_pin >= 0) {
     pinMode(_busy_pin, INPUT);
   }
-  // Serial.println("done!");
+  Serial.println("done!");
 }
 
 /**************************************************************************/
@@ -226,6 +224,12 @@ void Adafruit_EPD::drawPixel(int16_t x, int16_t y, uint16_t color) {
 
   uint8_t *black_pBuf, *color_pBuf;
 
+  // deal with non-8-bit heights
+  uint16_t _HEIGHT = HEIGHT;
+  if (_HEIGHT % 8 != 0) {
+    _HEIGHT += 8 - (_HEIGHT % 8);
+  }
+
   // check rotation, move pixel around if necessary
   switch (getRotation()) {
   case 1:
@@ -234,18 +238,12 @@ void Adafruit_EPD::drawPixel(int16_t x, int16_t y, uint16_t color) {
     break;
   case 2:
     x = WIDTH - x - 1;
-    y = HEIGHT - y - 1;
+    y = _HEIGHT - y - 1;
     break;
   case 3:
     EPD_swap(x, y);
-    y = HEIGHT - y - 1;
+    y = _HEIGHT - y - 1;
     break;
-  }
-
-  // deal with non-8-bit heights
-  uint16_t _HEIGHT = HEIGHT;
-  if (_HEIGHT % 8 != 0) {
-    _HEIGHT += 8 - (_HEIGHT % 8);
   }
   uint16_t addr = ((uint32_t)(WIDTH - 1 - x) * (uint32_t)_HEIGHT + y) / 8;
   uint8_t black_c, color_c;
@@ -292,7 +290,7 @@ void Adafruit_EPD::writeRAMFramebufferToEPD(uint8_t *framebuffer,
   dcHigh();
   // Serial.printf("Writing from RAM location %04x: \n", &framebuffer);
 
-  for (uint32_t i = 0; i < framebuffer_size; i++) {
+  for (uint16_t i = 0; i < framebuffer_size; i++) {
     uint8_t d = framebuffer[i];
     if (invertdata)
       d = ~d;
@@ -314,11 +312,10 @@ void Adafruit_EPD::writeSRAMFramebufferToEPD(uint16_t SRAM_buffer_addr,
                                              uint32_t buffer_size,
                                              uint8_t EPDlocation,
                                              bool invertdata) {
-  (void)invertdata;
   uint8_t c;
+
   // use SRAM
   sram.csLow();
-  _isInTransaction = true;
   // send read command
   SPItransfer(MCPSRAM_READ);
   // send address
@@ -330,21 +327,13 @@ void Adafruit_EPD::writeSRAMFramebufferToEPD(uint16_t SRAM_buffer_addr,
   c = writeRAMCommand(EPDlocation);
 
   dcHigh();
-  for (uint32_t i = 0; i < buffer_size; i++) {
+  for (uint16_t i = 0; i < buffer_size; i++) {
     c = SPItransfer(c);
-    /*
-    Serial.print("0x"); Serial.print((byte)c, HEX); Serial.print(", ");
-    if (i % 32 == 31) {
-      Serial.println();
-      Serial.print("$");
-      Serial.print(i, HEX);
-      Serial.print(": ");
-    }
-    */
+    // Serial.print("0x"); Serial.print((byte)c, HEX); Serial.print(", ");
+    // if (i % 32 == 31) Serial.println();
   }
   csHigh();
   sram.csHigh();
-  _isInTransaction = false;
 }
 
 /**************************************************************************/
@@ -353,6 +342,8 @@ void Adafruit_EPD::writeSRAMFramebufferToEPD(uint16_t SRAM_buffer_addr,
 */
 /**************************************************************************/
 void Adafruit_EPD::display(bool sleep) {
+  uint8_t c;
+
 #ifdef EPD_DEBUG
   Serial.println("  Powering Up");
 #endif
@@ -367,14 +358,8 @@ void Adafruit_EPD::display(bool sleep) {
   setRAMAddress(0, 0);
 
   if (use_sram) {
-#ifdef EPD_DEBUG
-    Serial.println("  Write SRAM buff to EPD");
-#endif
     writeSRAMFramebufferToEPD(buffer1_addr, buffer1_size, 0);
   } else {
-#ifdef EPD_DEBUG
-    Serial.println("  Write RAM buff to EPD");
-#endif
     writeRAMFramebufferToEPD(buffer1, buffer1_size, 0);
   }
 
@@ -656,15 +641,13 @@ uint8_t Adafruit_EPD::SPItransfer(uint8_t d) {
 void Adafruit_EPD::csHigh() {
 
 #ifdef BUSIO_USE_FAST_PINIO
-  *csPort = *csPort | csPinMask;
+  *csPort |= csPinMask;
 #else
   digitalWrite(_cs_pin, HIGH);
 #endif
 
-  if (_isInTransaction) {
-    spi_dev->endTransaction();
-    _isInTransaction = false;
-  }
+  spi_dev->endTransaction();
+  _isInTransaction = false;
 }
 
 /**************************************************************************/
@@ -673,14 +656,11 @@ void Adafruit_EPD::csHigh() {
 */
 /**************************************************************************/
 void Adafruit_EPD::csLow() {
-
-  if (!_isInTransaction) {
-    spi_dev->beginTransaction();
-    _isInTransaction = true;
-  }
+  spi_dev->beginTransaction();
+  _isInTransaction = true;
 
 #ifdef BUSIO_USE_FAST_PINIO
-  *csPort = *csPort & ~csPinMask;
+  *csPort &= ~csPinMask;
 #else
   digitalWrite(_cs_pin, LOW);
 #endif
@@ -693,7 +673,7 @@ void Adafruit_EPD::csLow() {
 /**************************************************************************/
 void Adafruit_EPD::dcHigh() {
 #ifdef BUSIO_USE_FAST_PINIO
-  *dcPort = *dcPort | dcPinMask;
+  *dcPort |= dcPinMask;
 #else
   digitalWrite(_dc_pin, HIGH);
 #endif
@@ -706,7 +686,7 @@ void Adafruit_EPD::dcHigh() {
 /**************************************************************************/
 void Adafruit_EPD::dcLow() {
 #ifdef BUSIO_USE_FAST_PINIO
-  *dcPort = *dcPort & ~dcPinMask;
+  *dcPort &= ~dcPinMask;
 #else
   digitalWrite(_dc_pin, LOW);
 #endif

@@ -5,7 +5,6 @@
  * resistor.
  */
 
-#include <Arduino.h>
 #include <AceButton.h>
 using namespace ace_button;
 
@@ -27,7 +26,6 @@ const int LED_OFF = LOW;
 // using AceButton::init() method in setup() below.
 AceButton button;
 
-// Forward reference to prevent Arduino compiler becoming confused.
 void handleEvent(AceButton*, uint8_t, uint8_t);
 
 void setup() {
@@ -60,8 +58,8 @@ void setup() {
 }
 
 void loop() {
-  // Should be called every 4-5ms or faster, for the default debouncing time
-  // of ~20ms.
+  // Should be called every 20ms or faster for the default debouncing time
+  // of ~50ms.
   button.check();
 }
 
@@ -71,7 +69,7 @@ void handleEvent(AceButton* /* button */, uint8_t eventType,
 
   // Print out a message for all events.
   Serial.print(F("handleEvent(): eventType: "));
-  Serial.print(AceButton::eventName(eventType));
+  Serial.print(eventType);
   Serial.print(F("; buttonState: "));
   Serial.println(buttonState);
 

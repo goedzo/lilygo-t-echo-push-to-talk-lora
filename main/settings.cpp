@@ -107,10 +107,6 @@ const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_160
 const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
 
 void setupSettings() {
-    SerialMon.println("[RTC] >>> setupSettings() START");
-
-    //We need to make sure the I2C bus is properly initialized
-    SerialMon.println("[RTC] SCL stretch cycle (unlock I2C bus)");
     pinMode(SCL_Pin, OUTPUT);
     for (int i = 0; i < 9; i++) {
         digitalWrite(SCL_Pin, HIGH);
@@ -118,54 +114,30 @@ void setupSettings() {
         digitalWrite(SCL_Pin, LOW);
         delay(10);
     }
-    SerialMon.println("[RTC] SCL stretch cycle done");
 
-    SerialMon.println("[RTC] Wire.begin() step 1");
-    Wire.begin();  // Re-initialize I2C bus    
-    SerialMon.println("[RTC] Wire.begin() step 1 done");
-
-    SerialMon.print("[RTC] pinMode(RTC_Int_Pin=");
-    SerialMon.print(RTC_Int_Pin);
-    SerialMon.println(", INPUT)");
-    pinMode(RTC_Int_Pin, INPUT);
-    SerialMon.print("[RTC] attachInterrupt on RTC_Int_Pin ... ");
-    attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
-    SerialMon.println("done");
-
-    SerialMon.println("[RTC] Wire.begin() step 2 (re-init)");
     Wire.begin();
-    SerialMon.println("[RTC] Wire.begin() step 2 done");
+    pinMode(RTC_Int_Pin, INPUT);
+    attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
 
-    // Probe I2C bus for RTC device (targeted probe, not exhaustive scan)
-    SerialMon.print("[RTC] probing PCF8563 at addr 0x");
-    SerialMon.println(PCF8563_SLAVE_ADDRESS, HEX);
+    Wire.begin();
+
+    // Drain USB before I2C probe to prevent blocking during softdevice busy periods
+    while (Serial.available()) Serial.read();
+    delay(10);
 
     int retry = 3, ret = 0;
     do {
         Wire.beginTransmission(PCF8563_SLAVE_ADDRESS);
         delay(100);
         ret = Wire.endTransmission();
-        SerialMon.print("[RTC] endTransmission() attempt=");
-        SerialMon.print(4 - retry);
-        SerialMon.print(" ret=");
-        SerialMon.println(ret);
     } while (ret != 0 && retry-- > 0);
 
     if (ret != 0) {
-        SerialMon.println("[RTC] !!! RTC init failed (I2C NACK), skipping RTC");
         return;
     }
-    SerialMon.println("[RTC] PCF8563 communication OK!");
 
-    SerialMon.println("[RTC] rtc.begin(Wire) ... ");
     rtc.begin(Wire);
-    SerialMon.println("[RTC] rtc.disableAlarm() ... ");
     rtc.disableAlarm();
-    
-    // RTC init complete
-    
-    // Read default settings from RTC for verification
-    SerialMon.println("[RTC] >>> setupSettings() DONE");
 }
 
 void toggleSettingsMode() {

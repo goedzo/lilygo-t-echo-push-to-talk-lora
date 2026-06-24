@@ -7,98 +7,23 @@ CC1101::CC1101(Module* module) : PhysicalLayer(RADIOLIB_CC1101_FREQUENCY_STEP_SI
 }
 
 int16_t CC1101::begin(float freq, float br, float freqDev, float rxBw, int8_t pwr, uint8_t preambleLength) {
-  // set module properties
-  this->mod->spiConfig.cmds[RADIOLIB_MODULE_SPI_COMMAND_READ] = RADIOLIB_CC1101_CMD_READ;
-  this->mod->spiConfig.cmds[RADIOLIB_MODULE_SPI_COMMAND_WRITE] = RADIOLIB_CC1101_CMD_WRITE;
-  this->mod->init();
-  this->mod->hal->pinMode(this->mod->getIrq(), this->mod->hal->GpioModeInput);
+  // set the modulation and execute the common part
+  this->modulation = RADIOLIB_CC1101_MOD_FORMAT_2_FSK;
+  return(this->beginCommon(freq, br, freqDev, rxBw, pwr, preambleLength));
+}
 
-  // try to find the CC1101 chip
-  uint8_t i = 0;
-  bool flagFound = false;
-  while((i < 10) && !flagFound) {
-    int16_t version = getChipVersion();
-    if((version == RADIOLIB_CC1101_VERSION_CURRENT) || (version == RADIOLIB_CC1101_VERSION_LEGACY) || (version == RADIOLIB_CC1101_VERSION_CLONE)) {
-      flagFound = true;
-    } else {
-      RADIOLIB_DEBUG_BASIC_PRINTLN("CC1101 not found! (%d of 10 tries) RADIOLIB_CC1101_REG_VERSION == 0x%04X, expected 0x0004/0x0014", i + 1, version);
-      this->mod->hal->delay(10);
-      i++;
-    }
-  }
-
-  if(!flagFound) {
-    RADIOLIB_DEBUG_BASIC_PRINTLN("No CC1101 found!");
-    this->mod->term();
-    return(RADIOLIB_ERR_CHIP_NOT_FOUND);
-  } else {
-    RADIOLIB_DEBUG_BASIC_PRINTLN("M\tCC1101");
-  }
-
-  // configure settings not accessible by API
-  int16_t state = config();
-  RADIOLIB_ASSERT(state);
-
-  // configure publicly accessible settings
-  state = setFrequency(freq);
-  RADIOLIB_ASSERT(state);
-
-  // configure bitrate
-  state = setBitRate(br);
-  RADIOLIB_ASSERT(state);
-
-  // configure default RX bandwidth
-  state = setRxBandwidth(rxBw);
-  RADIOLIB_ASSERT(state);
-
-  // configure default frequency deviation
-  state = setFrequencyDeviation(freqDev);
-  RADIOLIB_ASSERT(state);
-
-  // configure default TX output power
-  state = setOutputPower(pwr);
-  RADIOLIB_ASSERT(state);
-
-  // set default packet length mode
-  state = variablePacketLengthMode();
-  RADIOLIB_ASSERT(state);
-
-  // configure default preamble length
-  state = setPreambleLength(preambleLength, preambleLength - 4);
-  RADIOLIB_ASSERT(state);
-
-  // set default data shaping
-  state = setDataShaping(RADIOLIB_SHAPING_NONE);
-  RADIOLIB_ASSERT(state);
-
-  // set default encoding
-  state = setEncoding(RADIOLIB_ENCODING_NRZ);
-  RADIOLIB_ASSERT(state);
-
-  // set default sync word
-  uint8_t sw[RADIOLIB_CC1101_DEFAULT_SW_LEN] = RADIOLIB_CC1101_DEFAULT_SW;
-  state = setSyncWord(sw[0], sw[1], 0, false);
-  RADIOLIB_ASSERT(state);
-
-  // flush FIFOs
-  SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_RX);
-  SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_TX);
-
-  return(state);
+int16_t CC1101::beginFSK4(float freq, float br, float freqDev, float rxBw, int8_t pwr, uint8_t preambleLength) {
+  // set the modulation and execute the common part
+  this->modulation = RADIOLIB_CC1101_MOD_FORMAT_4_FSK;
+  return(this->beginCommon(freq, br, freqDev, rxBw, pwr, preambleLength));
 }
 
 void CC1101::reset() {
-  // this is the manual power-on-reset sequence
-  this->mod->hal->digitalWrite(this->mod->getCs(), this->mod->hal->GpioLevelLow);
-  this->mod->hal->delayMicroseconds(5);
-  this->mod->hal->digitalWrite(this->mod->getCs(), this->mod->hal->GpioLevelHigh);
-  this->mod->hal->delayMicroseconds(40);
-  this->mod->hal->digitalWrite(this->mod->getCs(), this->mod->hal->GpioLevelLow);
-  this->mod->hal->delay(10);
+  // just send the command, the reset sequence as described in datasheet seems unnecessary in our usage
   SPIsendCommand(RADIOLIB_CC1101_CMD_RESET);
 }
 
-int16_t CC1101::transmit(uint8_t* data, size_t len, uint8_t addr) {
+int16_t CC1101::transmit(const uint8_t* data, size_t len, uint8_t addr) {
   // calculate timeout (5ms + 500 % of expected time-on-air)
   RadioLibTime_t timeout = 5 + (RadioLibTime_t)((((float)(len * 8)) / this->bitRate) * 5);
 
@@ -234,8 +159,12 @@ int16_t CC1101::receiveDirect(bool sync) {
   // set RF switch (if present)
   this->mod->setRfSwitchState(Module::MODE_RX);
 
+  // enable promiscuous mode - needed for protocols that decode in software (e.g. PagerClient)
+  int16_t state = setPromiscuousMode(true);
+  RADIOLIB_ASSERT(state);
+
   // activate direct mode
-  int16_t state = directMode(sync);
+  state = directMode(sync);
   RADIOLIB_ASSERT(state);
 
   // start receiving
@@ -289,7 +218,7 @@ void CC1101::clearGdo2Action() {
   this->mod->hal->detachInterrupt(this->mod->hal->pinToInterrupt(this->mod->getGpio()));
 }
 
-int16_t CC1101::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
+int16_t CC1101::startTransmit(const uint8_t* data, size_t len, uint8_t addr) {
   // check packet length
   if(len > RADIOLIB_CC1101_MAX_PACKET_LENGTH) {
     return(RADIOLIB_ERR_PACKET_TOO_LONG);
@@ -317,7 +246,7 @@ int16_t CC1101::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
   }
 
   // fill the FIFO
-  SPIwriteRegisterBurst(RADIOLIB_CC1101_REG_FIFO, data, len);
+  SPIwriteRegisterBurst(RADIOLIB_CC1101_REG_FIFO, const_cast<uint8_t*>(data), len);
 
   // set RF switch (if present)
   this->mod->setRfSwitchState(Module::MODE_TX);
@@ -467,6 +396,15 @@ int16_t CC1101::setBitRate(float br) {
   if(state == RADIOLIB_ERR_NONE) {
     this->bitRate = br;
   }
+  return(state);
+}
+
+int16_t CC1101::setBitRateTolerance(uint8_t brt) {
+  if (brt > 0x03)  return (RADIOLIB_ERR_INVALID_BIT_RATE_TOLERANCE_VALUE);
+
+  // Set Bit Rate tolerance
+  int16_t state = SPIsetRegValue(RADIOLIB_CC1101_REG_BSCFG, brt, 1, 0);
+
   return(state);
 }
 
@@ -909,7 +847,7 @@ int16_t CC1101::setDataShaping(uint8_t sh) {
   // set data shaping
   switch(sh) {
     case RADIOLIB_SHAPING_NONE:
-      state = SPIsetRegValue(RADIOLIB_CC1101_REG_MDMCFG2, RADIOLIB_CC1101_MOD_FORMAT_2_FSK, 6, 4);
+      state = SPIsetRegValue(RADIOLIB_CC1101_REG_MDMCFG2, this->modulation, 6, 4);
       break;
     case RADIOLIB_SHAPING_0_5:
       state = SPIsetRegValue(RADIOLIB_CC1101_REG_MDMCFG2, RADIOLIB_CC1101_MOD_FORMAT_GFSK, 6, 4);
@@ -993,6 +931,87 @@ int16_t CC1101::setDIOMapping(uint32_t pin, uint32_t value) {
   return(SPIsetRegValue(RADIOLIB_CC1101_REG_IOCFG0 - pin, value));
 }
 
+int16_t CC1101::beginCommon(float freq, float br, float freqDev, float rxBw, int8_t pwr, uint8_t preambleLength) {
+  // set module properties
+  this->mod->spiConfig.cmds[RADIOLIB_MODULE_SPI_COMMAND_READ] = RADIOLIB_CC1101_CMD_READ;
+  this->mod->spiConfig.cmds[RADIOLIB_MODULE_SPI_COMMAND_WRITE] = RADIOLIB_CC1101_CMD_WRITE;
+  this->mod->init();
+  this->mod->hal->pinMode(this->mod->getIrq(), this->mod->hal->GpioModeInput);
+
+  // try to find the CC1101 chip
+  uint8_t i = 0;
+  bool flagFound = false;
+  while((i < 10) && !flagFound) {
+    int16_t version = getChipVersion();
+    if((version == RADIOLIB_CC1101_VERSION_CURRENT) || (version == RADIOLIB_CC1101_VERSION_LEGACY) || (version == RADIOLIB_CC1101_VERSION_CLONE)) {
+      flagFound = true;
+    } else {
+      RADIOLIB_DEBUG_BASIC_PRINTLN("CC1101 not found! (%d of 10 tries) RADIOLIB_CC1101_REG_VERSION == 0x%04X, expected 0x0004/0x0014", i + 1, version);
+      this->mod->hal->delay(10);
+      i++;
+    }
+  }
+
+  if(!flagFound) {
+    RADIOLIB_DEBUG_BASIC_PRINTLN("No CC1101 found!");
+    this->mod->term();
+    return(RADIOLIB_ERR_CHIP_NOT_FOUND);
+  } else {
+    RADIOLIB_DEBUG_BASIC_PRINTLN("M\tCC1101");
+  }
+
+  // configure settings not accessible by API
+  int16_t state = config();
+  RADIOLIB_ASSERT(state);
+
+  // configure publicly accessible settings
+  state = setFrequency(freq);
+  RADIOLIB_ASSERT(state);
+
+  // configure bitrate
+  state = setBitRate(br);
+  RADIOLIB_ASSERT(state);
+
+  // configure default RX bandwidth
+  state = setRxBandwidth(rxBw);
+  RADIOLIB_ASSERT(state);
+
+  // configure default frequency deviation
+  state = setFrequencyDeviation(freqDev);
+  RADIOLIB_ASSERT(state);
+
+  // configure default TX output power
+  state = setOutputPower(pwr);
+  RADIOLIB_ASSERT(state);
+
+  // set default packet length mode
+  state = variablePacketLengthMode();
+  RADIOLIB_ASSERT(state);
+
+  // configure default preamble length
+  state = setPreambleLength(preambleLength, preambleLength - 4);
+  RADIOLIB_ASSERT(state);
+
+  // set default data shaping
+  state = setDataShaping(RADIOLIB_SHAPING_NONE);
+  RADIOLIB_ASSERT(state);
+
+  // set default encoding
+  state = setEncoding(RADIOLIB_ENCODING_NRZ);
+  RADIOLIB_ASSERT(state);
+
+  // set default sync word
+  uint8_t sw[RADIOLIB_CC1101_DEFAULT_SW_LEN] = RADIOLIB_CC1101_DEFAULT_SW;
+  state = setSyncWord(sw[0], sw[1], 0, false);
+  RADIOLIB_ASSERT(state);
+
+  // flush FIFOs
+  SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_RX);
+  SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_TX);
+
+  return(state);
+}
+
 int16_t CC1101::config() {
   // Reset the radio. Registers may be dirty from previous usage.
   reset();
@@ -1023,7 +1042,7 @@ int16_t CC1101::directMode(bool sync) {
   SPIsendCommand(RADIOLIB_CC1101_CMD_IDLE);
 
   int16_t state = 0;
-  this->directModeEnabled = sync;
+  this->directModeEnabled = true;
   if(sync) {
     // set GDO0 and GDO2 mapping
     state |= SPIsetRegValue(RADIOLIB_CC1101_REG_IOCFG0, RADIOLIB_CC1101_GDOX_SERIAL_CLOCK , 5, 0);
@@ -1083,6 +1102,9 @@ int16_t CC1101::setPacketMode(uint8_t mode, uint16_t len) {
   state = SPIsetRegValue(RADIOLIB_CC1101_REG_PKTLEN, len);
   RADIOLIB_ASSERT(state);
 
+  // no longer in a direct mode
+  this->directModeEnabled = false;
+
   // update the cached values
   this->packetLength = len;
   this->packetLengthConfig = mode;
@@ -1138,21 +1160,7 @@ void CC1101::SPIwriteRegisterBurst(uint8_t reg, uint8_t* data, size_t len) {
 }
 
 void CC1101::SPIsendCommand(uint8_t cmd) {
-  // pull NSS low
-  this->mod->hal->digitalWrite(this->mod->getCs(), this->mod->hal->GpioLevelLow);
-
-  // start transfer
-  this->mod->hal->spiBeginTransaction();
-
-  // send the command byte
-  uint8_t status = 0;
-  this->mod->hal->spiTransfer(&cmd, 1, &status);
-
-  // stop transfer
-  this->mod->hal->spiEndTransaction();
-  this->mod->hal->digitalWrite(this->mod->getCs(), this->mod->hal->GpioLevelHigh);
-  RADIOLIB_DEBUG_SPI_PRINTLN("CMD\tW\t%02X\t%02X", cmd, status);
-  (void)status;
+  this->mod->SPItransferStream(&cmd, 1, true, NULL, NULL, 0, false);
 }
 
 #endif

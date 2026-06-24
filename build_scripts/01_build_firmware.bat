@@ -33,26 +33,42 @@ call "%ARDUINO_CLI%" core install %BOARD%@1.7.0 --log-level error 2>nul
 echo   OK: Core verified
 echo.
 
-REM ---- Install libraries (from Library Manager) ----
-echo [2/3] Installing required libraries from Library Manager...
-set "LIBS=GxEPD2 GxEPD AceButton Codec2 TinyGPSPlus PCF8563_Library SdFat Adafruit_GFX_Library Adafruit_BusIO Adafruit_Sensor Adafruit_EPD SerialFlash Button2 SoftSPI SoftSPIB MPU9250"
-for %%L in (%LIBS%) do (
-    call "%ARDUINO_CLI%" lib install "%%L" --log-level error 2>nul
+REM ---- Use vendored libraries from libraries/ folder ----
+echo [2/3] Using vendored libraries from libraries/...
+set "ARDUINO_LIB_DIR=%LOCALAPPDATA%\Arduino\libraries"
+if not exist "%ARDUINO_LIB_DIR%" mkdir "%ARDUINO_LIB_DIR%" 2>nul
+
+REM Copy all vendor library sources to Arduino's lib directory for compilation
+set VENDOR_LIBS=AceButton Button2 Codec2 GxEPD GxEPD2 MPU9250 PCF8563_Library RadioLib SdFat_-_Adafruit_Fork SerialFlash SoftSPI SoftSPIB TinyGPSPlus Adafruit_BluefruitLE_nRF51
+for %%V in (%VENDOR_LIBS%) do (
+    if exist "libraries\%%V" (
+        xcopy /E /I /Y "libraries\%%V" "%ARDUINO_LIB_DIR%\%%V" 2>nul >nul
+    )
 )
-REM Pin RadioLib to 6.6.0 — 7.x removed getIrqStatus() from SX126x
-call "%ARDUINO_CLI%" lib uninstall "RadioLib" --log-level error 2>nul
-call "%ARDUINO_CLI%" lib install "RadioLib@6.6.0" --log-level error 2>nul
+REM Handle library names with different naming conventions
+if not exist "%ARDUINO_LIB_DIR%\Adafruit_GFX_Library" if exist "%ARDUINO_LIB_DIR%\Adafruit-GFX-Library" (
+    move /Y "%ARDUINO_LIB_DIR%\Adafruit-GFX-Library" "%ARDUINO_LIB_DIR%\Adafruit_GFX_Library" 2>nul >nul
+)
+if not exist "%ARDUINO_LIB_DIR%\Adafruit_BusIO" if exist "%ARDUINO_LIB_DIR%\Adafruit BusIO" (
+    move /Y "%ARDUINO_LIB_DIR%\Adafruit BusIO" "%ARDUINO_LIB_DIR%\Adafruit_BusIO" 2>nul >nul
+)
+if not exist "%ARDUINO_LIB_DIR%\SdFat_-_Adafruit_Fork" if exist "%ARDUINO_LIB_DIR%\SdFat - Adafruit Fork" (
+    move /Y "%ARDUINO_LIB_DIR%\SdFat - Adafruit Fork" "%ARDUINO_LIB_DIR%\SdFat_-_Adafruit_Fork" 2>nul >nul
+)
+if not exist "%ARDUINO_LIB_DIR%\MPU9250-0.4.6" if exist "%ARDUINO_LIB_DIR%\MPU9250-0.4.6" (
+    move /Y "%ARDUINO_LIB_DIR%\MPU9250-0.4.6" "%ARDUINO_LIB_DIR%\MPU9250" 2>nul >nul
+)
+echo   OK: Libraries verified
 echo   OK: Libraries verified
 echo.
 
 REM ---- Compile firmware ----
 echo [3/3] Building firmware...
-rd /s /q %BUILD_DIR% 2>nul
-if exist "%BUILD_DIR%" (
-    echo [WARN] Build dir still locked (T-Echo USB active), waiting 5s ...
-ping -n 6 127.0.0.1 >nul
-rd /s /q %BUILD_DIR% 2>nul
+if exist "%BUILD_DIR%\*.a" (
+    echo [WARN] Build dir exists and locked, waiting 5s for USB re-enumeration ...
+    ping -n 6 127.0.0.1 >nul
 )
+rd /s /q %BUILD_DIR% 2>nul
 call "%ARDUINO_CLI%" compile -b %BOARD% --build-path %BUILD_DIR% %SKETCH_DIR% 2>&1
 
 if !errorlevel! neq 0 (

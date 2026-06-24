@@ -47,6 +47,12 @@ void setup()
 
     SerialMon.print("[BOOT] begin Serial at 115200 baud\n");
     Serial.begin(115200);
+    
+    // Drain USB buffer before blocking operations
+    while (Serial.available()) Serial.read();
+    delay(10);
+    while (Serial.available()) Serial.read();
+
     SerialMon.print("[BOOT] Serial.begin() done\n");
     
     //while (!Serial);
@@ -55,63 +61,86 @@ void setup()
     delay(200);
     SerialMon.print("[BOOT] delay done, starting boardInit()\n");
     boardInit();
+    
+    while (Serial.available()) Serial.read();
+    delay(10);
+    while (Serial.available()) Serial.read();
+
     SerialMon.print("[BOOT] boardInit() done\n");
     
-    SerialMon.print("[BOOT] display: showing Booting...\n");
     updDisp(4, "Booting...");
 
     // ---------- Frequency Map ----------
-    SerialMon.print("[BOOT] === Step 1/7: initializeFrequencyMap()\n");
+    SerialMon.println("[BOOT] === Step 1/7: initializeFrequencyMap()");
     updDisp(5, "Init frequencymap");
     initializeFrequencyMap();
     SerialMon.println("[BOOT] initializeFrequencyMap() done");
 
+    while (Serial.available()) Serial.read();
+    delay(10);
+    while (Serial.available()) Serial.read();
+
     // ---------- LoRa ----------
-    SerialMon.print("[BOOT] === Step 2/7: setupLoRa()\n");
+    SerialMon.println("[BOOT] === Step 2/7: setupLoRa()");
     updDisp(5, "Init lora...");
     bool lora_ok = setupLoRa();
     SerialMon.print("[BOOT] setupLoRa() returned: ");
     SerialMon.println(lora_ok ? "OK" : "FAIL");
 
+    while (Serial.available()) Serial.read();
+    delay(10);
+    while (Serial.available()) Serial.read();
+
     // ---------- Settings (RTC) ----------
-    SerialMon.print("[BOOT] === Step 3/7: setupSettings()\n");
-    //We need a delay so that all devices can be initialized properly
-    SerialMon.println("[BOOT] setupSettings() entering...");
+    SerialMon.println("[BOOT] === Step 3/7: setupSettings()");
     updDisp(5, "Init settings..");
     setupSettings();
     SerialMon.println("[BOOT] setupSettings() done");
 
+    while (Serial.available()) Serial.read();
+    delay(10);
+    while (Serial.available()) Serial.read();
+
     // ---------- GPS ----------
-    SerialMon.print("[BOOT] === Step 4/7: setupGPS()\n");
+    SerialMon.println("[BOOT] === Step 4/7: setupGPS()");
     updDisp(5, "Init gps...");
-    SerialMon.println("[BOOT] setupGPS() entering...");
     bool gps_ok = setupGPS();
     SerialMon.print("[BOOT] setupGPS() returned: ");
     SerialMon.println(gps_ok ? "OK" : "FAIL");
 
+    while (Serial.available()) Serial.read();
+    delay(10);
+    while (Serial.available()) Serial.read();
+
     // ---------- App Modes ----------
-    SerialMon.print("[BOOT] === Step 5/7: setupAppModes()\n");
+    SerialMon.println("[BOOT] === Step 5/7: setupAppModes()");
     updDisp(5, "Setup app modes");
     setupAppModes();
     SerialMon.println("[BOOT] setupAppModes() done");
 
+    while (Serial.available()) Serial.read();
+    delay(10);
+    while (Serial.available()) Serial.read();
+
     // ---------- BLE ----------
-    SerialMon.print("[BOOT] === Step 6/7: setupBLE()\n");
+    SerialMon.println("[BOOT] === Step 6/7: setupBLE()");
     updDisp(5, "Setup bluetooth");
     setupBLE();
     SerialMon.println("[BOOT] setupBLE() done");
 
+    while (Serial.available()) Serial.read();
+    delay(10);
+    while (Serial.available()) Serial.read();
+
     // ---------- Done ----------
     SerialMon.println("[BOOT] === All init steps complete ===");
     updDisp(5, "Setup ok!");
-    SerialMon.print("[BOOT] clearScreen()\n");
-
-    //setupPingPong();
 
     clearScreen();
-    SerialMon.println("[BOOT] clearScreen() done, updating mode/channel display");
     updModeAndChannelDisplay();
-    SerialMon.print("\n[BOOT] ========================================\n");
+    
+    SerialMon.println();
+    SerialMon.print("[BOOT] ========================================\n");
     SerialMon.print("[BOOT] Boot sequence finished - entering loop()\n");
     SerialMon.print("[BOOT] ========================================\n\n");
 }
@@ -178,7 +207,6 @@ void configVDD(void)
 
 void boardInit()
 {
-
     uint8_t rlst = 0;
 
 #ifdef HIGH_VOLTAGE
@@ -192,38 +220,40 @@ void boardInit()
     SerialMon.println(" baud");
     SerialMon.begin(MONITOR_SPEED);
     
+    // Drain USB buffer before blocking operations
+    while (Serial.available()) Serial.read();
+    delay(10);
+
     // delay(5000);
     // while (!SerialMon);
-    SerialMon.println("[Board] SerialMon.println(\"Start\")");
+    SerialMon.println("[Board] Reset reason decode:");
 
     uint32_t reset_reason;
     sd_power_reset_reason_get(&reset_reason);
-    SerialMon.print("[Board] reset_reason=0x");
+    SerialMon.print("  value=0x");
     SerialMon.println(reset_reason, HEX);
     
-    // Decode reset reason bits
-    if (reset_reason & 0x01) SerialMon.println("[Board]   -> Power-up");
-    if (reset_reason & 0x02) SerialMon.println("[Board]   -> External pin");
-    if (reset_reason & 0x04) SerialMon.println("[Board]   -> Watchdog");
-    if (reset_reason & 0x08) SerialMon.println("[Board]   -> SVD");
-    if (reset_reason & 0x10) SerialMon.println("[Board]   -> CPU lockup");
-    if (reset_reason & 0x40) SerialMon.println("[Board]   -> LRWICTO from System OFF");
-    if (reset_reason & 0x80) SerialMon.println("[Board]   -> CRITERIASE from System OFF");
+    if (reset_reason & 0x01) SerialMon.println("  -> Power-up");
+    if (reset_reason & 0x02) SerialMon.println("  -> External pin");
+    if (reset_reason & 0x04) SerialMon.println("  -> Watchdog");
+    if (reset_reason & 0x08) SerialMon.println("  -> SVD");
+    if (reset_reason & 0x10) SerialMon.println("  -> CPU lockup");
+    if (reset_reason & 0x40) SerialMon.println("  -> LRWICTO from System OFF");
+    if (reset_reason & 0x80) SerialMon.println("  -> CRITERIASE from System OFF");
 
-    SerialMon.print("[Board] pinMode(Power_Enable_Pin=");
+    while (Serial.available()) Serial.read();
+    delay(10);
+
+    SerialMon.print("[Board] Power_Enable_Pin=");
     SerialMon.print(Power_Enable_Pin);
-    SerialMon.println(", OUTPUT) HIGH");
+    SerialMon.println(", OUTPUT HIGH");
     pinMode(Power_Enable_Pin, OUTPUT);
     digitalWrite(Power_Enable_Pin, HIGH);
 
-    SerialMon.print("[Board] pinMode(ePaper_Backlight=P");
-    SerialMon.print(ePaper_Backlight);
-    SerialMon.println(") OUTPUT, enabling ...");
     pinMode(ePaper_Backlight, OUTPUT);
-    //enableBacklight(true); //ON backlight
-    enableBacklight(false); //OFF  backlight
+    enableBacklight(false);
 
-    SerialMon.println("[Board] configuring LEDs ...");
+    SerialMon.println("[Board] configuring LEDs and buttons ...");
     pinMode(GreenLed_Pin, OUTPUT);
     pinMode(RedLed_Pin, OUTPUT);
     pinMode(BlueLed_Pin, OUTPUT);
@@ -232,7 +262,7 @@ void boardInit()
     pinMode(Touch_Pin, INPUT_PULLUP);
 
     // Blink pattern to confirm board is alive
-    SerialMon.print("[Board] LED blink pattern starting (10 cycles) ... ");
+    SerialMon.print("[Board] LED blink pattern (10 cycles) ... ");
     int i = 10;
     while (i--) {
         digitalWrite(GreenLed_Pin, !digitalRead(GreenLed_Pin));
@@ -245,9 +275,16 @@ void boardInit()
     digitalWrite(BlueLed_Pin, HIGH);
     SerialMon.println("done");
 
-    // Call setupDisplay which now has its own detailed prints
+    // Drain USB before display init (display takes a long time)
+    while (Serial.available()) Serial.read();
+    delay(10);
+
     SerialMon.println("[Board] calling setupDisplay() ...");
     setupDisplay();
     
+    // Drain USB after display (all done printing during display init)
+    while (Serial.available()) Serial.read();
+    delay(10);
+
     SerialMon.println("[Board] <<< boardInit() DONE");
 }

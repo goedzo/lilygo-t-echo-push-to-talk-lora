@@ -23,29 +23,21 @@ SOFTWARE.
 */
 
 /**
- * @mainpage AceButton Library
- *
- * This is the Doxygen documentation for the
- * <a href="https://github.com/bxparks/AceButton">AceButton Library</a>.
- *
- * Click on the "Classes" menu above to see the list of classes.
- *
- * Click on the "Files" menu above to see the list of header files.
+@mainpage AceButton Library
+
+This is the Doxygen documentation for the
+<a href="https://github.com/bxparks/AceButton">AceButton Library</a>.
 */
 
 #ifndef ACE_BUTTON_H
 #define ACE_BUTTON_H
 
-#include "ace_button/IEventHandler.h"
+#include "ace_button/TimingStats.h"
 #include "ace_button/ButtonConfig.h"
-#include "ace_button/Encoded8To3ButtonConfig.h"
-#include "ace_button/Encoded4To2ButtonConfig.h"
-#include "ace_button/EncodedButtonConfig.h"
-#include "ace_button/LadderButtonConfig.h"
+#include "ace_button/AdjustableButtonConfig.h"
 #include "ace_button/AceButton.h"
 
-// Version format: xxyyzz == "xx.yy.zz"
-#define ACE_BUTTON_VERSION 11001
-#define ACE_BUTTON_VERSION_STRING "1.10.1"
+// Version format: xxyyzz == "xx.yy.zz"; 10303 = 1.3.3
+#define ACE_BUTTON_VERSION 10303
 
 #endif

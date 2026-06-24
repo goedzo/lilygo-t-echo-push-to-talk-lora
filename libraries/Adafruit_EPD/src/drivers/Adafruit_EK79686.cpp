@@ -41,10 +41,10 @@ const uint8_t ek79686_default_init_code[] {
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_EK79686::Adafruit_EK79686(int width, int height, int16_t SID,
-                                   int16_t SCLK, int16_t DC, int16_t RST,
-                                   int16_t CS, int16_t SRCS, int16_t MISO,
-                                   int16_t BUSY)
+Adafruit_EK79686::Adafruit_EK79686(int width, int height, int8_t SID,
+                                   int8_t SCLK, int8_t DC, int8_t RST,
+                                   int8_t CS, int8_t SRCS, int8_t MISO,
+                                   int8_t BUSY)
     : Adafruit_EPD(width, height, SID, SCLK, DC, RST, CS, SRCS, MISO, BUSY) {
 
   if ((width % 8) != 0) {
@@ -78,9 +78,9 @@ Adafruit_EK79686::Adafruit_EK79686(int width, int height, int16_t SID,
     @param BUSY the busy pin to use
 */
 /**************************************************************************/
-Adafruit_EK79686::Adafruit_EK79686(int width, int height, int16_t DC,
-                                   int16_t RST, int16_t CS, int16_t SRCS,
-                                   int16_t BUSY, SPIClass *spi)
+Adafruit_EK79686::Adafruit_EK79686(int width, int height, int8_t DC, int8_t RST,
+                                   int8_t CS, int8_t SRCS, int8_t BUSY,
+                                   SPIClass *spi)
     : Adafruit_EPD(width, height, DC, RST, CS, SRCS, BUSY, spi) {
 
   if ((height % 8) != 0) {
@@ -148,6 +148,8 @@ void Adafruit_EK79686::update() {
 */
 /**************************************************************************/
 void Adafruit_EK79686::powerUp() {
+  uint8_t buf[5];
+
   hardwareReset();
   delay(10);
 
@@ -206,7 +208,4 @@ uint8_t Adafruit_EK79686::writeRAMCommand(uint8_t index) {
     @param y Y address counter value
 */
 /**************************************************************************/
-void Adafruit_EK79686::setRAMAddress(uint16_t x, uint16_t y) {
-  (void)x;
-  (void)y;
-}
+void Adafruit_EK79686::setRAMAddress(uint16_t x, uint16_t y) {}

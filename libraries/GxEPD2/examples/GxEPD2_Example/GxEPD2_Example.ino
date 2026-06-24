@@ -108,7 +108,7 @@
 #include "bitmaps/WS_Bitmaps7c192x143.h" // 5.65" 7-color
 #include "bitmaps/WS_Bitmaps7c300x180.h" // 7.3" 7-color
 #endif
-#if defined(ESP32) || defined(ARDUINO_ARCH_RP2040)
+#if defined(ESP32) || defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_RP2040)
 #include "bitmaps/Bitmaps1304x984.h" // 12.48" b/w
 #include "bitmaps/Bitmaps1360x480.h" // 10.85" b/w
 #include "bitmaps/Bitmaps3c1304x984.h" // 12.48" b/w/r
@@ -224,12 +224,14 @@ void setup()
   drawGraphics();
   //display.powerOff(); return;
 #if !defined(__AVR) // takes too long!
-  if ((display.epd2.panel == GxEPD2::ACeP565) || (display.epd2.panel == GxEPD2::GDEY073D46) || (display.epd2.panel == GxEPD2::ACeP730) || (display.epd2.panel == GxEPD2::GDEP0565D90))
+  if ((display.epd2.panel == GxEPD2::ACeP565) || (display.epd2.panel == GxEPD2::GDEY073D46) || (display.epd2.panel == GxEPD2::ACeP730) ||
+      (display.epd2.panel == GxEPD2::GDEP0565D90) || (display.epd2.panel == GxEPD2::GDEP073E01))
   {
     //draw7colorlines();
     //delay(2000);
     draw7colors();
     delay(4000);
+    display.epd2.drawNativeColors(); delay(2000);
     //return;
   }
 #endif
@@ -811,6 +813,9 @@ void drawBitmaps()
 #ifdef _GxBitmaps104x212_H_
   drawBitmaps104x212();
 #endif
+#ifdef _GxBitmaps200x200_H_
+  drawBitmaps200x200();
+#endif
 #ifdef _GxBitmaps128x250_H_
   drawBitmaps128x250();
 #endif
@@ -863,6 +868,9 @@ void drawBitmaps()
 #ifdef _GxBitmaps3c104x212_H_
   drawBitmaps3c104x212();
 #endif
+#ifdef _GxBitmaps3c200x200_H_
+  drawBitmaps3c200x200();
+#endif
 #ifdef _GxBitmaps3c128x250_H_
   drawBitmaps3c128x250();
 #endif
@@ -893,23 +901,13 @@ void drawBitmaps()
 #if defined(ESP32) && defined(_GxBitmaps3c960x680_H_)
   drawBitmaps3c960x680();
 #endif
-  if ((display.epd2.WIDTH >= 200) && (display.epd2.HEIGHT >= 200))
-  {
-    // show these after the specific bitmaps
-#ifdef _GxBitmaps200x200_H_
-    drawBitmaps200x200();
-#endif
 #if defined(ESP32) && defined(_GxBitmaps1360x480_H_)
-    drawBitmaps1360x480();
+  drawBitmaps1360x480();
 #endif
-    // 3-color
-#ifdef _GxBitmaps3c200x200_H_
-    drawBitmaps3c200x200();
-#endif
+  // 3-color
 #if defined(ESP32) && defined(_GxBitmaps3c800x276_H_)
-    drawBitmaps3c800x276();
+  drawBitmaps3c800x276();
 #endif
-  }
   // 4-color
 #if defined(_GxBitmaps4c128x250_H_)
   drawBitmaps4c128x250();
@@ -1859,9 +1857,9 @@ void drawBitmaps3c400x300()
   {
     {Bitmap3c400x300_1_black, Bitmap3c400x300_1_red},
     {Bitmap3c400x300_2_black, Bitmap3c400x300_2_red},
+    {WS_Bitmap3c400x300_black, WS_Bitmap3c400x300_red},
     {Bitmap3c400x300_3_black, Bitmap3c400x300_3_red},
     {Bitmap3c400x300_4_black, Bitmap3c400x300_4_red},
-    {WS_Bitmap3c400x300_black, WS_Bitmap3c400x300_red}
   };
 #else
   bitmap_pair bitmap_pairs[] = {}; // not enough code space
@@ -1936,7 +1934,7 @@ void drawBitmaps3c800x276()
             display.writeImagePart(Bitmap3c800x276_black_1, Bitmap3c800x276_red_1, i * wp, j * hp, 800, 272, i * wp, j * hp, wp, hp, true, false, true);
           }
         }
-     }
+      }
       display.refresh(false);
       delay(2000);
     }

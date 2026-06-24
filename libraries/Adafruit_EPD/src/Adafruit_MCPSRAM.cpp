@@ -13,8 +13,8 @@
                 @param  cs chip select pin
 */
 /**************************************************************************/
-Adafruit_MCPSRAM::Adafruit_MCPSRAM(int16_t mosi, int16_t miso, int16_t sck,
-                                   int16_t cs) {
+Adafruit_MCPSRAM::Adafruit_MCPSRAM(int8_t mosi, int8_t miso, int8_t sck,
+                                   int8_t cs) {
   _mosi = mosi;
   _miso = miso;
   _sck = sck;
@@ -29,7 +29,7 @@ Adafruit_MCPSRAM::Adafruit_MCPSRAM(int16_t mosi, int16_t miso, int16_t sck,
                 @param spi the SPI bus to use
 */
 /**************************************************************************/
-Adafruit_MCPSRAM::Adafruit_MCPSRAM(int16_t cs, SPIClass *spi) {
+Adafruit_MCPSRAM::Adafruit_MCPSRAM(int8_t cs, SPIClass *spi) {
   _cs = cs;
   _spi = spi;
   hwSPI = true;
@@ -146,7 +146,7 @@ void Adafruit_MCPSRAM::write(uint16_t addr, uint8_t *buf, uint16_t num,
   }
 
   // write buffer of data
-  for (uint16_t i = 0; i < num; i++) {
+  for (int i = 0; i < num; i++) {
 
     uint8_t d = buf[i];
 
@@ -224,12 +224,11 @@ void Adafruit_MCPSRAM::read(uint16_t addr, uint8_t *buf, uint16_t num,
   }
 
   // read data into buffer
-  for (uint16_t i = 0; i < num; i++) {
+  for (int i = 0; i < num; i++) {
 
     if (hwSPI) {
       buf[i] = _spi->transfer(0x00);
     } else {
-      buf[i] = 0;
       for (uint8_t bit = 0x80; bit; bit >>= 1) {
 #ifdef HAVE_PORTREG
         *clkport &= ~clkpinmask;

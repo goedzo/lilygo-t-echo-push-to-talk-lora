@@ -4,6 +4,8 @@
 #include "Adafruit_EPD.h"
 #include <Arduino.h>
 
+#define EPD_RAM_BW 0x10
+
 #define UC8151D_PSR 0x00
 #define UC8151D_PWR 0x01
 #define UC8151D_POF 0x02
@@ -52,15 +54,6 @@ const uint8_t uc8151d_monofull_init_code[] {
     UC8151D_PSR, 1, 0x1F,
     UC8151D_CDI, 1, 0x97,
     0xFE};
-
-const uint8_t uc8151d_trifull_init_code[] {
-  UC8151D_PON, 0,
-    0xFF, 10,
-    UC8151D_PSR, 2, 0x0F, 0x89,
-    0x61, 3, 0x80, 0x01, 0x28,
-    UC8151D_CDI, 1, 0x77,
-    0xFE};
-
 
 const uint8_t uc8151d_partial_init_code[] {
   UC8151D_PWR, 5, 0x03, 0x00, 0x2B, 0x2B, 0x03,     //POWER SETTING 
@@ -135,11 +128,11 @@ const uint8_t uc8151d_partialmono_lut[] = {
 /**************************************************************************/
 class Adafruit_UC8151D : public Adafruit_EPD {
 public:
-  Adafruit_UC8151D(int width, int height, int16_t SID, int16_t SCLK, int16_t DC,
-                   int16_t RST, int16_t CS, int16_t SRCS, int16_t MISO,
-                   int16_t BUSY = -1);
-  Adafruit_UC8151D(int width, int height, int16_t DC, int16_t RST, int16_t CS,
-                   int16_t SRCS, int16_t BUSY = -1, SPIClass *spi = &SPI);
+  Adafruit_UC8151D(int width, int height, int8_t SID, int8_t SCLK, int8_t DC,
+                   int8_t RST, int8_t CS, int8_t SRCS, int8_t MISO,
+                   int8_t BUSY = -1);
+  Adafruit_UC8151D(int width, int height, int8_t DC, int8_t RST, int8_t CS,
+                   int8_t SRCS, int8_t BUSY = -1, SPIClass *spi = &SPI);
 
   void begin(bool reset = true);
   void powerUp();
