@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 set "ARDUINO_CLI=D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
-set BOARD=adafruit:nrf52:feather52840
+set BOARD=adafruit:nrf52:pca10056
 set PORT=%1
 set "BOARDLIST_TMP=%TEMP%\t-echo_boardlist.tmp"
 set "UPLOAD_COM_PORT="
@@ -62,7 +62,7 @@ echo.
 
 "%ARDUINO_CLI%" board list --log-level info 2>nul > "%BOARDLIST_TMP%"
 
-findstr "feather52840" "%BOARDLIST_TMP%" >nul 2>&1
+findstr "pca10056" "%BOARDLIST_TMP%" >nul 2>&1
 if !errorlevel! equ 0 goto :extract_port
 
 del "%BOARDLIST_TMP%" 2>nul
@@ -76,7 +76,7 @@ pause
 exit /b 1
 
 :extract_port
-for /f "tokens=1 delims= " %%C in ('findstr "feather52840" "%BOARDLIST_TMP%"') do (
+for /f "tokens=1 delims= " %%C in ('findstr "pca10056" "%BOARDLIST_TMP%"') do (
     set CANDIDATE=%%C
     echo !CANDIDATE! | findstr /I "COM[0-9]*" >nul 2>&1
     if !errorlevel! equ 0 (

@@ -5,7 +5,7 @@ REM ============================================
 setlocal EnableDelayedExpansion
 
 set "ARDUINO_CLI=D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
-set "BOARD=adafruit:nrf52:feather52840"
+set "BOARD=adafruit:nrf52:pca10056"
 set "BUILD_DIR=.pio\t-echo-build"
 set "SKETCH_DIR=main"
 set "FAILED=0"
@@ -79,11 +79,11 @@ echo.
 REM Step 5: Detect upload target with auto-detection
 echo [4/4] Checking for upload target...
 "%ARDUINO_CLI%" board list --log-level info 2>nul > "%BOARDLIST_TMP%"
-findstr "feather52840" "%BOARDLIST_TMP%" >nul 2>&1
+findstr "pca10056" "%BOARDLIST_TMP%" >nul 2>&1
 if !errorlevel! equ 0 (
     REM Extract the detected COM port
     set DETECTED_PORT=
-    for /f "tokens=1 delims= " %%C in ('findstr "feather52840" "%BOARDLIST_TMP%"') do (
+    for /f "tokens=1 delims= " %%C in ('findstr "pca10056" "%BOARDLIST_TMP%"') do (
         set CANDIDATE=%%C
         echo !CANDIDATE! | findstr /I "COM[0-9]*" >nul 2>&1
         if !errorlevel! equ 0 set DETECTED_PORT=!CANDIDATE!
