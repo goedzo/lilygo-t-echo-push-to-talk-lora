@@ -100,4 +100,10 @@ bool isPeerAlive();
 void sendPeerBeacon();
 const char* bleGetDeviceIdShort();
 
+// Probe-based frequency hopping discovery
+#define PROBE_FREQUENCY       startFreq   // Fixed known channel: 863.0 MHz
+#define PROBE_INTERVAL_HOPS   4           // Send probe every 4 hops (188s)
+extern bool inProbeMode;                 // True while waiting for time sync via probes
+extern unsigned long firstBootMillis;    // Boot timestamp in millis for probe logic
+
 #endif // LORA_H

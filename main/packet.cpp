@@ -139,6 +139,10 @@ bool Packet::isBeaconPacket() const {
     return type == "BEACON";
 }
 
+bool Packet::isProbePacket() const {
+    return type == "PRB";
+}
+
 
 bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
     if (bufferSize < 3) {  // Ensure there's enough room for at least the type
@@ -203,6 +207,10 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
         type = "BEACON";
         channel = '\0';  // Beacons don't have a channel in header position
         Serial.println(F("Type determined: BEACON"));
+    } else if (strncmp((char*)buffer, "PR", 2) == 0 && index >= 3) {
+        type = "PRB";  // Probe discovery packet
+        channel = '\0';  // Probes don't use channel field
+        Serial.println(F("Type determined: PRB (Probe Discovery)"));
     } else {
         type = "NULL";  // Unknown type, mark as invalid
         Serial.println(F("Unknown type, invalid packet."));

@@ -34,6 +34,9 @@ public:
     // Check if the packet is a peer beacon
     bool isBeaconPacket() const;
 
+    // Check if the packet is a probe discovery packet
+    bool isProbePacket() const;
+
     bool isTimeOutOfSync();
 
 private:

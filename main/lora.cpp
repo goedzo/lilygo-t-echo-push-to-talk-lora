@@ -70,6 +70,10 @@ unsigned long mapShareDelay = 0;  // Random delay for map sharing
 unsigned long lastPeerPacketTime = 0;  // Track when last packet from peer was received
 unsigned long lastBeaconTime = 0;      // Track when last beacon was sent
 
+// Probe-based frequency hopping discovery globals
+bool inProbeMode = true;              // Start in probe mode — waiting for time sync
+unsigned long firstBootMillis = 0;    // Boot timestamp used for probe timing
+
 bool isPeerAlive() {
     return (millis() - lastPeerPacketTime < PEER_TIMEOUT);
 }
@@ -135,6 +139,107 @@ unsigned char calculateChecksum(const unsigned char* data, int len) {
         checksum ^= data[i];  // XOR all bytes
     }
     return checksum;
+}
+
+// Extract the ~SD (Send DateTime) field value from a raw packet buffer
+// Returns true if found and copies into outDateTime (max 14 chars + null)
+bool extractSDField(const uint8_t* buffer, uint16_t bufferSize, String& outDateTime) {
+    // Look for ~SD in the header portion (everything before ~~)
+    uint16_t idx = 0;
+    while (idx < bufferSize && buffer[idx] != '~') idx++;  // Skip past packet type
+    if (idx >= bufferSize) return false;
+    
+    idx++;  // skip first ~
+    outDateTime = "";
+    while (idx + 1 < bufferSize) {
+        if (buffer[idx] == '~' && buffer[idx + 1] == '~') break;  // End of headers
+        
+        // Look for ~SD field
+        if (buffer[idx] == '~') {
+            idx++;  // skip ~
+            if (idx + 1 < bufferSize && buffer[idx] == 'S' && buffer[idx + 1] == 'D') {
+                // Found ~SD — read until next ~ or ~~
+                idx += 2;  // skip SD
+                while (idx < bufferSize && buffer[idx] != '~') {
+                    outDateTime += (char)buffer[idx];
+                    idx++;
+                }
+                if (outDateTime.length() == 14) return true;
+            }
+        } else {
+            // Skip to next ~ or ~~
+            while (idx < bufferSize && buffer[idx] != '~') idx++;
+        }
+    }
+    return false;
+}
+
+// Automatically sync local RTC from received packet if time not yet set via GPS
+void autoSyncRTCFromPacket(const Packet& packet) {
+    if (!packet.sendDateTime.length()) {
+        // Try raw extraction as fallback (for non-standard packet types)
+        String sdVal;
+        if (extractSDField(packet.raw, packet.rawLength, sdVal)) {
+            adjustRTC(sdVal);
+        }
+        return;
+    }
+    
+    // Use the parsed sendDateTime field directly
+    if (packet.sendDateTime.length() != 14) return;
+    
+    long receiverTimeSeconds = 0;
+    receiverTimeSeconds = packet.sendDateTime.substring(8, 10).toInt() * 3600
+                        + packet.sendDateTime.substring(10, 12).toInt() * 60
+                        + packet.sendDateTime.substring(12, 14).toInt();
+    
+    RTC_Date rtc_time = rtc.getDateTime();
+    long localSeconds = rtc_time.hour * 3600 + rtc_time.minute * 60 + rtc_time.second;
+    long timeDiff = abs(receiverTimeSeconds - localSeconds);
+    
+    // If we don't have GPS time yet, accept the sender's time as truth
+    if (!time_set) {
+        adjustRTC(packet.sendDateTime);
+    } 
+    // If we DO have GPS time but drifting, use existing gradual convergence logic
+    else if (timeDiff > TIME_CONVERGENCE_TOLERANCE) {
+        long jump = constrain(receiverTimeSeconds - localSeconds, -TIME_CONVERGENCE_MAX_JUMP, TIME_CONVERGENCE_MAX_JUMP);
+        RTC_Date currentRtc = rtc.getDateTime();
+        long currentRtcSeconds = currentRtc.hour * 3600 + currentRtc.minute * 60 + currentRtc.second;
+        long newRtcSeconds = currentRtcSeconds + jump;
+        
+        if (newRtcSeconds < 0) {
+            newRtcSeconds += HOP_EPOCH_SECONDS;
+        } else if (newRtcSeconds >= HOP_EPOCH_SECONDS) {
+            newRtcSeconds -= HOP_EPOCH_SECONDS;
+        }
+        
+        long hours = newRtcSeconds / 3600;
+        long minutes = (newRtcSeconds % 3600) / 60;
+        long seconds = newRtcSeconds % 60;
+        
+        rtc.setDateTime(currentRtc.year, currentRtc.month, currentRtc.day, hours, minutes, seconds);
+    } else {
+        // Within tolerance — just nudge toward sender's time
+        long jump = constrain(receiverTimeSeconds - localSeconds, -1, 1);
+        if (jump != 0) {
+            RTC_Date currentRtc = rtc.getDateTime();
+            long newSeconds = currentRtc.hour * 3600 + currentRtc.minute * 60 + currentRtc.second + jump;
+            if (newSeconds < 0) newSeconds += HOP_EPOCH_SECONDS;
+            if (newSeconds >= HOP_EPOCH_SECONDS) newSeconds -= HOP_EPOCH_SECONDS;
+            long h = newSeconds / 3600;
+            long m = (newSeconds % 3600) / 60;
+            long s = newSeconds % 60;
+            rtc.setDateTime(currentRtc.year, currentRtc.month, currentRtc.day, h, m, s);
+        }
+    }
+}
+
+// Send a probe beacon on the known discovery frequency
+void sendProbeBeacon() {
+    char probeBuf[80];
+    snprintf(probeBuf, sizeof(probeBuf), "PR~DI%s", bleGetDeviceIdShort());
+    sendPacket(probeBuf);
 }
 
 // Function to share the frequency map with other devices
@@ -422,6 +527,59 @@ void checkLoraPacketComplete() {
                                 long m = (newSeconds % 3600) / 60;
                                 long s = newSeconds % 60;
                                 rtc.setDateTime(currentRtc.year, currentRtc.month, currentRtc.day, h, m, s);
+                             }
+                         }
+
+                        // PRB packet handling — probe discovery: extract DI and auto-sync RTC
+                        if (packet.type == "PRB") {
+                            inProbeMode = false;  // Exit probe mode — we can hop now
+                            
+                            // Auto-sync local RTC from sender's ~SD if not set via GPS
+                            if (!time_set) {
+                                time_set = true;
+                                adjustRTC(packet.sendDateTime);
+                            } else {
+                                autoSyncRTCFromPacket(packet);
+                            }
+                            
+                            // Extract sender's device ID from ~DI field for logging
+                            String senderID;
+                            const char* rawPtr = (const char*)rcv_pkt_buf;
+                            uint16_t pi = 0;
+                            while (pi < packet_len && rcv_pkt_buf[pi] != '~') pi++;
+                            if (pi < packet_len) {
+                                pi++; // skip first ~
+                                while (pi + 1 < packet_len) {
+                                    if (rcv_pkt_buf[pi] == '~' && rcv_pkt_buf[pi+1] == '~') break;
+                                    if (rcv_pkt_buf[pi] == '~') {
+                                        pi++;
+                                        if (pi + 2 <= packet_len && rcv_pkt_buf[pi] == 'D' && rcv_pkt_buf[pi+1] == 'I') {
+                                            pi += 2; // skip DI
+                                            while (pi < packet_len && rcv_pkt_buf[pi] != '~' && rcv_pkt_buf[pi] != 0) {
+                                                senderID += (char)rcv_pkt_buf[pi];
+                                                pi++;
+                                            }
+                                        } else {
+                                            while (pi < packet_len && rcv_pkt_buf[pi] != '~') pi++;
+                                        }
+                                    } else {
+                                        while (pi < packet_len && rcv_pkt_buf[pi] != '~') pi++;
+                                    }
+                                }
+                            }
+                            
+                            Serial.print(F("PROBE received from: "));
+                            Serial.println(senderID);
+                            Serial.println(F("PROBE synced — enabling hopping"));
+                        } else if (!time_set) {
+                            // Not a PRB packet but we have no GPS time yet
+                            // Try to auto-sync from ANY packet's ~SD field
+                            autoSyncRTCFromPacket(packet);
+                            
+                            // If we just got time set, exit probe mode
+                            if (time_set && inProbeMode) {
+                                inProbeMode = false;
+                                Serial.println(F("Auto-synced via ~SD field — enabling hopping"));
                             }
                         }
 
@@ -469,8 +627,21 @@ void checkLoraPacketComplete() {
         }
     }
 
-    // Handle frequency hopping using RTC time
-    if (deviceSettings.frequency_hopping_enabled && time_set) {
+    // Probe mode: hop on a fixed known frequency until time sync via ~SD field
+    if (deviceSettings.frequency_hopping_enabled && inProbeMode) {
+        unsigned long totalSeconds = 0;
+        RTC_Date rtc_dt = rtc.getDateTime();
+        totalSeconds = rtc_dt.hour * 3600 + rtc_dt.minute * 60 + rtc_dt.second;
+        unsigned long hopsSinceBoot = totalSeconds / FrequencyHopSeconds;
+        
+        // Check if we should send a probe beacon (every PROBE_INTERVAL_HOPS)
+        if (hopsSinceBoot > 0 && hopsSinceBoot % PROBE_INTERVAL_HOPS == 0 && !transmitFlag && operationDone) {
+            sendProbeBeacon();
+        }
+    }
+
+    // Handle frequency hopping using RTC time — only when already synced
+    if (deviceSettings.frequency_hopping_enabled && !inProbeMode) {
         RTC_Date currentTime = rtc.getDateTime();  // Get current time from the RTC
         unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
 
@@ -489,8 +660,8 @@ void checkLoraPacketComplete() {
     // Handle map sharing logic
     handleMapSharing();
 
-    // Send peer beacon periodically
-    {
+    // Send peer beacon periodically (only when not in probe mode)
+    if (!inProbeMode) {
         unsigned long currentTime = millis();
         if (currentTime - lastBeaconTime >= PEER_BEACON_INTERVAL) {
             sendPeerBeacon();
