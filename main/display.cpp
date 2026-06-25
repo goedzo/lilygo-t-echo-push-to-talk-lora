@@ -583,33 +583,37 @@ void updDisp(uint8_t line, const char* msg, bool updateScreen) {
 
         // Send the structured data to the phone app
         char formattedMessage[100];
-        if(line<10) {
-            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
+        if(msg && msg[0] != '\0') {  // Only send non-empty messages
+            if(line<10) {
+                snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
+            }
+            else {
+                snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
+            }
+            sendNotificationToApp(formattedMessage);
         }
-        else {
-            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
-        }
-        sendNotificationToApp(formattedMessage);
     }
     else {
-        //Always make sure we sent it to the phone
-        char formattedMessage[100];
+        // Always make sure we sent it to the phone (only if non-empty)
+        if(msg && msg[0] != '\0') {
+            char formattedMessage[100];
 
-        if(line<10) {
-            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
+            if(line<10) {
+                snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
+            }
+            else {
+                snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
+            }
+            sendNotificationToApp(formattedMessage);
         }
-        else {
-            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
-        }
-        sendNotificationToApp(formattedMessage);
     }
 }
 
 void clearScreen(){
     for(int i=0;i<displayLines;i++) {
-      updDisp(i,"",false);
+      updDisp(i,"",false);  // false = do NOT trigger display update or notifications
     }
-    updDisp(0,"",true);
+    updDisp(0,"",true);     // single refresh of the cleared screen
     //clear any error
     showError("");
 }

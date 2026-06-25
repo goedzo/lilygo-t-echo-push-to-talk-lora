@@ -10,10 +10,68 @@ BLECharacteristic bleCharacteristic("ABCE");
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len);
 void onConnect(uint16_t conn_handle);
 void onDisconnect(uint16_t conn_handle, uint8_t reason);
-void sendNotificationToApp(const char* message);  // Function to send message to app
 
 // Renamed helper function to check if the data contains printable characters
 bool isDataPrintable(const uint8_t* data, int length);
+
+// Notification queue — defer BLE notify calls to loop() to avoid hard faults
+#define NOTIF_QUEUE_SIZE 8
+static char notif_queue[NOTIF_QUEUE_SIZE][102];
+static uint8_t notif_queue_len[NOTIF_QUEUE_SIZE];
+static uint8_t notif_head = 0;
+static uint8_t notif_tail = 0;
+static volatile bool notif_queue_empty = true;
+
+static bool queueFull() {
+    uint8_t next = (notif_head + 1) % NOTIF_QUEUE_SIZE;
+    return next == notif_tail;
+}
+
+static bool enqueue(const char* msg) {
+    if (queueFull()) return false;
+    size_t len = strlen(msg);
+    if (len >= sizeof(notif_queue[0])) return false;
+    memcpy(notif_queue[notif_head], msg, len + 1);
+    notif_queue_len[notif_head] = (uint8_t)(len + 1);
+    notif_head = (notif_head + 1) % NOTIF_QUEUE_SIZE;
+    notif_queue_empty = false;
+    return true;
+}
+
+static void drainQueue() {
+    if (notif_queue_empty) return;
+    
+    while (!notif_queue_empty && notif_head != notif_tail) {
+        bool drained = false;
+        for (int i = 0; i < NOTIF_QUEUE_SIZE && !notif_queue_empty; i++) {
+            if (i == notif_tail && !queueFull() || (!queueFull() && i == notif_tail)) {
+                uint8_t msg_len = notif_queue_len[i];
+                size_t total = msg_len + 2; // +2 for "~~"
+                uint8_t buffer[total];
+                memcpy(buffer, notif_queue[i], msg_len);
+                buffer[msg_len] = '~';
+                buffer[msg_len + 1] = '~';
+                
+                if (bleCharacteristic.notify(buffer, total) == ERROR_NONE) {
+                    drained = true;
+                    delay(50); // Small gap between notifies to avoid SD queue overflow
+                    
+                    notif_queue[notif_tail][0] = '\0';
+                    notif_queue_len[notif_tail] = 0;
+                    notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+                    
+                    if (notif_head == notif_tail) {
+                        notif_queue_empty = true;
+                    }
+                } else {
+                    // BLE not ready yet, stop draining
+                    break;
+                }
+            }
+        }
+        if (!drained) break;
+    }
+}
 
 void setupBLE() {
     Bluefruit.begin();
@@ -57,6 +115,10 @@ void setupBLE() {
 
     Serial.print("BLE Initialized with device name: ");
     Serial.println(deviceName);
+}
+
+void handleBLE() {
+    drainQueue();
 }
 
 void onConnect(uint16_t conn_handle) {
@@ -129,33 +191,28 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
     }
 }
 
-// Function to send a notification to the app
+// Function to send a notification to the app — queues for deferred delivery
 void sendNotificationToApp(const char* message) {
-    // Get the message length
-    size_t messageLength = strlen(message);
+    if (!message || !message[0]) return;
+    
+    size_t msgLen = strlen(message);
+    
+    // Create buffer with "~~" terminator
+    uint8_t buffer[msgLen + 3];
+    memcpy(buffer, message, msgLen);
+    buffer[msgLen] = '~';
+    buffer[msgLen + 1] = '~';
+    buffer[msgLen + 2] = '\0';
 
-    // Create a buffer to hold the message, the "~~" marker, and the null terminator
-    uint8_t buffer[messageLength + 3];  // Extra 2 bytes for "~~" and 1 byte for the null terminator
-
-    // Copy the message into the buffer
-    memcpy(buffer, message, messageLength);
-
-    // Append the "~~" marker to indicate the end of the message
-    buffer[messageLength] = '~';
-    buffer[messageLength + 1] = '~';
-
-    // Null-terminate the string
-    buffer[messageLength + 2] = '\0';  // Null-terminator
-
-    // Send the buffer, excluding the null terminator
-    bleCharacteristic.notify(buffer, messageLength + 3);  // Send only the message + "~~"
-    Serial.print("Sending notification: ");
-    for (size_t i = 0; i < messageLength + 2; i++) {
-        Serial.print((char)buffer[i]);
+    // Build notification string for queue: "LINE:XX|TEXT:buf"
+    char notifStr[130];
+    snprintf(notifStr, sizeof(notifStr), "LINE:NOTIF|DATA:%.*s", (int)(msgLen + 2), buffer);
+    
+    if (!enqueue(notifStr)) {
+        // Queue full — try to drain first
+        drainQueue();
+        enqueue(notifStr);
     }
-    Serial.println();
-    //To avoid the device hangs when sending too quickly
-    delay(100);
 }
 
 // Helper function to check if the data contains printable characters

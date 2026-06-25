@@ -48,8 +48,10 @@ volatile uint32_t fault_cfsr = 0;
 volatile uint32_t fault_bfar = 0;
 volatile uint32_t fault_lr = 0;
 bool fatal_crash_detected = false;
+volatile uint32_t crashCount = 0x5A5A5A5A;  // survives reset in RAM (BSS preserved by NVIC_SystemReset)
 
 extern "C" void HardFault_Handler(void) {
+    // Save state first (these are safe — direct register reads)
     fault_cfsr = SCB->CFSR;
     fault_bfar = SCB->BFAR;
     
@@ -58,28 +60,15 @@ extern "C" void HardFault_Handler(void) {
     fault_lr = lr;
     
     fatal_crash_detected = true;
+    crashCount++;  // track how many crashes in a row
     
-    if (SerialMon) {
-        SerialMon.println("!!! HARD FAULT DETECTED !!!");
-        SerialMon.print("  LR=0x"); SerialMon.println(fault_lr, HEX);
-        SerialMon.print("  CFSR=0x"); SerialMon.println(fault_cfsr, HEX);
-        if (fault_cfsr & 0x8000) { // MMARVALID
-            SerialMon.print("  BFAR=0x"); SerialMon.println(fault_bfar, HEX);
-        }
-    }
+    // Clear pending faults before resetting
+    SCB->CFSR = 0xFFFFFFFF;
+    SCB->HFSR = 0xFFFFFFFF;
     
-    while (1) {
-        for (int i = 0; i < 20; i++) {
-            digitalWrite(GreenLed_Pin, HIGH);
-            digitalWrite(RedLed_Pin, HIGH);
-            digitalWrite(BlueLed_Pin, HIGH);
-            delay(30);
-            digitalWrite(GreenLed_Pin, LOW);
-            digitalWrite(RedLed_Pin, LOW);
-            digitalWrite(BlueLed_Pin, LOW);
-            delay(30);
-        }
-    }
+    // Immediately trigger system reset — NO Serial calls here (they can fault)
+    // Use the reset register which is safe to call from any context
+    NVIC_SystemReset();
 }
 
 void checkCrashState() {
@@ -124,6 +113,12 @@ bool checkStackGuard(uint32_t* guard, uint32_t pattern) {
 void setup()
 {
     Serial.begin(115200);
+    
+    // Log crash count on boot (RAM preserved across NVIC_SystemReset)
+    if (crashCount != 0x5A5A5A5A) {
+        SerialMon.print(F("[BOOT] Crash reboot #"));
+        SerialMon.println(crashCount);
+    }
     
     // Drain USB buffer before blocking operations
     while (Serial.available()) Serial.read();
@@ -298,7 +293,7 @@ void loop()
     DB("loop start");
     
     handleAppModes();
-    //handleBLE();  // BLE handling
+    handleBLE();  // BLE handling + drain notification queue
     if (millis() - blinkMillis > 1000) {
         blinkMillis = millis();
         switch (rgb) {
