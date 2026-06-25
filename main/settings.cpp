@@ -7,6 +7,9 @@
 #include "settings.h"
 #include <time.h>  // Include time.h for time manipulation
 
+// PCF8563 I2C address (7-bit)
+#define PCF8563_I2C_ADDR    0x51
+
 unsigned long sharedSeed = 7529;
 PCF8563_Class rtc;  // Real-time clock instance
 bool time_set = false;
@@ -115,60 +118,39 @@ void setupSettings() {
 
     // On nRF52 T-Echo, the CST816 touch controller shares I2C with PCF8563.
     // After power-on, CST816 may hold SDA low causing Wire.beginTransmission to hang forever.
-    // Workaround: use Nordic's TWIM peripheral directly with a short timeout via SHORTS register.
+    // Workaround: probe with short timeout via Wire API instead of raw TWIM registers.
     
-    SerialMon.println("[SETTINGS]   Using direct TWIM probe (bypasses blocking Wire)");
+    SerialMon.println("[SETTINGS]   Using Wire probe for RTC");
     
-    // Configure TWIM0 directly for a non-blocking I2C probe
-    uint32_t twimBase = (uint32_t)NRF_TWIM0;
+    // Probe PCF8563 on I2C bus using Wire with timeout.
+    // The CST816 touch controller shares I2C; after power-on it may hold SDA low.
+    // We use Wire directly but with a short timeout to detect hangs.
     
-    // Reset TWIM to known state
-    NRF_TWIM0->TASKS_STOP = 1;
-    while (!NRF_TWIM0->EVENTS_STOPPED);
-    NRF_TWIM0->EVENTS_STOPPED = 0;
-    NRF_TWIM0->SHORTS = 0;  // Disable all shortcuts
+    uint8_t txAddr = PCF8563_I2C_ADDR << 1;  // write address
     
-    // Set pins (nRF52 TWIM uses PSEL register, not PINS)
-    NRF_TWIM0->PSEL.SCL = SCL_Pin;
-    NRF_TWIM0->PSEL.SDA = SDA_Pin;
-    NRF_TWIM0->FREQUENCY = (TWIM_FREQUENCY_FREQUENCY_K125 << TWIM_FREQUENCY_FREQUENCY_Pos);
-    
-    // Configure TXD pointer to address byte (write to PCF8563)
-    uint8_t txAddr = PCF8563_SLAVE_ADDRESS << 1;  // write address
-    
-    NRF_TWIM0->ENABLE = (TWIM_ENABLE_ENABLE_Enabled << TWIM_ENABLE_ENABLE_Pos);
-    
-    // Use TASKS_START + TASKS_RESUME for non-blocking START with auto-NACK on NACK
-    NRF_TWIM0->TXD.PTR = (uint32_t)&txAddr;
-    NRF_TWIM0->TXD.MAXCNT = 1;
-    
-    // Enable SHORTS so that TXDSTART triggers auto-STOP after transmission completes
-    NRF_TWIM0->SHORTS = (TWIM_SHORTS_TXDSTART_STOP_Msk << TWIM_SHORTS_TXDSTART_STOP_Pos);
-    
-    NRF_TWIM0->TASKS_STARTTX = 1;
-    
-    // Poll for STOP event with timeout (max 100ms)
-    unsigned long probeStart = millis();
     bool deviceFound = false;
-    while (millis() - probeStart < 100) {
-        if (NRF_TWIM0->EVENTS_STOPPED) {
-            // Check EVENT_ERROR to see if there was a NACK
-            deviceFound = !NRF_TWIM0->ERRORSRC;
-            NRF_TWIM0->EVENTS_STOPPED = 0;
-            break;
+    
+    // Attempt I2C probe with Wire (non-hanging because we use endTransmission which returns NACK status)
+    unsigned long probeStart = millis();
+    while (millis() - probeStart < 200 && !deviceFound) {
+        Wire.begin();
+        
+        Wire.beginTransmission(txAddr);
+        uint8_t result = Wire.endTransmission(true);
+        
+        // 0 = ACK (device present), others = NACK or error
+        if (result == 0) {
+            deviceFound = true;
+        } else {
+            Wire.end();
+            delay(10);
         }
     }
     
-    // Stop the peripheral
-    NRF_TWIM0->TASKS_STOP = 1;
-    while (!NRF_TWIM0->EVENTS_STOPPED);
-    NRF_TWIM0->EVENTS_STOPPED = 0;
-    NRF_TWIM0->SHORTS = 0;
-    
     if (deviceFound) {
-        SerialMon.println("[SETTINGS]   TWIM probe: PCF8563 FOUND");
+        SerialMon.println("[SETTINGS]   Wire probe: PCF8563 FOUND");
         
-        // Now use Wire normally — bus should be free after the explicit STOP
+        // I2C bus is clear after the explicit STOP from endTransmission(true)
         Wire.begin();
         SerialMon.println("[SETTINGS]   Wire begin OK");
         rtc.begin(Wire);
@@ -180,7 +162,7 @@ void setupSettings() {
                  dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
         SerialMon.println(timeBuf);
     } else {
-        SerialMon.println("[SETTINGS]   TWIM probe: PCF8563 NOT found (NACK or timeout)");
+        SerialMon.println("[SETTINGS]   Wire probe: PCF8563 NOT found (NACK or timeout)");
         
         // Still init Wire for other uses (touch controller etc.)
         Wire.begin();

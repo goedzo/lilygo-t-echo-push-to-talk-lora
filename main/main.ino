@@ -23,7 +23,6 @@
 
 
 #include GxEPD_BitmapExamples
-#include <Fonts/FreeMonoBold12pt7b.h>
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
 #include <GxIO/GxIO.h>
 
