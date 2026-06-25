@@ -14,6 +14,9 @@ void onDisconnect(uint16_t conn_handle, uint8_t reason);
 // Renamed helper function to check if the data contains printable characters
 bool isDataPrintable(const uint8_t* data, int length);
 
+// Get short device ID for beacon (last 8 hex chars of MAC)
+const char* bleGetDeviceIdShort();
+
 // Notification queue — defer BLE notify calls to loop() to avoid hard faults
 #define NOTIF_QUEUE_SIZE 8
 static char notif_queue[NOTIF_QUEUE_SIZE][102];
@@ -163,23 +166,58 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
 
             // Handle the action and value accordingly
             if (action == "SETMODE") {
-                // Call the switchMode function with the value
                 switchMode(value);
             } 
-            // Handle the action and value accordingly
             else if (action == "SENDTXT") {
-                // We must send this text
                 sendTxtMessage(value.c_str());
+            } 
+            else if (action == "GETSTATUS") {
+                // Return connection status: BLE link + LoRa peer liveness
+                // If we're in the write callback, BLE is connected by definition.
+                extern bool isPeerAlive();
+                bool loraAlive = isPeerAlive();
+                
+                char resp[32];
+                snprintf(resp, sizeof(resp), "OK{BLE:1}{LORA:%d}", loraAlive ? 1 : 0);
+                sendNotificationToApp(resp);
             } 
             else {
                 Serial.println("Unknown action");
             }
         } else {
-            Serial.println("Invalid format. Missing ':' delimiter.");
+            // No delimiter — check for bare GETSTATUS
+            if (receivedValue == "GETSTATUS") {
+                extern bool isPeerAlive();
+                bool loraAlive = isPeerAlive();
+                
+                char resp[32];
+                snprintf(resp, sizeof(resp), "OK{BLE:1}{LORA:%d}", loraAlive ? 1 : 0);
+                sendNotificationToApp(resp);
+            } else {
+                Serial.println("Invalid format. Missing ':' delimiter.");
+            }
+        }
+
+    } else if (len >= 4 && data[0] == 0xFE && data[1] == 0x01) {
+        // Handle as binary Opus audio frame
+        uint16_t opusLen = ((uint16_t)data[3] << 8) | data[2];
+        if (opusLen > 0 && 4 + opusLen <= len) {
+            extern void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverride);
+            
+            // Build LoRa packet: PT{channel}{O}{opus_bytes}
+            static char opusPktBuf[MAX_PKT];
+            snprintf(opusPktBuf, sizeof(opusPktBuf), "PT%cO", 
+                     channels[deviceSettings.channel_idx]);
+            
+            int pktLen = strlen(opusPktBuf);
+            memcpy(opusPktBuf + pktLen, (char*)(data + 4), opusLen);
+            pktLen += opusLen;
+            
+            sendPacket((uint8_t*)opusPktBuf, (uint16_t)pktLen, 0);
         }
 
     } else {
-        // Handle as binary data
+        // Handle as binary data (unknown type)
         Serial.print("Received binary data: ");
         for (int i = 0; i < len; i++) {
             Serial.print("0x");
@@ -223,4 +261,15 @@ bool isDataPrintable(const uint8_t* data, int length) {
         }
     }
     return true;
+}
+
+// Global to store the short device ID derived from MAC
+static char deviceIdShort[9];
+
+const char* bleGetDeviceIdShort() {
+    if (deviceIdShort[0] == '\0') {
+        uint64_t mac = NRF_FICR->DEVICEID[0];
+        snprintf(deviceIdShort, sizeof(deviceIdShort), "%08X", (unsigned long)mac);
+    }
+    return deviceIdShort;
 }

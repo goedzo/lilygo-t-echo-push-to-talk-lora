@@ -135,6 +135,10 @@ bool Packet::isRangeMessage() const {
     return type == "RANGE" && content.startsWith("test");
 }
 
+bool Packet::isBeaconPacket() const {
+    return type == "BEACON";
+}
+
 
 bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
     if (bufferSize < 3) {  // Ensure there's enough room for at least the type
@@ -157,8 +161,27 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
     if (strncmp((char*)buffer, "PT", 2) == 0 && index == 3) {
         type = "PTT";  // Set type to "PTT"
         channel = buffer[2];  // Set the channel (PTA, PTB, etc.)
-        Serial.print(F("Type determined: PTT on channel "));
-        Serial.println(channel);
+        
+        // Check if content starts with 'O' (Opus codec marker) after ~~
+        uint16_t searchIdx = index;
+        while (searchIdx < bufferSize && buffer[searchIdx] != '~') {
+            searchIdx++;
+        }
+        // Skip ~~~ markers to find content start
+        if (searchIdx + 2 < bufferSize && buffer[searchIdx] == '~' && buffer[searchIdx+1] == '~') {
+            uint16_t contentStart = searchIdx + 2;
+            if (contentStart + 1 < bufferSize && buffer[contentStart] == 'O') {
+                // Opus PTT: payload is raw bytes starting after the 'O'
+                content = String((char*)(buffer + contentStart + 1));
+                Serial.println(F("PTT packet detected — Opus payload"));
+            } else {
+                Serial.print(F("Type determined: PTT on channel "));
+                Serial.println(channel);
+            }
+        } else {
+            Serial.print(F("Type determined: PTT on channel "));
+            Serial.println(channel);
+        }
     } else if (strncmp((char*)buffer, "RN", 2) == 0 && index == 3) {
         type = "RANGE";  // Set type to "RANGE"
         channel = buffer[2];  // Set the channel (e.g., A, B, C, etc.)
@@ -175,6 +198,11 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
     } else if (strncmp((char*)buffer, "REQ", 3) == 0 && index == 3) {
         type = "REQ";
         Serial.println(F("Type determined: REQ (Retransmit Request)"));
+    } else if (strncmp((char*)buffer, "B", 1) == 0 && buffer[1] != '~') {
+        // Peer beacon packet — type is already "BEACON" from the check below
+        type = "BEACON";
+        channel = '\0';  // Beacons don't have a channel in header position
+        Serial.println(F("Type determined: BEACON"));
     } else {
         type = "NULL";  // Unknown type, mark as invalid
         Serial.println(F("Unknown type, invalid packet."));

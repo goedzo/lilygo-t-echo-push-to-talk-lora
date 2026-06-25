@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Takes care of the T-Echo firmware: `main/` directory. The core device that runs PTT, TXT, RAW, and TST modes on nRF52840 with SX1262 LoRa, e-paper display, BLE GATT, audio (Codec2), GPS, battery monitoring, and button input.
+Takes care of the T-Echo firmware: `main/` directory. The core device that runs 7 modes (RAW, TXT, RANGE, TST, PONG, SCAN, PTT) on nRF52840 with SX1262 LoRa, e-paper display, BLE GATT, audio (Codec2 — stubbed), GPS, battery monitoring, and button input.
 
 ## Ownership
 
@@ -16,7 +16,7 @@ Takes care of the T-Echo firmware: `main/` directory. The core device that runs 
 - **GPS:** `main/gps.cpp/.h` (TinyGPSPlus)
 - **Battery:** `main/battery.cpp/.h`
 - **Packet framing:** `main/packet.cpp/.h`
-- **Scan/OTA:** `main/scan.cpp/.h`
+- **Scan/OTA:** `main/scan.cpp/.h` — Frequency scanner (top 10 channels by quality)
 - **Pin definitions:** `main/utilities.h`
 - **Crash detection & debugging:** `main/crash_debug.h` — HardFault recorder, stack overflow guard, debug log buffer, heap tracker
 
@@ -58,13 +58,35 @@ The project includes a `platformio.ini` at the repo root with two environments: 
 ## Work Guidance
 
 ### Mode logic (`app_modes`)
-Four modes: PTT (voice), TXT (text messages), RAW (raw packet dump), TST (test beeps). Button2/AceButton handles double-click for SPF adjustment and long-press for power-off.
+
+Seven modes: RAW (raw packet dump), TXT (text messages — input stubbed), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — audio disabled). Button/AceButton handles double-click for SF adjustment and long-press for power-off.
+
+### Packet framing by mode
+
+| Mode | Header | Payload |
+|---|---|---|
+| TXT | `TX{channel}{message}` | ASCII text string |
+| TST | `test{n}` (via `sendTxtMessage`) | Counter-incremented test string |
+| RANGE | `RN{channel}test{n}` | Position + distance data (`isRangeMessage()` check) |
+| PONG | `Ping!` | Static string, triggers pong response loop |
+| PTT | `{P}{channel_bitrate_idx_raw audio_bytes}` | Codec2-encoded audio frames (audio stubbed) |
+| RAW | Passthrough | All received bytes displayed as hex if non-printable |
+| SCAN | N/A | Measures RSSI/SNR only, no custom packets |
+
+### Button behavior (all modes)
+
+| Button | Action | Effect |
+|---|---|---|
+| MODE (P1.10) — Single click | Cycle to next mode | Wraps around through all 7 |
+| MODE — Double click | Next spreading factor | Reinitializes LoRa with new SF |
+| MODE — Long press | Enter/exit settings mode | Cycles device settings |
+| TOUCH (P0.11) — Hold >5s | Power off | Shuts down peripherals → System OFF via softdevice or NRF_POWER |
 
 ### Radio (`lora`)
 SX1262 via RadioLib. Non-blocking TX/RX queues. Spread factor adjustable via double-click. Packet counter synchronization across devices.
 
 ### Audio (`audio`)
-I2S capture → Codec2 encode → transmit. Receive → Codec2 decode → I2S playback.
+I2S capture/playback is **disabled** — T-Echo has no onboard audio hardware. `capAudio()` and `playAudio()` are stubbed empty functions. PTT mode packet framing exists but cannot transmit or play audio without external codec hardware (e.g., PCM1270).
 
 ### BLE (`ble`)
 GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-XXXXXXXX`. BLE service UUID: `"1235"`, characteristic UUID: `"ABCE"` (simple string identifiers, not 128-bit standard UUIDs).

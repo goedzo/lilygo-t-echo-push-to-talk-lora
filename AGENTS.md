@@ -71,7 +71,7 @@ Libraries linked via `-I` include paths to `libraries/`. Source filter includes 
 ## Firmware codebase entrypoints
 
 - `main/main.ino` — setup/loop, board init, mode switch entry points
-- `main/app_modes.cpp` — core mode logic (PTT, TXT, RAW, TST), button handling via AceButton/Button2
+- `main/app_modes.cpp` — core mode logic (7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT), button handling via AceButton
 - `main/lora.cpp` — SX1262 radio config with RadioLib, non-blocking transmit/receive queues
 - `main/display.cpp` — e-paper rendering (GxEP2), margin/font constants defined at top of file
 - `main/audio.cpp` — I2S capture/playback + Codec2 encode/decode
@@ -221,7 +221,7 @@ When the user requests a durable behavior change, record it here or in the relev
 
 | Path | Scope |
 |---|---|
-| `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, PTT/TXT/RAW/TST modes) |
+| `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, 7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT) |
 | `build_scripts/AGENTS.md` | Arduino CLI build/upload/CI scripts (primary automation path) |
 | `cordova_app/AGENTS.md` | Android companion app (Cordova + BLE plugin) |
 | `lilygo_lora32_keyboard_bridge/AGENTS.md` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) |

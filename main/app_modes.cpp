@@ -149,7 +149,8 @@ void handleAppModes() {
 
     if (!in_settings_mode) {
         if (current_mode == "PTT") {
-            //sendAudio();
+            // PTT transmit: receiveOpusFrame() called from ble.cpp when phone sends Opus data.
+            // The binary frame from BLE is forwarded to LoRa here when the phone app initiates.
         } 
         else if (current_mode == "TST") {
 
@@ -265,19 +266,35 @@ void handlePacket(Packet packet) {
           updModeAndChannelDisplay();
       } 
       else if (current_mode == "PTT" && packet.type == "PTT") {
+          // Received PTT audio via LoRa — forward Opus bytes to connected phone via BLE
           if(packet.channel== channels[deviceSettings.channel_idx]) {
-              //This is actually meant for my channel
-              uint8_t rcv_mode = packet.content[0];
-              if (rcv_mode < num_bitrate_modes / sizeof(bitrate_modes[0])) {
-                  codec = codec2_create(bitrate_modes[rcv_mode]);
-                  //codec2_decode(codec, raw_buf, packet.content + 1);
-                  playAudio(raw_buf, RAW_SIZE);
-                  updDisp(1, "Receiving...", false);
-              } else {
-                  updDisp(2, "Invalid mode received", true);
+              // Forward the raw payload to the phone app over BLE
+              extern void sendNotificationToApp(const char* message);
+              
+              // Pack as binary: \xFE\x01 [len LE u16] [opus bytes]
+              const char* content = packet.content.c_str();
+              int contentLen = packet.content.length();
+              
+              if (contentLen > 0) {
+                  // Convert binary content to a string-friendly format for BLE notification
+                  // Use LINE format with embedded binary markers
+                  char notifBuf[128];
+                  snprintf(notifBuf, sizeof(notifBuf), "LINE:%d|DATA:\xFE\x01", 
+                           packet.type == "PTT" ? 9 : 0);
+                  
+                  // Append the raw content as hex-escaped bytes
+                  int offset = strlen(notifBuf);
+                  for (int i = 0; i < contentLen && offset < 120; i++) {
+                      uint8_t byteVal = (uint8_t)content[i];
+                      snprintf(notifBuf + offset, sizeof(notifBuf) - offset, 
+                               "%02X", byteVal);
+                      offset += 2;
+                  }
+                  notifBuf[offset] = '\0';
+                  sendNotificationToApp(notifBuf);
               }
           }
-      } 
+      }
       else if (current_mode == "TXT" && packet.type == "TXT") {
           if(packet.channel== channels[deviceSettings.channel_idx]) {
               //This is actually meant for my channel

@@ -64,7 +64,7 @@
             </section>
 
             <!-- Text Input -->
-            <section class="card input-section">
+            <section class="card input-section" id="inputSection">
                 <form class="send-form" id="sendForm">
                     <input type="text" id="inputField" placeholder="Type a message..." autocomplete="off" autocapitalize="none" />
                     <button type="submit" class="send-btn">
@@ -72,6 +72,18 @@
                         Send
                     </button>
                 </form>
+            </section>
+
+            <!-- PTT Button -->
+            <section class="card ptt-section" id="pttSection" style="display:none;">
+                <div class="ptt-status-bar" id="pttStatus">
+                    <span class="status-badge" id="bleBadge">📱 Connecting</span>
+                    <span class="status-badge" id="loraBadge">📡 Checking...</span>
+                </div>
+                <button class="ptt-button" id="pttButton" disabled>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 15v1a3 3 0 003 3h8a3 3 0 003-3v-1"/></svg>
+                    <span id="pttLabel">Connecting...</span>
+                </button>
             </section>
 
             <!-- Device Info -->

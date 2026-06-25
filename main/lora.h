@@ -92,4 +92,12 @@ void adjustRTC(const String& dateTime);
 void handleTransmissionComplete();
 void enqueuePacket(uint8_t* pkt_buf, uint16_t len);
 
+// Peer beacon & liveness tracking
+#define PEER_BEACON_INTERVAL 47000  // 47s, matches hop cycle
+#define PEER_TIMEOUT 94000          // 94s = 2 beacon cycles
+extern unsigned long lastPeerPacketTime;
+bool isPeerAlive();
+void sendPeerBeacon();
+const char* bleGetDeviceIdShort();
+
 #endif // LORA_H

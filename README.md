@@ -2,18 +2,33 @@
 
 ## Overview
 
-This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa communication on a LilyGO T-Echo board with an NRF52840 microcontroller. The project is designed to work with an e-paper display (e.g., GxEPD2 1.54" display) and supports different operating modes, including PTT, text message display (TXT), raw data display (RAW), and a test mode (TST).
+This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa communication on a LilyGO T-Echo board with an NRF52840 microcontroller. The device supports **7 operating modes** via single/double/long-press button combinations, with an e-paper display for status and message rendering.
+
+## Modes
+
+| Mode | Description |
+|---|---|
+| **RAW** | Raw packet dump — displays SNR, RSSI, receive count, and raw content line-by-line |
+| **TXT** | Text messages — send/receive ASCII text (input via BLE companion app; on-device keyboard not yet implemented) |
+| **RANGE** | Distance testing — sender broadcasts GPS position every 5s; receiver calculates stable/max range and packet loss |
+| **TST** | Test beeps — auto-sends "test{n}" every 5s non-blocking; touch resets counters; displays SNR/RSSI/receive count |
+| **PONG** | Manual ping-pong — touch sends "Ping!" with countdown; responds to incoming PING with own ping after delay |
+| **SCAN** | Frequency scanner — scans 863–869.65 MHz in 0.01 MHz steps, ranks top 10 channels by quality score (RSSI+SNR) |
+| **PTT** | Push-to-talk — hold touch to capture audio → Codec2 encode → transmit. **Note: I2S audio is stubbed** (T-Echo has no onboard microphone/speaker). PTT packet framing exists but requires external codec hardware (e.g., PCM1270). |
 
 ## Features
 
 - **LoRa Communication**: Enables long-range, low-power communication between devices using the SX1262 LoRa module.
-- **PTT Mode**: Allows voice communication using a push-to-talk mechanism, with audio encoding/decoding using Codec2.
-- **TXT Mode**: Displays text messages received over LoRa.
-- **RAW Mode**: Displays raw data packets received over LoRa without filtering.
-- **Test Mode**: Sends periodic test messages to verify communication.
+- **PTT Mode**: Push-to-talk voice mode with Codec2 audio encoding. **I2S audio capture/playback is currently stubbed** (no onboard microphone/speaker on T-Echo); PTT packet framing exists for external codec hardware.
+- **TXT Mode**: Send/receive text messages over LoRa (input via BLE companion app).
+- **RAW Mode**: Displays raw data packets received over LoRa with SNR, RSSI, and receive count.
+- **TST Mode**: Auto-sends periodic test messages ("test{n}") every 5 seconds for signal testing.
+- **RANGE Mode**: Distance testing with GPS — sender/receiver roles track stable range, max range, and packet loss.
+- **PONG Mode**: Manual ping-pong for latency testing (touch to send "Ping!").
+- **SCAN Mode**: Frequency scanner that ranks the top 10 channels by quality score.
 - **E-Paper Display**: Displays current mode, messages, and other relevant information on an e-paper display.
 - **Power-Off Function**: Hold the action button for 5 seconds to power off the device.
-- **Double-Click Action Button**: Quickly adjust the spreading factor (SPF) using the double-click action button.
+- **Double-Click Action Button**: Quickly adjust the spreading factor (SF) using double-click. (Note: documented as "SPF" in some places, correct term is SF — Spreading Factor.)
 - **Battery Support**: Includes monitoring and display of battery status.
 - **Non-Blocking Send & Receive**: Improved performance through non-blocking packet transmission and reception.
 - **Packet Counter Synchronization**: Keeps track of the number of packets sent and received, improving communication reliability.
@@ -23,8 +38,8 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 - **Microcontroller**: LilyGO T-Echo with NRF52840
 - **LoRa Module**: SX1262
 - **E-Paper Display**: GxEPD2 1.54" e-paper display or similar
-- **Buttons**: Two buttons for mode switching and PTT action
-- **Audio Components**: Microphone and speaker (for voice communication)
+- **Buttons**: Two buttons (MODE on P1.10, TOUCH on P0.11) — mode switching, button actions per mode
+- **Audio Components**: Codec2 library included but I2S hardware is stubbed (no onboard mic/speaker). External audio codec required for PTT functionality.
 - **OTG Cable**: For connecting the microcontroller to an Android device (if using an Android development environment)
 - **Battery**: For mobile operation, with support for battery status monitoring
 
@@ -151,13 +166,13 @@ Manages the e-paper display, including rendering icons and text. Handles mode-sp
 Configures and controls the LoRa communication module, including setting power and current limits.
 
 ### `audio.cpp`
-Handles audio capture and playback using the NRF52840's I2S interface, with Codec2 encoding/decoding.
+**Audio capture/playback is disabled.** T-Echo has no onboard microphone or speaker. Both `capAudio()` and `playAudio()` are empty stubs. PTT mode packet framing exists (`PTT` type with Codec2-encoded frames) but cannot transmit or play audio without external codec hardware (e.g., PCM1270 via I2S).
 
 ### `settings.cpp`
 Manages user settings, including mode switching and configuration adjustments. Refactored to store settings in a `DeviceSettings` struct.
 
 ### `app_modes.cpp`
-Implements the core logic for the different operational modes (PTT, TXT, TST, RAW). Refactored to use an array of strings for mode management. This includes handling button events for mode switching, managing audio transmission in PTT mode, sending test messages, and processing received LoRa packets. The functions also update the display to reflect the current mode and channel.
+Implements the core logic for all 7 operational modes (RAW, TXT, RANGE, TST, PONG, SCAN, PTT). Uses an array of mode strings and AceButton library for button handling. Includes `sendTestMessage()` (auto every 5s), `sendRangeMessage()`, `sendTxtMessage()`, `powerOff()` (System OFF via softdevice or NRF_POWER), and debounced touch press detection. Packet reception is routed per-mode: RAW/TST display SNR/RSSI/counters, TXT shows text, RANGE tracks distance/packet loss, PONG responds with ping loop, PTT decodes Codec2 audio. Audio I2S functions (`capAudio`, `playAudio`) are stubbed — PTT requires external hardware.
 
 ## License
 

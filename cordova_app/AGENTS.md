@@ -8,8 +8,8 @@ Takes care of the Android companion app: `cordova_app/PTTLora/`. A Cordova-based
 
 - **Build scripts:** `cordova_app/01_create_project.bat`, `cordova_app/02_build_project.bat`
 - **App source:** `cordova_app/PTTLora/` — Cordova project root
-  - `PTTLora/www/index.html` — entry page
-  - `PTTLora/www/js/index.js` — BLE + LoRa message logic (BLE service `"1235"`, characteristic `"ABCE"`, device name pattern `/^LilygoT-Echo-[A-F0-9]{8}$/`)
+  - `PTTLora/www/index.html` — entry page (mode selector with 7 mode pills: RAW, TXT, RANGE, TST, PONG, SCAN, PTT)
+  - `PTTLora/www/js/index.js` — BLE + LoRa message logic. Sends `"SENDTXT:{message}"` for TXT mode, `switchMode()` sends mode name via BLE GATT. Device name filter: `/^LilygoT-Echo-[A-F0-9]{8}$/`. Mode pills in index.html map 1:1 to firmware modes.
   - `PTTLora/www/css/index.css` — styling
   - `PTTLora/www/img/logo.png` — app icon
   - `PTTLora/config.xml` — Cordova config

@@ -31,6 +31,9 @@ public:
     // Check if the packet is a valid range message
     bool isRangeMessage() const;
 
+    // Check if the packet is a peer beacon
+    bool isBeaconPacket() const;
+
     bool isTimeOutOfSync();
 
 private:

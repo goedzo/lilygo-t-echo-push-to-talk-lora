@@ -67,6 +67,20 @@ bool mapChanged = false;  // Flag to track if the map has changed locally
 unsigned long lastMapShareTime = 0;  // Last time the map was shared
 unsigned long mapShareDelay = 0;  // Random delay for map sharing
 
+unsigned long lastPeerPacketTime = 0;  // Track when last packet from peer was received
+unsigned long lastBeaconTime = 0;      // Track when last beacon was sent
+
+bool isPeerAlive() {
+    return (millis() - lastPeerPacketTime < PEER_TIMEOUT);
+}
+
+void sendPeerBeacon() {
+    char beacon[32];
+    snprintf(beacon, sizeof(beacon), "B%s", 
+             bleGetDeviceIdShort());
+    sendPacket((uint8_t*)beacon, strlen(beacon));
+}
+
 unsigned int messageCounter = 0;       // The counter I add to each message so that it can be tracket
 unsigned int lastReceivedCounter = 0;  // Global variable to store the last received packet counter
 uint8_t* lastMessageBuffer = nullptr;  // Buffer to store the last message sent
@@ -438,6 +452,8 @@ void checkLoraPacketComplete() {
 
                         // Reset sync loss timer on successful packet
                         syncLossTimer = millis();
+                        lastPeerPacketTime = millis();
+
                     } else {
                         //No need to process
                     }
@@ -472,6 +488,15 @@ void checkLoraPacketComplete() {
 
     // Handle map sharing logic
     handleMapSharing();
+
+    // Send peer beacon periodically
+    {
+        unsigned long currentTime = millis();
+        if (currentTime - lastBeaconTime >= PEER_BEACON_INTERVAL) {
+            sendPeerBeacon();
+            lastBeaconTime = currentTime;
+        }
+    }
 }
 
 

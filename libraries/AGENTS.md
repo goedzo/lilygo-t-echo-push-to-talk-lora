@@ -11,7 +11,7 @@ Takes care of all vendored Arduino libraries in `libraries/`. These third-party 
 | `RadioLib` | LoRa radio driver (SX1262) |
 | `GxEPD2` | E-paper display driver |
 | `GxEPD` | Legacy e-paper support |
-| `Codec2` | Audio codec for PTT voice |
+| `Codec2` | Audio codec for PTT voice (audio disabled in firmware — stubbed I2S) |
 | `TinyGPSPlus` | GPS parsing |
 | `Adafruit_EPD` | Adafruit EPD driver |
 | `Adafruit-GFX-Library` | Graphics core (folder uses hyphen) |
