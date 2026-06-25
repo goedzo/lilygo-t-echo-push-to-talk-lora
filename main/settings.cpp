@@ -118,41 +118,31 @@ void setupSettings() {
 
     // On nRF52 T-Echo, the CST816 touch controller shares I2C with PCF8563.
     // After power-on, CST816 may hold SDA low causing Wire.beginTransmission to hang forever.
-    // Workaround: probe with short timeout via Wire API instead of raw TWIM registers.
+    // Workaround: call Wire.begin() first, then probe with retries matching reference Sleep.ino pattern.
     
     SerialMon.println("[SETTINGS]   Using Wire probe for RTC");
+
+    Wire.begin();
+
+    int retry = 3;
+    uint8_t txAddr = PCF8563_I2C_ADDR;  // 7-bit address, Wire.beginTransmission handles shifting
     
-    // Probe PCF8563 on I2C bus using Wire with timeout.
-    // The CST816 touch controller shares I2C; after power-on it may hold SDA low.
-    // We use Wire directly but with a short timeout to detect hangs.
-    
-    uint8_t txAddr = PCF8563_I2C_ADDR << 1;  // write address
-    
-    bool deviceFound = false;
-    
-    // Attempt I2C probe with Wire (non-hanging because we use endTransmission which returns NACK status)
-    unsigned long probeStart = millis();
-    while (millis() - probeStart < 200 && !deviceFound) {
-        Wire.begin();
-        
+    int ret = 0;
+    do {
         Wire.beginTransmission(txAddr);
-        uint8_t result = Wire.endTransmission(true);
-        
-        // 0 = ACK (device present), others = NACK or error
-        if (result == 0) {
-            deviceFound = true;
-        } else {
-            Wire.end();
-            delay(10);
-        }
-    }
+        ret = Wire.endTransmission();
+        delay(200);
+
+    } while (retry--);
     
-    if (deviceFound) {
-        SerialMon.println("[SETTINGS]   Wire probe: PCF8563 FOUND");
+    if (ret != 0) {
+        SerialMon.println("[SETTINGS]   RTC not responding on I2C");
         
-        // I2C bus is clear after the explicit STOP from endTransmission(true)
+        // Still init Wire for other uses (touch controller etc.)
         Wire.begin();
-        SerialMon.println("[SETTINGS]   Wire begin OK");
+        SerialMon.println("[SETTINGS]   Wire begin OK (no RTC)");
+    } else {
+        SerialMon.println("[SETTINGS]   Wire probe: PCF8563 FOUND");
         rtc.begin(Wire);
         rtc.disableAlarm();
         
@@ -161,12 +151,6 @@ void setupSettings() {
         snprintf(timeBuf, sizeof(timeBuf), "RTC: %04d-%02d-%02d %02d:%02d:%02d", 
                  dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
         SerialMon.println(timeBuf);
-    } else {
-        SerialMon.println("[SETTINGS]   Wire probe: PCF8563 NOT found (NACK or timeout)");
-        
-        // Still init Wire for other uses (touch controller etc.)
-        Wire.begin();
-        SerialMon.println("[SETTINGS]   Wire begin OK (no RTC)");
     }
 
     SerialMon.println("[SETTINGS] <<< setupSettings() DONE");
@@ -179,8 +163,9 @@ void toggleSettingsMode() {
         updDisp(1, "Entered Settings",true);
         displayCurrentSetting();
     } else {
-        updDisp(1, "Exited Settings");
-        setupLoRa();
+        if (radio) {
+            setupLoRa();
+        }
         clearScreen();
         updModeAndChannelDisplay();
     }

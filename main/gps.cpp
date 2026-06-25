@@ -58,10 +58,16 @@ void loopGPS() {
     }
 
     // Error check for insufficient GPS data
+    static int noDataCount = 0;
     if (gps->charsProcessed() < 10) {
-        Serial.println(F("WARNING: No GPS data. Check wiring."));
+        noDataCount++;
         gps_status = GPS_ERROR;  // Set status to GPS_ERROR
         return;  // Exit the function to avoid further processing
+    } else if (noDataCount > 0) {
+        SerialMon.print(F("[GPS] No data for "));
+        SerialMon.print(noDataCount);
+        SerialMon.println(" checks, now acquired");
+        noDataCount = 0;
     }
 
     // Only attempt to update RTC if GPS time has been updated and not already synced

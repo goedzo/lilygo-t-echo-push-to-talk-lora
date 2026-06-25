@@ -114,10 +114,45 @@ void setup()
 {
     Serial.begin(115200);
     
+    // Crash-proof safe mode flag — BSS persists across NVIC_SystemReset
+    static bool safe_mode_active = false;
+    
+    if (safe_mode_active) {
+        // Any init step caused a crash — enter safe mode, skip everything
+        SerialMon.println("\n\n=== SAFE MODE ===");
+        SerialMon.println("Init failed. Hardware is resetting too fast.");
+        
+        // Blink Green LED = alive in safe mode
+        pinMode(GreenLed_Pin, OUTPUT);
+        pinMode(RedLed_Pin, OUTPUT);
+        pinMode(BlueLed_Pin, OUTPUT);
+        for (;;) {
+            digitalWrite(GreenLed_Pin, HIGH);
+            delay(500);
+            digitalWrite(GreenLed_Pin, LOW);
+            delay(500);
+        }
+    }
+    
     // Log crash count on boot (RAM preserved across NVIC_SystemReset)
     if (crashCount != 0x5A5A5A5A) {
         SerialMon.print(F("[BOOT] Crash reboot #"));
         SerialMon.println(crashCount);
+        
+        // Dump RTC RAM crash info from last fault (if available)
+        #define CRASH_MAGIC 0x43524153
+        typedef struct { uint32_t magic; uint32_t lr_at_crash; uint32_t cfsr; uint32_t bfar; char function[16]; uint32_t line_number; } CrashRecord;
+        CrashRecord* g_crash = (CrashRecord*)0x20007FC0;  // RTC RAM crash area
+        
+        if (g_crash->magic == CRASH_MAGIC) {
+            SerialMon.println("\n--- Last crash from RTC RAM ---");
+            SerialMon.print(F("  LR=0x"));   SerialMon.println(g_crash->lr_at_crash, HEX);
+            SerialMon.print(F("  CFSR=0x"));  SerialMon.println(g_crash->cfsr, HEX);
+            SerialMon.print(F("  BFAR=0x"));  SerialMon.println(g_crash->bfar, HEX);
+            SerialMon.print(F("  Func: "));   SerialMon.println(g_crash->function);
+            SerialMon.print(F("  Line: "));   SerialMon.println(g_crash->line_number);
+            SerialMon.println("---");
+        }
     }
     
     // Drain USB buffer before blocking operations
@@ -153,11 +188,14 @@ void setup()
     DB("after first updDisp");
 
     // ---------- Frequency Map ----------
+    static uint32_t crash_step = 0;  // BSS persists: survives crash resets
     unsigned long step1Start = millis();
     SerialMon.print("[BOOT] === Step 1/7: initializeFrequencyMap() (");
     updDisp(5, "Init frequencymap");
     checkCrashState();
     DB("about to call initializeFrequencyMap");
+    
+    crash_step = 1;  // We got here — step 1 is safe so far
     
     initializeFrequencyMap();
     checkCrashState();
@@ -177,6 +215,8 @@ void setup()
     checkCrashState();
     DB("about to call setupLoRa");
     
+    crash_step = 2;
+    
     bool lora_ok = setupLoRa();
     checkCrashState();
     DB("after setupLoRa");
@@ -192,6 +232,7 @@ void setup()
 
     // ---------- Settings (RTC) ----------
     unsigned long step3Start = millis();
+    crash_step = 3;
     SerialMon.print("[BOOT] === Step 3/7: setupSettings() (");
     checkCrashState();
     DB("about to call setupSettings");
@@ -210,6 +251,7 @@ void setup()
 
     // ---------- GPS ----------
     unsigned long step4Start = millis();
+    crash_step = 4;
     SerialMon.print("[BOOT] === Step 4/7: setupGPS() (");
     checkCrashState();
     DB("about to call setupGPS");
@@ -229,6 +271,7 @@ void setup()
 
     // ---------- App Modes ----------
     unsigned long step5Start = millis();
+    crash_step = 5;
     SerialMon.print("[BOOT] === Step 5/7: setupAppModes() (");
     checkCrashState();
     DB("about to call setupAppModes");
@@ -247,6 +290,7 @@ void setup()
 
     // ---------- BLE ----------
     unsigned long step6Start = millis();
+    crash_step = 6;
     SerialMon.print("[BOOT] === Step 6/7: setupBLE() (");
     checkCrashState();
     DB("about to call setupBLE");
@@ -264,6 +308,7 @@ void setup()
     while (Serial.available()) Serial.read();
 
     // ---------- Done ----------
+    crash_step = 7;  // All init steps completed successfully
     SerialMon.println("[BOOT] === All init steps complete ===");
     SerialMon.print(F("[BOOT] Total boot time: "));
     SerialMon.print(millis() - bootStart);
@@ -290,7 +335,6 @@ void setup()
 void loop()
 {
     checkCrashState();
-    DB("loop start");
     
     handleAppModes();
     handleBLE();  // BLE handling + drain notification queue

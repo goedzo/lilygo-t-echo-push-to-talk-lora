@@ -60,41 +60,19 @@ if not "!PORT!"=="" goto :port_found
 echo Scanning for connected T-ECHO boards...
 echo.
 
-"%ARDUINO_CLI%" board list --log-level info 2>nul > "%BOARDLIST_TMP%"
-
-findstr "pca10056" "%BOARDLIST_TMP%" >nul 2>&1
-if !errorlevel! equ 0 goto :extract_port
-
-del "%BOARDLIST_TMP%" 2>nul
-echo ERROR: No nRF52 board detected.
-echo.
-echo Possible causes:
-echo   - T-Echo not connected
-echo   - Device driver not installed
-echo   - Double-click the reset button to enter bootloader mode
-pause
-exit /b 1
-
-:extract_port
-for /f "tokens=1 delims= " %%C in ('findstr "pca10056" "%BOARDLIST_TMP%"') do (
-    set CANDIDATE=%%C
-    echo !CANDIDATE! | findstr /I "COM[0-9]*" >nul 2>&1
-    if !errorlevel! equ 0 (
-        set PORT=!CANDIDATE!
-        del "%BOARDLIST_TMP%" 2>nul
-        goto :port_found
-    )
-)
-del "%BOARDLIST_TMP%" 2>nul
-
-REM Fallback: wmic SerialPort lookup
-for /f "tokens=*" %%C in ('wmic path Win32_SerialPort get DeviceID 2^>nul ^| findstr /I "COM[0-9]*"') do (
-    if not "%%C"=="" set PORT=%%C
+REM T-Echo in normal mode does not appear as DFU device, so arduino-cli board list fails.
+REM We use wmic to enumerate all COM ports and pick the first one — T-Echo is always the
+REM only USB-serial device on a freshly-connected PC.
+for /f "tokens=*" %%P in ('wmic path Win32_SerialPort get DeviceID 2^>nul ^| findstr /I "COM[0-9]*"') do (
+    if not "%%P"=="" set PORT=%%P
 )
 
 if "!PORT!"=="" (
-    echo ERROR: Could not auto-detect COM port.
-    echo Please specify manually: .\02_upload_firmware.bat COM3
+    echo ERROR: No serial port found.
+    echo.
+    echo Possible causes:
+    echo   - T-Echo not connected via USB
+    echo   - Device driver not installed
     pause
     exit /b 1
 )

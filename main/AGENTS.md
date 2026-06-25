@@ -18,6 +18,7 @@ Takes care of the T-Echo firmware: `main/` directory. The core device that runs 
 - **Packet framing:** `main/packet.cpp/.h`
 - **Scan/OTA:** `main/scan.cpp/.h`
 - **Pin definitions:** `main/utilities.h`
+- **Crash detection & debugging:** `main/crash_debug.h` — HardFault recorder, stack overflow guard, debug log buffer, heap tracker
 
 ## Local Contracts
 
@@ -66,12 +67,37 @@ I2S capture → Codec2 encode → transmit. Receive → Codec2 decode → I2S pl
 ### BLE (`ble`)
 GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-XXXXXXXX`.
 
-## Verification
+## Crash Debug Infrastructure (`crash_debug.h`)
 
-1. **Build:** Run `build_scripts\01_build_firmware.bat` — must produce zero errors, ~27% flash / ~8% RAM on release build. If it fails, fix the code and retry until clean.
+Installed crash diagnostics that capture state on every fault:
+
+| Feature | Details |
+|---|---|
+| HardFault handler | Records full register dump, CFSR/HFSR/BFAR to RTC RAM (0x20007FC0) |
+| Stack guard | Writes `0xDEADBEEF` to top of RAM (0x20007FFC); checks periodically in loop() |
+| Debug log buffer | Circular 32-entry ring at 0x20006FC0 — use `dbgLog("fmt", args)` |
+| Heap tracker | Tracks minimum free heap seen during operation |
+| Peripheral crash detection | Identifies SPIM2 (display), SPIM3 (LoRa), TWIM1 (I2C/RTC) regions in BFAR |
+
+Usage: call `dbgLog("[mod] msg")` in critical paths. On crash, full register dump + stack guard check + heap stats printed on next boot.
+
+### Radio (`lora`)
+SX1262 via RadioLib with null-pointer guards on all radio accesses (prevents null-deref crashes during mode switches). Non-blocking TX/RX queues. Spread factor adjustable via double-click. Packet counter synchronization across devices.
+
+
+1. **Build:** Run `build_scripts\01_build_firmware.bat` — must produce zero errors, ~30% flash / ~8% RAM on release build (crash_debug adds ~2KB). If it fails, fix the code and retry until clean.
 2. **Upload:** Run `build_scripts\02_upload_firmware.bat` with a **5-minute (300s) timeout** — ensures T-Echo enters DFU mode and receives the binary.
 3. **Validate output:** Confirm build shows zero errors and upload completes without error/timeout. If upload times out or fails, do not mark the task as complete.
 4. No automated tests exist; manual device testing is the only verification path beyond build/upload.
+
+## Crash Debug Notes
+
+The crash debug infrastructure captures state in RTC RAM (`0x20007FC0`) which survives resets. After a crash:
+- Boot messages will show `CRASH DETECTED` with full register dump, CFSR decode, BFAR address classification
+- Stack guard check detects overflow before it hits HardFault (prints warning)
+- Heap usage reported every ~60 seconds in loop diagnostic
+- BLE callbacks copy data to static buffer to prevent dangling pointer faults
+- All radio operations have null-pointer guards to catch initialization-order crashes
 
 ## Child DOX Index
 
