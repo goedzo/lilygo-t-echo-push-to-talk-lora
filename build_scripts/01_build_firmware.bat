@@ -109,7 +109,5 @@ echo.
 echo Firmware binary: !FW_FILE!
 echo.
 echo To upload to T-Echo:
-echo   1. Double-click the reset button on T-Echo (DFU mode)
-echo   2. Run: .\02_upload_firmware.bat [COM port]
+echo   1. Run: .\02_upload_firmware.bat [COM port]
 echo.
-pause

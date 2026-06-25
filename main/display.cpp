@@ -420,7 +420,7 @@ void printline(const char* msg) {
 }
 
 void setupDisplay() {
-    SerialMon.println("[Display] starting e-paper init...");
+    SerialMon.println("[Display] starting e-paper init using GxDEPG0150BN...");
 
     // Set backlight pin first so we can verify board is alive
     pinMode(ePaper_Backlight, OUTPUT);
@@ -428,60 +428,45 @@ void setupDisplay() {
     enableBacklight(true);
     SerialMon.println("[Display] backlight ON");
 
-    // Create SPI class for the display — do NOT call begin() yet, GxEPD2 will do it
+    // Use GxIO/GxDEPG0150BN (GxEPD v1) which works with T-Echo hardware.
+    // This is the same driver used in T-Echo factory firmware and our previous working code.
     dispPort = new SPIClass(
         /*SPIPORT*/NRF_SPIM2,
         /*MISO*/ ePaper_Miso,
         /*SCLK*/ePaper_Sclk,
         /*MOSI*/ePaper_Mosi);
+    dispPort->begin();
 
-    // Create SPI settings
-    SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);  // 4 MHz speed, MSB first, SPI mode 0
+    io = new GxIO_Class(
+        *dispPort,
+        /*CS*/ ePaper_Cs,
+        /*DC*/ ePaper_Dc,
+        /*RST*/ePaper_Rst);
 
-    // Create the display class using GxEPD2_150_BN with default HIGH busy level (SSD1681)
-    GxEPD2_150_BN epd(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
-    display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(epd);
+    display_v1 = new GxEPD_Class(
+        *io,
+        /*RST*/ ePaper_Rst,
+        /*BUSY*/ ePaper_Busy);
 
-    SerialMon.println("[Display] calling init with reset_duration=300...");
-    // The 6-param init calls selectSPI() then epd2.init().
-    // IMPORTANT: GxEPD2's _reset() sets RST LOW for _reset_duration ms, then HIGH.
-    // But SSD1681 needs ~200ms AFTER going HIGH before BUSY responds (per GxIO_SPI::reset()).
-    // We use reset_duration=300 so that after deasserting RST, we wait 300ms total.
-    // This matches the T-Echo factory behavior where GxEPD v1's IO.reset() waits 200ms post-RST.
-    display->init(0, true, 300, false, *dispPort, spiSettings);
-    SerialMon.println("[Display] init() returned OK");
+    // Init with 4MHz SPI (no diagnostic serial)
+    SerialMon.println("[Display] GxDEPG0150BN init(4000000)...");
+    display_v1->init(4000000);
+    SerialMon.println("[Display] GxDEPG0150BN init OK");
 
-    // Critical: after RST goes HIGH, SSD1681 needs additional time before accepting commands.
-    // GxEPD2 doesn't add this — it assumes the controller is ready when reset_duration elapses.
-    // But on T-Echo's RC circuit, the pull-up takes extra time to charge past the logic threshold.
-    // Adding explicit delay per LilyGO factory firmware and GxIO_SPI::reset() pattern.
-    delay(200);
-    SerialMon.println("[Display] post-reset delay done");
-
-    display->setRotation(3);
-    SerialMon.println("[Display] rotation set, clearing screen...");
+    display_v1->setRotation(3);
+    display_v1->fillScreen(GxEPD_WHITE);
+    display_v1->setTextColor(GxEPD_BLACK);
+    display_v1->setFont(&FreeMonoBold9pt7b);
     
-    // clearScreen() writes 0xFF buffers then calls refresh(false) which is a full update
-    display->clearScreen();
-    SerialMon.println("[Display] clearScreen returned OK");
-    
-    display->setFullWindow();
-    display->fillScreen(GxEPD_WHITE);
-    display->setTextColor(GxEPD_BLACK);
-    display->setFont(&FreeMonoBold9pt7b);
-    
-    // Draw text using page mode for reliability
-    display->firstPage();
-    do {
-        display->fillScreen(GxEPD_WHITE);
-        display->setCursor(10, 40);
-        display->print("T-Echo Ready!");
-    } while (display->nextPage());
-    
-    // Explicit full refresh — not partial
-    SerialMon.println("[Display] doing full refresh...");
-    display->refresh(false);  // false = full update
-    SerialMon.println("[Display] COMPLETE - e-paper should be updating now");
+    // Use updateWindow() to show text (GxEPD v1 uses direct buffer write + full update)
+    int x = 10, y = 40;
+    uint16_t w = 100, h = 32;
+    display_v1->startWrite();
+    display_v1->setCursor(x, y);
+    display_v1->print("T-Echo Ready!");
+    // GxEPD v1 full update
+    display_v1->updateWindow(x, y, w, h);
+    SerialMon.println("[Display] GxDEPG0150BN update done");
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {

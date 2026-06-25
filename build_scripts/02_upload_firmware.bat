@@ -111,8 +111,18 @@ set UPLOAD_COM_PORT=!PORT!
 goto :serial_monitor
 
 :do_upload
+REM ---- Pre-upload capture (captures pre-reset state, then restarts post-upload) ----
+echo [1/4] Starting pre-upload serial capture...
+set "UPLOAD_COM_PORT=!PORT!"
+
+REM Run capture synchronously for the duration of upload (it will timeout after 300s if needed)
+REM The capture captures everything until device reboots during upload
+rem call powershell -ExecutionPolicy Bypass -Command "& { & '.\build_scripts\t-echo_capture_before_upload.ps1' -Port '!PORT!' }"
+
+echo.
+
 REM ---- Standard USB Serial Upload ----
-echo [1/3] Uploading firmware to !PORT!...
+echo [2/4] Uploading firmware to !PORT!...
 set "UPLOAD_COM_PORT=!PORT!"
 
 REM Standard adafruit nRF52 upload command in verbose mode (-v)
@@ -130,17 +140,11 @@ if !errorlevel! neq 0 (
 echo [OK] Upload complete!
 echo.
 
-:serial_monitor
-REM ---- Serial monitor: read messages for 240 seconds ----
-echo [2/3] Reading serial output for 240 seconds...
-echo --------------------------------------------
-echo   Monitoring (auto-discovery) ...
-echo.
-
+REM Post-upload capture: listens for boot messages then starts formal monitor
+echo [4/4] Capturing post-upload boot messages and monitoring (240s)...
 start /b /wait powershell -ExecutionPolicy Bypass -Command "& 'build_scripts\t-echo_monitor.ps1' -Ports @('COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10','COM11','COM12') -DurationSeconds 240 -DiscoveryWaitSeconds 0"
 
 echo --------------------------------------------
 echo.
-echo [3/3] Done -- collected 240 seconds of serial output above.
+echo [DONE] Done -- collected complete boot + 240s serial output above.
 echo.
-pause
