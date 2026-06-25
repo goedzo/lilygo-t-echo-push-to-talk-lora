@@ -420,28 +420,68 @@ void printline(const char* msg) {
 }
 
 void setupDisplay() {
+    SerialMon.println("[Display] starting e-paper init...");
+
+    // Set backlight pin first so we can verify board is alive
+    pinMode(ePaper_Backlight, OUTPUT);
+    digitalWrite(ePaper_Backlight, HIGH);
+    enableBacklight(true);
+    SerialMon.println("[Display] backlight ON");
+
+    // Create SPI class for the display — do NOT call begin() yet, GxEPD2 will do it
     dispPort = new SPIClass(
         /*SPIPORT*/NRF_SPIM2,
         /*MISO*/ ePaper_Miso,
         /*SCLK*/ePaper_Sclk,
         /*MOSI*/ePaper_Mosi);
 
-    dispPort->begin();
-    
-    // Create SPI settings with speed, data order, and mode
+    // Create SPI settings
     SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);  // 4 MHz speed, MSB first, SPI mode 0
 
-    //Now let's create the display class
-    display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
+    // Create the display class using GxEPD2_150_BN with default HIGH busy level (SSD1681)
+    GxEPD2_150_BN epd(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
+    display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(epd);
 
-    display->init(115200, true, 20, false, *dispPort, spiSettings);
-    display->setRotation(3); // Set display rotation
-    enableBacklight(true);
+    SerialMon.println("[Display] calling init with reset_duration=300...");
+    // The 6-param init calls selectSPI() then epd2.init().
+    // IMPORTANT: GxEPD2's _reset() sets RST LOW for _reset_duration ms, then HIGH.
+    // But SSD1681 needs ~200ms AFTER going HIGH before BUSY responds (per GxIO_SPI::reset()).
+    // We use reset_duration=300 so that after deasserting RST, we wait 300ms total.
+    // This matches the T-Echo factory behavior where GxEPD v1's IO.reset() waits 200ms post-RST.
+    display->init(0, true, 300, false, *dispPort, spiSettings);
+    SerialMon.println("[Display] init() returned OK");
+
+    // Critical: after RST goes HIGH, SSD1681 needs additional time before accepting commands.
+    // GxEPD2 doesn't add this — it assumes the controller is ready when reset_duration elapses.
+    // But on T-Echo's RC circuit, the pull-up takes extra time to charge past the logic threshold.
+    // Adding explicit delay per LilyGO factory firmware and GxIO_SPI::reset() pattern.
+    delay(200);
+    SerialMon.println("[Display] post-reset delay done");
+
+    display->setRotation(3);
+    SerialMon.println("[Display] rotation set, clearing screen...");
+    
+    // clearScreen() writes 0xFF buffers then calls refresh(false) which is a full update
     display->clearScreen();
-    display->setFullWindow(); // Use the full display window
-    display->fillScreen(GxEPD_WHITE); // Clear the screen
-    display->setTextColor(GxEPD_BLACK); // Set text color
+    SerialMon.println("[Display] clearScreen returned OK");
+    
+    display->setFullWindow();
+    display->fillScreen(GxEPD_WHITE);
+    display->setTextColor(GxEPD_BLACK);
     display->setFont(&FreeMonoBold9pt7b);
+    
+    // Draw text using page mode for reliability
+    display->firstPage();
+    do {
+        display->fillScreen(GxEPD_WHITE);
+        display->setCursor(10, 40);
+        display->print("T-Echo Ready!");
+    } while (display->nextPage());
+    
+    // Explicit full refresh — not partial
+    SerialMon.println("[Display] doing full refresh...");
+    display->refresh(false);  // false = full update
+    SerialMon.println("[Display] COMPLETE - e-paper should be updating now");
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {

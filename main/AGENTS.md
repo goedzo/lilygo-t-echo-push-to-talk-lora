@@ -68,10 +68,10 @@ GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-
 
 ## Verification
 
-1. Build with `arduino-cli compile` — must produce zero errors, 27% flash / 8% RAM on release build
-2. Flash to physical T-Echo hardware
-3. Test BLE connection from companion APK
-4. No automated tests exist; manual device testing is the only verification path
+1. **Build:** Run `build_scripts\01_build_firmware.bat` — must produce zero errors, ~27% flash / ~8% RAM on release build. If it fails, fix the code and retry until clean.
+2. **Upload:** Run `build_scripts\02_upload_firmware.bat` with a **5-minute (300s) timeout** — ensures T-Echo enters DFU mode and receives the binary.
+3. **Validate output:** Confirm build shows zero errors and upload completes without error/timeout. If upload times out or fails, do not mark the task as complete.
+4. No automated tests exist; manual device testing is the only verification path beyond build/upload.
 
 ## Child DOX Index
 

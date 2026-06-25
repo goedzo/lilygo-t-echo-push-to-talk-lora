@@ -131,16 +131,16 @@ echo [OK] Upload complete!
 echo.
 
 :serial_monitor
-REM ---- Serial monitor: read messages for 120 seconds ----
-echo [2/3] Reading serial output for 120 seconds...
+REM ---- Serial monitor: read messages for 240 seconds ----
+echo [2/3] Reading serial output for 240 seconds...
 echo --------------------------------------------
 echo   Monitoring (auto-discovery) ...
 echo.
 
-start /b /wait powershell -ExecutionPolicy Bypass -Command "& 'build_scripts\t-echo_monitor.ps1' -Ports @('COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10','COM11','COM12') -DurationSeconds 240 -DiscoveryWaitSeconds 4"
+start /b /wait powershell -ExecutionPolicy Bypass -Command "& 'build_scripts\t-echo_monitor.ps1' -Ports @('COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10','COM11','COM12') -DurationSeconds 240 -DiscoveryWaitSeconds 0"
 
 echo --------------------------------------------
 echo.
-echo [3/3] Done -- collected 120 seconds of serial output above.
+echo [3/3] Done -- collected 240 seconds of serial output above.
 echo.
 pause

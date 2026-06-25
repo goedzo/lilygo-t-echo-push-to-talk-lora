@@ -182,7 +182,9 @@ Default section order:
 - Delete stale notes instead of explaining history
 - Trim obvious statements, repeated rules, misplaced detail, and warnings for risks that no longer exist
 
-## Closeout
+## Closeout — Mandatory Firmware Build Validation
+
+Every code change to **any** firmware file requires the following build + upload validation before the task is considered done:
 
 1. Re-check changed paths against the DOX chain
 2. Update nearest owning docs and any affected parents or children
@@ -190,6 +192,21 @@ Default section order:
 4. Remove stale or contradictory text
 5. Run existing verification when relevant
 6. Report any docs intentionally left unchanged and why
+
+### Firmware Build Validation (mandatory for firmware changes)
+
+If **any** file in `main/` was added, modified, deleted, or renamed:
+
+1. **Build:** Run `build_scripts\01_build_firmware.bat`
+   - The build must produce **zero errors**. If it fails, fix the code and retry until clean.
+2. **Upload:** If the build succeeds, run `build_scripts\02_upload_firmware.bat` with a **5-minute (300s) timeout**
+   - Ensures the T-Echo enters DFU mode and the binary flashes without hanging.
+3. **Validate output:** Confirm both steps completed successfully:
+   - Build output shows zero errors and reports flash/RAM usage (~27% / ~8%)
+   - Upload completes without error (device receives the new firmware)
+   - If upload times out or fails, note the failure — do **not** mark the task as complete.
+
+This validation applies regardless of which specific firmware module was changed (lora, audio, display, ble, app_modes, settings, etc.).
 
 ## User Preferences
 
