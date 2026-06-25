@@ -141,10 +141,10 @@ echo [OK] Upload complete!
 echo.
 
 REM Post-upload capture: listens for boot messages then starts formal monitor
-echo [4/4] Capturing post-upload boot messages and monitoring (240s)...
-start /b /wait powershell -ExecutionPolicy Bypass -Command "& 'build_scripts\t-echo_monitor.ps1' -Ports @('COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10','COM11','COM12') -DurationSeconds 240 -DiscoveryWaitSeconds 0"
+echo [4/4] Capturing post-upload boot messages and monitoring (60s)...
+start /b /wait powershell -ExecutionPolicy Bypass -Command "& 'build_scripts\t-echo_monitor.ps1' -Ports @('COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10','COM11','COM12') -DurationSeconds 60 -DiscoveryWaitSeconds 0"
 
 echo --------------------------------------------
 echo.
-echo [DONE] Done -- collected complete boot + 240s serial output above.
+echo [DONE] Done -- collected complete boot + 60s serial output above.
 echo.
