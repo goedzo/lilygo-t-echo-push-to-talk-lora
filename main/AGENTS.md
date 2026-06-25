@@ -23,6 +23,7 @@ Takes care of the T-Echo firmware: `main/` directory. The core device that runs 
 ## Local Contracts
 
 - Board: `Nordic nRF52840 (PCA10056)`, target `adafruit_feather_nrf52840_s2`
+- **VERSION_1 pin definitions are commented out** in `utilities.h` — default revision is active with ePaper_Miso=P1.6, LoRa_Dio0=P0.22, GreenLed_Pin=P1.1, RedLed_Pin=P1.3, BlueLed_Pin=P0.14
 - Compile via Arduino IDE or PlatformIO (see build instructions below)
 - Debug output: `SerialMon` at 115200 baud
 - Display updates: call `updDisp()` from app_modes or other modules that change state
@@ -46,9 +47,10 @@ arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/
 
 The project includes a `platformio.ini` at the repo root with two environments: `t-echo` (release) and `t-echo-debug`. All vendored libraries are referenced via `-I` include paths. Build uses `build_src_filter` to also compile RadioLib source from `main/lib/src`.
 
+**No platformio.ini found on disk** — documentation is stale. PlatformIO is not functional; use Arduino CLI.
+
 ## Build Gotchas
 
-- **VERSION_1** pin definitions are commented out in `utilities.h`. Check hardware revision before editing pins.
 - E-paper is **GxDEPG0150BN**. The vendored header is `epd/GxEPD2_150_BN.h`. If it changes, update both `main.ino` and `display.cpp`.
 - **DFU upload**: double-click reset button to enter DFU mode first.
 - nRF5-SDK overwrites the Adafruit bootloader — do not mix toolchains without restoring bootloader.
@@ -65,7 +67,7 @@ SX1262 via RadioLib. Non-blocking TX/RX queues. Spread factor adjustable via dou
 I2S capture → Codec2 encode → transmit. Receive → Codec2 decode → I2S playback.
 
 ### BLE (`ble`)
-GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-XXXXXXXX`.
+GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-XXXXXXXX`. BLE service UUID: `"1235"`, characteristic UUID: `"ABCE"` (simple string identifiers, not 128-bit standard UUIDs).
 
 ## Crash Debug Infrastructure (`crash_debug.h`)
 
@@ -81,23 +83,13 @@ Installed crash diagnostics that capture state on every fault:
 
 Usage: call `dbgLog("[mod] msg")` in critical paths. On crash, full register dump + stack guard check + heap stats printed on next boot.
 
-### Radio (`lora`)
-SX1262 via RadioLib with null-pointer guards on all radio accesses (prevents null-deref crashes during mode switches). Non-blocking TX/RX queues. Spread factor adjustable via double-click. Packet counter synchronization across devices.
 
+## Verification
 
 1. **Build:** Run `build_scripts\01_build_firmware.bat` — must produce zero errors, ~30% flash / ~8% RAM on release build (crash_debug adds ~2KB). If it fails, fix the code and retry until clean.
 2. **Upload:** Run `build_scripts\02_upload_firmware.bat` with a **5-minute (300s) timeout** — ensures T-Echo enters DFU mode and receives the binary.
 3. **Validate output:** Confirm build shows zero errors and upload completes without error/timeout. If upload times out or fails, do not mark the task as complete.
 4. No automated tests exist; manual device testing is the only verification path beyond build/upload.
-
-## Crash Debug Notes
-
-The crash debug infrastructure captures state in RTC RAM (`0x20007FC0`) which survives resets. After a crash:
-- Boot messages will show `CRASH DETECTED` with full register dump, CFSR decode, BFAR address classification
-- Stack guard check detects overflow before it hits HardFault (prints warning)
-- Heap usage reported every ~60 seconds in loop diagnostic
-- BLE callbacks copy data to static buffer to prevent dangling pointer faults
-- All radio operations have null-pointer guards to catch initialization-order crashes
 
 ## Child DOX Index
 

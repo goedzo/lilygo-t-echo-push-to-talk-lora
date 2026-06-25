@@ -13,13 +13,12 @@ Automated build and upload scripts for the T-Echo firmware using Arduino CLI. Fu
 ## Local Contracts
 
 - **Prerequisite:** Arduino IDE installed at `D:\Tools\Arduino IDE` or standalone `arduino-cli.exe` available in PATH
-- **Board FQBN:** `adafruit:nrf52:pca10056` (Nordic nRF52840 DK, PCA10056)
+- **Board FQBN:** `adafruit:nrf52:feather52840` (Adafruit Feather nRF52840 Express)
 - **Core version:** `adafruit:nrf52@1.7.0`
-- **Build command:** `arduino-cli compile -b adafruit:nrf52:pca10056 --build-path .pio/t-echo-build main`
-- **Upload command:** `arduino-cli upload -b adafruit:nrf52:pca10056 --port auto --input-file .pio/t-echo-build/main.ino.elf`
+- **Build command:** `arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main`
+- **Upload command:** `arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin`
 - **RadioLib 7.1.2** — vendored in `libraries/` and bundled in `main/lib/`; copied to Arduino lib dir during build (not from Library Manager)
-- Build output for nRF52 is `.elf`/`.hex` (not `.bin`) — use `--input-file` to upload a specific binary
-- - Core: `adafruit:nrf52@1.7.0` (same as before, PCA10056 is a board within this core)
+- Build output for nRF52 is `.elf`/`.hex` (not `.bin`)
 - All vendored libraries are installed via `arduino-cli lib install "Library Name"` from Library Manager
 
 ## Known Limitations

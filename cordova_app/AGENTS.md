@@ -9,11 +9,11 @@ Takes care of the Android companion app: `cordova_app/PTTLora/`. A Cordova-based
 - **Build scripts:** `cordova_app/01_create_project.bat`, `cordova_app/02_build_project.bat`
 - **App source:** `cordova_app/PTTLora/` — Cordova project root
   - `PTTLora/www/index.html` — entry page
-  - `PTTLora/www/js/index.js` — BLE + LoRa message logic
+  - `PTTLora/www/js/index.js` — BLE + LoRa message logic (BLE service `"1235"`, characteristic `"ABCE"`, device name pattern `/^LilygoT-Echo-[A-F0-9]{8}$/`)
   - `PTTLora/www/css/index.css` — styling
   - `PTTLora/www/img/logo.png` — app icon
   - `PTTLora/config.xml` — Cordova config
-  - `PTTLora/package.json` — npm dependencies
+  - `PTTLora/package.json` — npm dependencies (`cordova-android ^13.0.0`, `cordova-plugin-ble-central ^1.7.8`)
 
 ## Local Contracts
 

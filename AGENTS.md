@@ -9,7 +9,7 @@ Three codebases live in this repo:
 | `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino IDE or PlatformIO (see build instructions below). |
 | `cordova_app/PTTLora/` | Android companion app built with **Cordova** (`cordova-android 13`). BLE plugin only. Build: `02_build_project.bat` (Windows) or `cordova build android`. Output APK copied to `cordova_app/pttlora.apk`. |
 | `lilygo_lora32_keyboard_bridge/main/` | Separate **bridge firmware** for a LilyGO LoRa32 board — relays BLE ↔ LoRa. Independent from the main firmware, but uses similar patterns. |
-| `libraries/` | Vendored Arduino libraries (Adafruit, RadioLib, GxEPD2, Codec2, MCCI_LoRaWAN_LMIC, etc.). Must be copied to Arduino's `libraries` directory when building outside this repo. |
+| `libraries/` | Vendored Arduino libraries (RadioLib, GxEPD2, Codec2, TinyGPSPlus, Adafruit-GFX-Library, etc.). Must be copied to Arduino's `libraries` directory when building outside this repo. 19 libraries present; see `libraries/AGENTS.md` for the full inventory and known gaps. |
 
 ## Firmware build / flash
 
@@ -73,10 +73,15 @@ Libraries linked via `-I` include paths to `libraries/`. Source filter includes 
 - `main/main.ino` — setup/loop, board init, mode switch entry points
 - `main/app_modes.cpp` — core mode logic (PTT, TXT, RAW, TST), button handling via AceButton/Button2
 - `main/lora.cpp` — SX1262 radio config with RadioLib, non-blocking transmit/receive queues
-- `main/display.cpp` — e-paper rendering (GxEPD2), margin/font constants defined at top of file
+- `main/display.cpp` — e-paper rendering (GxEP2), margin/font constants defined at top of file
 - `main/audio.cpp` — I2S capture/playback + Codec2 encode/decode
 - `main/settings.cpp` — DeviceSettings struct persisted to RTC (PCF8563)
 - `main/ble.cpp` — BLE GATT service for companion app communication
+- `main/battery.cpp` — Battery monitoring
+- `main/gps.cpp` — GPS parsing (TinyGPSPlus)
+- `main/packet.cpp` — Packet framing
+- `main/scan.cpp` — Scan/OTA
+- `main/crash_debug.h` — HardFault recorder, stack overflow guard, debug log buffer, heap tracker
 
 ## Companion app build steps
 
@@ -220,4 +225,4 @@ When the user requests a durable behavior change, record it here or in the relev
 | `build_scripts/AGENTS.md` | Arduino CLI build/upload/CI scripts (primary automation path) |
 | `cordova_app/AGENTS.md` | Android companion app (Cordova + BLE plugin) |
 | `lilygo_lora32_keyboard_bridge/AGENTS.md` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) |
-| `libraries/AGENTS.md` | Vendored Arduino libraries (RadioLib, GxEPD2, Codec2, TinyGPSPlus, etc.) |
+| `libraries/AGENTS.md` | Vendored Arduino libraries (RadioLib, GxEPD2, Codec2, TinyGPSPlus, etc.) — 19 libs on disk, see doc for known gaps |
