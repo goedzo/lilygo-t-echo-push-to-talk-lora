@@ -36,13 +36,18 @@ echo.
 REM ---- Use vendored libraries from libraries/ folder ----
 echo [2/3] Using vendored libraries from libraries/...
 set "ARDUINO_LIB_DIR=%LOCALAPPDATA%\Arduino\libraries"
-if not exist "%ARDUINO_LIB_DIR%" mkdir "%ARDUINO_LIB_DIR%" 2>nul
+set "SKETCHBOOK_LIB_DIR=%USERPROFILE%\Documents\Arduino\libraries"
+for %%D in ("%ARDUINO_LIB_DIR%" "%SKETCHBOOK_LIB_DIR%") do (
+    if not exist "%%~D" mkdir "%%~D" 2>nul
+)
 
 REM Copy all vendor library sources to Arduino's lib directory for compilation
 set VENDOR_LIBS=AceButton Button2 Codec2 GxEPD GxEPD2 MPU9250 PCF8563_Library RadioLib SdFat_-_Adafruit_Fork SerialFlash SoftSPI SoftSPIB TinyGPSPlus Adafruit_BluefruitLE_nRF51
 for %%V in (%VENDOR_LIBS%) do (
     if exist "libraries\%%V" (
-        xcopy /E /I /Y "libraries\%%V" "%ARDUINO_LIB_DIR%\%%V" 2>nul >nul
+        for %%D in ("%ARDUINO_LIB_DIR%" "%SKETCHBOOK_LIB_DIR%") do (
+            xcopy /E /I /Y "libraries\%%V" "%%~D\%%V" 2>nul >nul
+        )
     )
 )
 REM Handle library names with different naming conventions

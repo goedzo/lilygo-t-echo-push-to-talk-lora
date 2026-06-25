@@ -348,10 +348,10 @@ void checkLoraPacketComplete() {
 
         } else {
             uint16_t packet_len = radio->getPacketLength(false);
-            uint16_t irqStatus = radio->getIrqStatus();
+            uint16_t irqFlags = radio->getIrqFlags();
             unsigned char rcv_pkt_buf[MAX_PKT];
 
-            if (irqStatus & RADIOLIB_SX126X_IRQ_RX_DONE) {
+            if (irqFlags & RADIOLIB_SX126X_IRQ_RX_DONE) {
                 memset(rcv_pkt_buf, 0, MAX_PKT);  // Clear the receive buffer
                 int state = radio->readData(rcv_pkt_buf, packet_len);
                 radio->startReceive();  // Quickly continue receiving
@@ -509,34 +509,37 @@ int setFrequency(float freq) {
 
 // Setup LoRa radio
 bool setupLoRa() {
-    // Drain USB before radio init to prevent blocking during softdevice busy periods
-    while (Serial.available()) Serial.read();
-
     hopAfterTxRx=false;
-
     transmitFlag = false;
     operationDone = false;
 
+    pinMode(LoRa_Cs, OUTPUT);
+    digitalWrite(LoRa_Cs, HIGH);
+    pinMode(LoRa_Dio1, INPUT);
+    pinMode(LoRa_Rst, OUTPUT);
+    pinMode(LoRa_Busy, INPUT);
+    delay(10);
+
     rfPort = new SPIClass(NRF_SPIM3, LoRa_Miso, LoRa_Sclk, LoRa_Mosi);
     rfPort->begin();
+
+    digitalWrite(LoRa_Cs, HIGH);
+    delay(1);
 
     SPISettings spiSettings;
 
     radio = new SX1262(new Module(LoRa_Cs, LoRa_Dio1, LoRa_Rst, LoRa_Busy, *rfPort, spiSettings));
 
-    // Drain USB before blocking radio calls
-    while (Serial.available()) Serial.read();
-    delay(10);
-    
-    int state = radio->begin(defaultFrequency);  // Use currentFrequency
-    
-    delay(10);
-    while (Serial.available()) Serial.read();
+    // Pass frequency to begin() — this sets TCXO voltage and DC-DC regulator internally,
+    // which is critical for waking up the SX1262 on T-Echo. Matches reference Factory firmware pattern.
+    int state = radio->begin(defaultFrequency);
 
-    if (state == RADIOLIB_ERR_NONE) {
-        // success
+    if (state != RADIOLIB_ERR_NONE) {
+        SerialMon.print(F("[BOOT] LoRa radio->begin(freq) failed, code "));
+        SerialMon.println(state);
+        return false;
     } else {
-        // failed
+        SerialMon.println(F("[BOOT] LoRa radio->begin(freq) OK"));
     }
 
     radio->setDio1Action(setFlag);
@@ -557,10 +560,6 @@ bool setupLoRa() {
     radio->setOutputPower(20);
     radio->setCurrentLimit(120);
 
-    // Drain USB before final startReceive
-    delay(5);
-    while (Serial.available()) Serial.read();
-    
     bool lora_ready = radio->startReceive() == RADIOLIB_ERR_NONE;
     
     return lora_ready;

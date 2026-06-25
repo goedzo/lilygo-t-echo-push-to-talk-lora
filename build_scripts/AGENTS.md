@@ -17,7 +17,7 @@ Automated build and upload scripts for the T-Echo firmware using Arduino CLI. Fu
 - **Core version:** `adafruit:nrf52@1.7.0`
 - **Build command:** `arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main`
 - **Upload command:** `arduino-cli upload -b adafruit:nrf52:feather52840 --port auto --input-file .pio/t-echo-build/main.ino.elf`
-- **RadioLib pinned to 6.6.0** — 7.x removed `getIrqStatus()` from SX126x; scripts uninstall and reinstall RadioLib@6.6.0 explicitly
+- **RadioLib 7.1.2** — vendored in `libraries/` and bundled in `main/lib/`; copied to Arduino lib dir during build (not from Library Manager)
 - Build output for nRF52 is `.elf`/`.hex` (not `.bin`) — use `--input-file` to upload a specific binary
 - All vendored libraries are installed via `arduino-cli lib install "Library Name"` from Library Manager
 

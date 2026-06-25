@@ -2,6 +2,17 @@
 #include <SPI.h>
 #include <Wire.h>
 
+#define BOOT_LOG(step) do { \
+    SerialMon.print(F("[BOOT] === ")); \
+    SerialMon.print(step); \
+    unsigned long _s = millis(); \
+} while(0)
+#define BOOT_LOG_DONE(step) do { \
+    SerialMon.print(F(") [")); \
+    SerialMon.print(millis() - _s); \
+    SerialMon.println(F("ms) ")); \
+} while(0)
+
 #include <GxEPD.h>
 //#include <GxGDEP015OC1/GxGDEP015OC1.h>    // 1.54" b/w
 //#include <GxGDEH0154D67/GxGDEH0154D67.h>  // 1.54" b/w
@@ -31,6 +42,7 @@ SoftwareSerial SerialGPS(Gps_Tx_Pin, Gps_Rx_Pin);  // RX pin, TX pin
 
 void configVDD(void);
 void boardInit();
+bool probeSX1262_direct();
 
 uint32_t        blinkMillis = 0;
 uint8_t rgb = 0;
@@ -38,14 +50,6 @@ int count=0;
 
 void setup()
 {
-    SerialMon.println();
-    SerialMon.print("========================================\n");
-    SerialMon.print("[BOOT] Starting firmware boot sequence\n");
-    SerialMon.print("[BOOT] millis(): ");
-    SerialMon.println(millis());
-    SerialMon.print("========================================\n");
-
-    SerialMon.print("[BOOT] begin Serial at 115200 baud\n");
     Serial.begin(115200);
     
     // Drain USB buffer before blocking operations
@@ -53,11 +57,8 @@ void setup()
     delay(10);
     while (Serial.available()) Serial.read();
 
-    SerialMon.print("[BOOT] Serial.begin() done\n");
+    SerialMon.print("[BOOT] begin Serial at 115200 baud\n");
     
-    //while (!Serial);
-
-    SerialMon.print("[BOOT] delay(200) ms\n");
     delay(200);
     SerialMon.print("[BOOT] delay done, starting boardInit()\n");
     boardInit();
@@ -68,23 +69,31 @@ void setup()
 
     SerialMon.print("[BOOT] boardInit() done\n");
     
+    unsigned long bootStart = millis();
+    
     updDisp(4, "Booting...");
 
     // ---------- Frequency Map ----------
-    SerialMon.println("[BOOT] === Step 1/7: initializeFrequencyMap()");
+    unsigned long step1Start = millis();
+    SerialMon.print("[BOOT] === Step 1/7: initializeFrequencyMap() (");
     updDisp(5, "Init frequencymap");
     initializeFrequencyMap();
-    SerialMon.println("[BOOT] initializeFrequencyMap() done");
+    SerialMon.print(F(") took "));
+    SerialMon.print(millis() - step1Start);
+    SerialMon.println("ms");
 
     while (Serial.available()) Serial.read();
     delay(10);
     while (Serial.available()) Serial.read();
 
     // ---------- LoRa ----------
-    SerialMon.println("[BOOT] === Step 2/7: setupLoRa()");
+    unsigned long step2Start = millis();
+    SerialMon.print("[BOOT] === Step 2/7: setupLoRa() (");
     updDisp(5, "Init lora...");
     bool lora_ok = setupLoRa();
-    SerialMon.print("[BOOT] setupLoRa() returned: ");
+    SerialMon.print(F(") took "));
+    SerialMon.print(millis() - step2Start);
+    SerialMon.print(F("ms, returned: "));
     SerialMon.println(lora_ok ? "OK" : "FAIL");
 
     while (Serial.available()) Serial.read();
@@ -92,20 +101,26 @@ void setup()
     while (Serial.available()) Serial.read();
 
     // ---------- Settings (RTC) ----------
-    SerialMon.println("[BOOT] === Step 3/7: setupSettings()");
+    unsigned long step3Start = millis();
+    SerialMon.print("[BOOT] === Step 3/7: setupSettings() (");
     updDisp(5, "Init settings..");
     setupSettings();
-    SerialMon.println("[BOOT] setupSettings() done");
+    SerialMon.print(F(") took "));
+    SerialMon.print(millis() - step3Start);
+    SerialMon.println("ms");
 
     while (Serial.available()) Serial.read();
     delay(10);
     while (Serial.available()) Serial.read();
 
     // ---------- GPS ----------
-    SerialMon.println("[BOOT] === Step 4/7: setupGPS()");
+    unsigned long step4Start = millis();
+    SerialMon.print("[BOOT] === Step 4/7: setupGPS() (");
     updDisp(5, "Init gps...");
     bool gps_ok = setupGPS();
-    SerialMon.print("[BOOT] setupGPS() returned: ");
+    SerialMon.print(F(") took "));
+    SerialMon.print(millis() - step4Start);
+    SerialMon.print(F("ms, returned: "));
     SerialMon.println(gps_ok ? "OK" : "FAIL");
 
     while (Serial.available()) Serial.read();
@@ -113,20 +128,26 @@ void setup()
     while (Serial.available()) Serial.read();
 
     // ---------- App Modes ----------
-    SerialMon.println("[BOOT] === Step 5/7: setupAppModes()");
+    unsigned long step5Start = millis();
+    SerialMon.print("[BOOT] === Step 5/7: setupAppModes() (");
     updDisp(5, "Setup app modes");
     setupAppModes();
-    SerialMon.println("[BOOT] setupAppModes() done");
+    SerialMon.print(F(") took "));
+    SerialMon.print(millis() - step5Start);
+    SerialMon.println("ms");
 
     while (Serial.available()) Serial.read();
     delay(10);
     while (Serial.available()) Serial.read();
 
     // ---------- BLE ----------
-    SerialMon.println("[BOOT] === Step 6/7: setupBLE()");
+    unsigned long step6Start = millis();
+    SerialMon.print("[BOOT] === Step 6/7: setupBLE() (");
     updDisp(5, "Setup bluetooth");
     setupBLE();
-    SerialMon.println("[BOOT] setupBLE() done");
+    SerialMon.print(F(") took "));
+    SerialMon.print(millis() - step6Start);
+    SerialMon.println("ms");
 
     while (Serial.available()) Serial.read();
     delay(10);
@@ -134,6 +155,9 @@ void setup()
 
     // ---------- Done ----------
     SerialMon.println("[BOOT] === All init steps complete ===");
+    SerialMon.print(F("[BOOT] Total boot time: "));
+    SerialMon.print(millis() - bootStart);
+    SerialMon.println(F("ms"));
     updDisp(5, "Setup ok!");
 
     clearScreen();
@@ -182,6 +206,89 @@ void loop()
         snprintf(buf, sizeof(buf), "Idlecount: %d", count);
         //updDisp(11, buf,true);
     }
+}
+
+bool probeSX1262_direct() {
+    bool found = false;
+    
+    pinMode(LoRa_Cs, OUTPUT);
+    digitalWrite(LoRa_Cs, HIGH);
+    
+    SerialMon.println("  LoRa_CS pin configured (HIGH)");
+    
+    for (int attempt = 0; attempt < 5; attempt++) {
+        // Toggle reset
+        pinMode(LoRa_Rst, OUTPUT);
+        digitalWrite(LoRa_Rst, LOW);
+        delay(10);
+        digitalWrite(LoRa_Rst, HIGH);
+        delay(10);
+        
+        SerialMon.print("  Attempt ");
+        SerialMon.print(attempt + 1);
+        SerialMon.println(": probing SPI...");
+        
+        // Read busy state
+        pinMode(LoRa_Busy, INPUT);
+        int busy = digitalRead(LoRa_Busy);
+        SerialMon.print("    Busy pin: ");
+        SerialMon.println(busy ? "HIGH" : "LOW");
+        
+        // Create SPI port for LoRa
+        SPIClass *loraSPI = new SPIClass(NRF_SPIM3, LoRa_Miso, LoRa_Sclk, LoRa_Mosi);
+        loraSPI->begin();
+        
+        pinMode(LoRa_Cs, OUTPUT);
+        digitalWrite(LoRa_Cs, HIGH);
+        delay(1);
+        
+        // Manual SPI read of version register 0x0320 (16 bytes)
+        uint8_t cmd = 0x1D;  // READ_REGISTER command
+        uint32_t regAddr = 0x0320;  // Version string register
+        uint8_t addrBytes[3] = {
+            (uint8_t)((regAddr >> 8) & 0xFF),
+            (uint8_t)(regAddr & 0xFF),
+            0x00  // dummy byte for read
+        };
+        
+        digitalWrite(LoRa_Cs, LOW);
+        loraSPI->transfer(&cmd, 1);
+        loraSPI->transfer(addrBytes, 3);
+        
+        uint8_t version[16];
+        for (int i = 0; i < 16; i++) {
+            version[i] = loraSPI->transfer(0x00);
+        }
+        
+        digitalWrite(LoRa_Cs, HIGH);
+        
+        // Print raw hex
+        SerialMon.print("    Version register: ");
+        for (int i = 0; i < 16; i++) {
+            if (version[i] < 0x10) SerialMon.print("0");
+            SerialMon.print(version[i], HEX);
+            SerialMon.print(" ");
+        }
+        SerialMon.println();
+        
+        // Check for SX1262 signature "SX126" at start of version string
+        if (version[0] == 'S' && version[1] == 'X' && version[2] == '1' && 
+            version[3] == '2' && version[4] == '6' && version[5] == '2') {
+            found = true;
+            SerialMon.println("    *** SX1262 FOUND! ***");
+            break;
+        }
+        
+        loraSPI->end();
+        delete loraSPI;
+        delay(10);
+    }
+    
+    if (!found) {
+        SerialMon.println("  SX1262 NOT found after 5 attempts");
+    }
+    
+    return found;
 }
 
 

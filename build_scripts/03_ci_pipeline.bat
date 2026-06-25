@@ -40,9 +40,14 @@ set "LIBS=GxEPD2 GxEPD AceButton Codec2 TinyGPSPlus PCF8563_Library SdFat Adafru
 for %%L in (%LIBS%) do (
     call "%ARDUINO_CLI%" lib install "%%L" --log-level error 2>nul
 )
-REM Pin RadioLib to 6.6.0 — 7.x removed getIrqStatus() from SX126x
+REM Install vendored RadioLib 7.1.2 from libraries/ folder (not Library Manager)
 call "%ARDUINO_CLI%" lib uninstall "RadioLib" --log-level error 2>nul
-call "%ARDUINO_CLI%" lib install "RadioLib@6.6.0" --log-level error 2>nul
+set "ARDUINO_LIB_DIR=%LOCALAPPDATA%\Arduino\libraries"
+set "SKETCHBOOK_LIB_DIR=%USERPROFILE%\Documents\Arduino\libraries"
+for %%D in ("%ARDUINO_LIB_DIR%" "%SKETCHBOOK_LIB_DIR%") do (
+    if not exist "%%~D" mkdir "%%~D" 2>nul >nul
+    xcopy /E /I /Y "libraries\RadioLib" "%%~D\RadioLib" 2>nul >nul
+)
 echo [OK] Libraries verified
 echo.
 

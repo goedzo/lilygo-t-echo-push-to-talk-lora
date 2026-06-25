@@ -523,7 +523,7 @@ class RF69: public PhysicalLayer {
       \param addr Address to send the data to. Will only be added if address filtering was enabled.
       \returns \ref status_codes
     */
-    int16_t transmit(uint8_t* data, size_t len, uint8_t addr = 0) override;
+    int16_t transmit(const uint8_t* data, size_t len, uint8_t addr = 0) override;
 
     /*!
       \brief Blocking binary receive method.
@@ -649,6 +649,14 @@ class RF69: public PhysicalLayer {
     void clearFifoEmptyAction();
 
     /*!
+      \brief Set FIFO threshold level.
+      Be aware that threshold is also set in setFifoFullAction method.
+      setFifoThreshold method must be called AFTER calling setFifoFullAction!
+      \param threshold Threshold level in bytes.
+    */
+    void setFifoThreshold(uint8_t threshold);
+
+    /*!
       \brief Set interrupt service routine function to call when FIFO is full.
       \param func Pointer to interrupt service routine.
     */
@@ -685,7 +693,7 @@ class RF69: public PhysicalLayer {
       \param addr Address to send the data to. Will only be added if address filtering was enabled.
       \returns \ref status_codes
     */
-    int16_t startTransmit(uint8_t* data, size_t len, uint8_t addr = 0) override;
+    int16_t startTransmit(const uint8_t* data, size_t len, uint8_t addr = 0) override;
 
     /*!
       \brief Clean up after transmission is done.

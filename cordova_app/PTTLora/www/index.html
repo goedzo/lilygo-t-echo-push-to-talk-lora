@@ -8,57 +8,93 @@
     <meta name="viewport" content="initial-scale=1, width=device-width, viewport-fit=cover">
     <meta name="color-scheme" content="light dark">
     <link rel="stylesheet" href="css/index.css">
-    <title>PTTLora BLE Communication</title>
+    <title>PTTLora</title>
 </head>
 <body>
 
-    <div class="container">
-        <h1>PTTLora for Lilygo T-Echo</h1>
+    <div class="app-shell">
 
-        <!-- Device Status -->
-        <div class="device-status">
-            Status: <span id="deviceStatus">Connecting to device...</span>
-        </div>
+        <!-- Status Bar -->
+        <header class="status-bar">
+            <span class="status-indicator" id="statusDot"></span>
+            <span class="status-text" id="deviceStatus">Connecting to device...</span>
+            <button class="log-toggle" id="logToggle" title="Toggle log">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </button>
+        </header>
 
-		<button class="modeButton green" data-mode="RAW">RAW</button>
-		<button class="modeButton green" data-mode="TXT">TXT</button>
-		<button class="modeButton green" data-mode="RANGE">RANGE</button>
-		<button class="modeButton green" data-mode="TST">TST</button>
-		<button class="modeButton green" data-mode="PONG">PONG</button>
-		<button class="modeButton green" data-mode="SCAN">SCAN</button>
-		<button class="modeButton green" data-mode="PTT">PTT</button>
-		<div>
-			<div id="screen">
-				<span id="line0">&nbsp;</span><br>
-				<span id="line1">&nbsp;</span><br>
-				<span id="line2">&nbsp;</span><br>
-				<span id="line3">&nbsp;</span><br>
-				<span id="line4">&nbsp;</span><br>
-				<span id="line5">&nbsp;</span><br>
-				<span id="line6">&nbsp;</span><br>
-				<span id="line7">&nbsp;</span><br>
-				<span id="line8">&nbsp;</span><br>
-				<span id="line9">&nbsp;</span><br>
-				<span id="line10">&nbsp;</span><br>
-			</div>
-		</div>
-        
-        <!-- Input to Send Data -->
-        <div class="input-container">
-            <input type="text" id="inputField" placeholder="Enter text to send to device" />
-            <button id="sendButton">Send</button>
-        </div>
+        <!-- Toast notification -->
+        <div class="toast" id="toast"></div>
 
-        <!-- Received Information -->
-        <div>
-            <h3>Information from Device</h3>
-            <p id="deviceInfo" class="info">No data received yet.</p>
-        </div>
+        <!-- Main Content Area (scrollable) -->
+        <main class="content">
 
-        <!-- Console Messages -->
-        <div class="console" id="console">
-            <!-- Console messages will appear here -->
-        </div>
+            <!-- Mode Selector -->
+            <section class="card mode-section">
+                <div class="mode-strip" id="modeStrip">
+                    <button class="modePill" data-mode="RAW"><span>Raw</span></button>
+                    <button class="modePill" data-mode="TXT"><span>Txt</span></button>
+                    <button class="modePill" data-mode="RANGE"><span>Range</span></button>
+                    <button class="modePill" data-mode="TST"><span>Tst</span></button>
+                    <button class="modePill" data-mode="PONG"><span>Pong</span></button>
+                    <button class="modePill" data-mode="SCAN"><span>Scan</span></button>
+                    <button class="modePill" data-mode="PTT"><span>Ptt</span></button>
+                </div>
+            </section>
+
+            <!-- T-Echo Screen Mirror -->
+            <section class="card screen-section">
+                <div class="screen-header">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    <span>T-Echo Display</span>
+                </div>
+                <div class="screen-body" id="screen">
+                    <div class="screen-line" data-line="0">&nbsp;</div>
+                    <div class="screen-line" data-line="1">&nbsp;</div>
+                    <div class="screen-line" data-line="2">&nbsp;</div>
+                    <div class="screen-line" data-line="3">&nbsp;</div>
+                    <div class="screen-line" data-line="4">&nbsp;</div>
+                    <div class="screen-line" data-line="5">&nbsp;</div>
+                    <div class="screen-line" data-line="6">&nbsp;</div>
+                    <div class="screen-line" data-line="7">&nbsp;</div>
+                    <div class="screen-line" data-line="8">&nbsp;</div>
+                    <div class="screen-line" data-line="9">&nbsp;</div>
+                    <div class="screen-line" data-line="10">&nbsp;</div>
+                </div>
+            </section>
+
+            <!-- Text Input -->
+            <section class="card input-section">
+                <form class="send-form" id="sendForm">
+                    <input type="text" id="inputField" placeholder="Type a message..." autocomplete="off" autocapitalize="none" />
+                    <button type="submit" class="send-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        Send
+                    </button>
+                </form>
+            </section>
+
+            <!-- Device Info -->
+            <section class="card info-section" id="infoSection" style="display:none;">
+                <div class="info-header">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>Device Info</span>
+                </div>
+                <p class="info-text" id="deviceInfo">No data received yet.</p>
+            </section>
+
+        </main>
+
+        <!-- Collapsible Console Log -->
+        <aside class="log-panel" id="logPanel">
+            <div class="log-header">
+                <span>Log</span>
+                <button class="log-close" id="logClose" title="Close log">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="log-body" id="console"></div>
+        </aside>
 
     </div>
 

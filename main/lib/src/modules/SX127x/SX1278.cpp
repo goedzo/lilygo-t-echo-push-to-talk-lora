@@ -102,25 +102,25 @@ int16_t SX1278::setBandwidth(float bw) {
   uint8_t newBandwidth;
 
   // check allowed bandwidth values
-  if(fabs(bw - 7.8) <= 0.001) {
+  if(fabsf(bw - 7.8) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_7_80_KHZ;
-  } else if(fabs(bw - 10.4) <= 0.001) {
+  } else if(fabsf(bw - 10.4) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_10_40_KHZ;
-  } else if(fabs(bw - 15.6) <= 0.001) {
+  } else if(fabsf(bw - 15.6) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_15_60_KHZ;
-  } else if(fabs(bw - 20.8) <= 0.001) {
+  } else if(fabsf(bw - 20.8) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_20_80_KHZ;
-  } else if(fabs(bw - 31.25) <= 0.001) {
+  } else if(fabsf(bw - 31.25) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_31_25_KHZ;
-  } else if(fabs(bw - 41.7) <= 0.001) {
+  } else if(fabsf(bw - 41.7) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_41_70_KHZ;
-  } else if(fabs(bw - 62.5) <= 0.001) {
+  } else if(fabsf(bw - 62.5) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_62_50_KHZ;
-  } else if(fabs(bw - 125.0) <= 0.001) {
+  } else if(fabsf(bw - 125.0) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_125_00_KHZ;
-  } else if(fabs(bw - 250.0) <= 0.001) {
+  } else if(fabsf(bw - 250.0) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_250_00_KHZ;
-  } else if(fabs(bw - 500.0) <= 0.001) {
+  } else if(fabsf(bw - 500.0) <= 0.001) {
     newBandwidth = RADIOLIB_SX1278_BW_500_00_KHZ;
   } else {
     return(RADIOLIB_ERR_INVALID_BANDWIDTH);
@@ -380,6 +380,7 @@ int16_t SX1278::setGain(uint8_t gain) {
     if(gain == 0) {
       // gain set to 0, enable AGC loop
       state |= mod->SPIsetRegValue(RADIOLIB_SX1278_REG_MODEM_CONFIG_3, RADIOLIB_SX1278_AGC_AUTO_ON, 2, 2);
+      state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_LNA, RADIOLIB_SX127X_LNA_BOOST_ON, 1, 0);
     } else {
       state |= mod->SPIsetRegValue(RADIOLIB_SX1278_REG_MODEM_CONFIG_3, RADIOLIB_SX1278_AGC_AUTO_OFF, 2, 2);
       state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_LNA, (gain << 5) | RADIOLIB_SX127X_LNA_BOOST_ON);
@@ -534,11 +535,13 @@ int16_t SX1278::autoLDRO() {
 }
 
 int16_t SX1278::implicitHeader(size_t len) {
-  return(setHeaderType(RADIOLIB_SX1278_HEADER_IMPL_MODE, len));
+  this->implicitHdr = true;
+  return(setHeaderType(RADIOLIB_SX1278_HEADER_IMPL_MODE, 0, len));
 }
 
 int16_t SX1278::explicitHeader() {
-  return(setHeaderType(RADIOLIB_SX1278_HEADER_EXPL_MODE));
+  this->implicitHdr = false;
+  return(setHeaderType(RADIOLIB_SX1278_HEADER_EXPL_MODE, 0));
 }
 
 int16_t SX1278::setBandwidthRaw(uint8_t newBandwidth) {
@@ -558,11 +561,13 @@ int16_t SX1278::setSpreadingFactorRaw(uint8_t newSpreadingFactor) {
   // write registers
   Module* mod = this->getMod();
   if(newSpreadingFactor == RADIOLIB_SX127X_SF_6) {
+    this->implicitHdr = true;
     state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_MODEM_CONFIG_1, RADIOLIB_SX1278_HEADER_IMPL_MODE, 0, 0);
     state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_MODEM_CONFIG_2, RADIOLIB_SX127X_SF_6 | RADIOLIB_SX127X_TX_MODE_SINGLE, 7, 3);
     state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_DETECT_OPTIMIZE, RADIOLIB_SX127X_DETECT_OPTIMIZE_SF_6, 2, 0);
     state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_DETECTION_THRESHOLD, RADIOLIB_SX127X_DETECTION_THRESHOLD_SF_6);
   } else {
+    this->implicitHdr = false;
     state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_MODEM_CONFIG_1, RADIOLIB_SX1278_HEADER_EXPL_MODE, 0, 0);
     state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_MODEM_CONFIG_2, newSpreadingFactor | RADIOLIB_SX127X_TX_MODE_SINGLE, 7, 3);
     state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_DETECT_OPTIMIZE, RADIOLIB_SX127X_DETECT_OPTIMIZE_SF_7_12, 2, 0);
@@ -578,27 +583,6 @@ int16_t SX1278::setCodingRateRaw(uint8_t newCodingRate) {
   // write register
   Module* mod = this->getMod();
   state |= mod->SPIsetRegValue(RADIOLIB_SX127X_REG_MODEM_CONFIG_1, newCodingRate, 3, 1);
-  return(state);
-}
-
-int16_t SX1278::setHeaderType(uint8_t headerType, size_t len) {
-  // check active modem
-  if(getActiveModem() != RADIOLIB_SX127X_LORA) {
-    return(RADIOLIB_ERR_WRONG_MODEM);
-  }
-
-  // set requested packet mode
-  Module* mod = this->getMod();
-  int16_t state = mod->SPIsetRegValue(RADIOLIB_SX127X_REG_MODEM_CONFIG_1, headerType, 0, 0);
-  RADIOLIB_ASSERT(state);
-
-  // set length to register
-  state = mod->SPIsetRegValue(RADIOLIB_SX127X_REG_PAYLOAD_LENGTH, len);
-  RADIOLIB_ASSERT(state);
-
-  // update cached value
-  SX127x::packetLength = len;
-
   return(state);
 }
 
@@ -622,7 +606,7 @@ void SX1278::errataFix(bool rx) {
   // sensitivity optimization for 500kHz bandwidth
   // see SX1276/77/78 Errata, section 2.1 for details
   Module* mod = this->getMod();
-  if(fabs(SX127x::bandwidth - 500.0) <= 0.001) {
+  if(fabsf(SX127x::bandwidth - 500.0) <= 0.001) {
     if((frequency >= 862.0) && (frequency <= 1020.0)) {
       mod->SPIwriteRegister(0x36, 0x02);
       mod->SPIwriteRegister(0x3a, 0x64);
@@ -638,50 +622,50 @@ void SX1278::errataFix(bool rx) {
   // figure out what we need to set
   uint8_t fixedRegs[3] = { 0x00, 0x00, 0x00 };
   float rxFreq = frequency;
-  if(fabs(SX127x::bandwidth - 7.8) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  if(fabsf(SX127x::bandwidth - 7.8) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x48;
     fixedRegs[2] = 0x00;
     rxFreq += 0.00781;
-  } else if(fabs(SX127x::bandwidth - 10.4) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  } else if(fabsf(SX127x::bandwidth - 10.4) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x44;
     fixedRegs[2] = 0x00;
     rxFreq += 0.01042;
-  } else if(fabs(SX127x::bandwidth - 15.6) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  } else if(fabsf(SX127x::bandwidth - 15.6) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x44;
     fixedRegs[2] = 0x00;
     rxFreq += 0.01562;
-  } else if(fabs(SX127x::bandwidth - 20.8) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  } else if(fabsf(SX127x::bandwidth - 20.8) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x44;
     fixedRegs[2] = 0x00;
     rxFreq += 0.02083;
-  } else if(fabs(SX127x::bandwidth - 31.25) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  } else if(fabsf(SX127x::bandwidth - 31.25) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x44;
     fixedRegs[2] = 0x00;
     rxFreq += 0.03125;
-  } else if(fabs(SX127x::bandwidth - 41.7) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  } else if(fabsf(SX127x::bandwidth - 41.7) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x44;
     fixedRegs[2] = 0x00;
     rxFreq += 0.04167;
-  } else if(fabs(SX127x::bandwidth - 62.5) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  } else if(fabsf(SX127x::bandwidth - 62.5) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x40;
     fixedRegs[2] = 0x00;
-  } else if(fabs(SX127x::bandwidth - 125.0) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  } else if(fabsf(SX127x::bandwidth - 125.0) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x40;
     fixedRegs[2] = 0x00;
-  } else if(fabs(SX127x::bandwidth - 250.0) <= 0.001) {
-    fixedRegs[0] = 0b0000000;
+  } else if(fabsf(SX127x::bandwidth - 250.0) <= 0.001) {
+    fixedRegs[0] = 0b00000000;
     fixedRegs[1] = 0x40;
     fixedRegs[2] = 0x00;
-  } else if(fabs(SX127x::bandwidth - 500.0) <= 0.001) {
-    fixedRegs[0] = 0b1000000;
+  } else if(fabsf(SX127x::bandwidth - 500.0) <= 0.001) {
+    fixedRegs[0] = 0b10000000;
     fixedRegs[1] = mod->SPIreadRegister(0x2F);
     fixedRegs[2] = mod->SPIreadRegister(0x30);
   } else {
@@ -702,6 +686,19 @@ void SX1278::errataFix(bool rx) {
   mod->SPIsetRegValue(0x31, fixedRegs[0], 7, 7);
   mod->SPIsetRegValue(0x2F, fixedRegs[1]);
   mod->SPIsetRegValue(0x30, fixedRegs[2]);
+}
+
+int16_t SX1278::setModem(ModemType_t modem) {
+  switch(modem) {
+    case(ModemType_t::RADIOLIB_MODEM_LORA): {
+      return(this->begin());
+    } break;
+    case(ModemType_t::RADIOLIB_MODEM_FSK): {
+      return(this->beginFSK());
+    } break;
+    default:
+      return(RADIOLIB_ERR_WRONG_MODEM);
+  }
 }
 
 #endif

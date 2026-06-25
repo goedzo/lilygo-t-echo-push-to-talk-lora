@@ -3,7 +3,8 @@ document.addEventListener('deviceready', onDeviceReady, false);
 function onDeviceReady() {
     logMessage('Cordova is ready.');
     updateDeviceStatus('Device ready, scanning for BLE devices...');
-    app.initialize();  // This now handles everything, including button event listeners
+    setStatusIndicator('scanning');
+    app.initialize();
 }
 
 // Add message to console
@@ -13,7 +14,7 @@ function logMessage(message) {
     const newMessage = document.createElement('p');
     newMessage.textContent = message;
     consoleDiv.appendChild(newMessage);
-    consoleDiv.scrollTop = consoleDiv.scrollHeight; // Auto-scroll to the bottom
+    consoleDiv.scrollTop = consoleDiv.scrollHeight;
 }
 
 // Function to update the device status
@@ -21,13 +22,25 @@ function updateDeviceStatus(status) {
     document.getElementById('deviceStatus').textContent = status;
 }
 
+// Update status indicator dot color class
+function setStatusIndicator(state) {
+    const dot = document.getElementById('statusDot');
+    dot.className = 'status-indicator ' + state;
+}
+
 // Function to update device information display
 function updateDeviceInfo(info) {
     document.getElementById('deviceInfo').textContent = info;
+    document.getElementById('infoSection').style.display = 'block';
 }
 
 function switchMode(aMode) {
-	app.sendDataToDevice("SETMODE:"+aMode);  // New function to send the data to BLE device
+	app.sendDataToDevice("SETMODE:"+aMode);
+	showToast(aMode + ' mode');
+	// Update active pill
+	document.querySelectorAll('.modePill').forEach(btn => {
+		btn.classList.toggle('active', btn.getAttribute('data-mode') === aMode);
+	});
 }
 
 // Function to send data to device
@@ -36,34 +49,57 @@ function sendData() {
     const data = inputField.value;
     if (data) {
         logMessage('Sending: ' + data);
-
-        // Use the correct BLE write function from the app object
-        app.sendDataToDevice("SENDTXT:"+data);  // New function to send the data to BLE device
-
-        inputField.value = ''; // Clear input after sending
+        app.sendDataToDevice("SENDTXT:"+data);
+        inputField.value = '';
     } else {
         logMessage('Please enter some text to send.');
     }
 }
 
+// Toast notification helper
+let toastTimer = null;
+function showToast(message) {
+	const toast = document.getElementById('toast');
+	toast.textContent = message;
+	toast.classList.add('visible');
+	if (toastTimer) clearTimeout(toastTimer);
+	toastTimer = setTimeout(() => {
+		toast.classList.remove('visible');
+	}, 1500);
+}
+
+// Log panel toggle helpers
+function openLogPanel() { document.getElementById('logPanel').classList.add('open'); }
+function closeLogPanel() { document.getElementById('logPanel').classList.remove('open'); }
+
 var app = {
-    connectedDeviceId: null,  // Store the connected device ID
-    reconnectDelay: 3000,     // Delay before attempting to reconnect (3 seconds)
-    isDeviceConnected: false,  // Flag to track the connection status
+    connectedDeviceId: null,
+    reconnectDelay: 3000,
+    isDeviceConnected: false,
     serviceUUID: "1235",
     characteristicUUID: "ABCE",
 	notificationBuffer: "",
     initialize: function() {
         this.bindEvents();
-        const sendButton = document.getElementById('sendButton');
-        sendButton.addEventListener('click', sendData);
-		const modeButtons = document.querySelectorAll('.modeButton');
-			modeButtons.forEach(button => {
-				button.addEventListener('click', function() {
-					const mode = this.getAttribute('data-mode');
-					switchMode(mode);
-				});
+        const sendButton = document.getElementById('sendForm');
+        sendButton.addEventListener('submit', function(e) {
+            e.preventDefault();
+            sendData();
+        });
+		const modeButtons = document.querySelectorAll('.modePill');
+		modeButtons.forEach(button => {
+			button.addEventListener('click', function() {
+				const mode = this.getAttribute('data-mode');
+				switchMode(mode);
 			});
+		});
+        // Log panel toggles
+        document.getElementById('logToggle').addEventListener('click', function() {
+            openLogPanel();
+        });
+        document.getElementById('logClose').addEventListener('click', function() {
+            closeLogPanel();
+        });
     },
     bindEvents: function() {
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
@@ -73,13 +109,10 @@ var app = {
     },
     scanForDevice: function() {
         if (this.isDeviceConnected) {
-            // If already connected, don't scan
-            //logMessage("Device is already connected. No need to scan.");
             return;
         }
 		else {
 			setTimeout(function() {
-				//logMessage("Re-attempting to scan...");
 				app.scanForDevice();
 			}, app.reconnectDelay);
 		}
@@ -89,13 +122,13 @@ var app = {
             if (device.name && app.isValidDeviceName(device.name)) {
                 logMessage("Device found: " + device.name);
                 updateDeviceStatus("Device found, connecting...");
+                setStatusIndicator('scanning');
                 app.connectToDevice(device.id);
             }
         }, function(error) {
             logMessage("Error scanning: " + error);
             updateDeviceStatus("Error scanning for devices.");
-            
-            // Restart scanning if no device was found or if there's an error
+            setStatusIndicator('disconnected');
             setTimeout(function() {
                 logMessage("Re-attempting to scan...");
                 app.scanForDevice();
@@ -103,7 +136,7 @@ var app = {
         });
     },
     isValidDeviceName: function(deviceName) {
-        const pattern = /^LilygoT-Echo-[A-F0-9]{8}$/; // Matches LilygoT-Echo-XXXXXXXX (8 hex characters)
+        const pattern = /^LilygoT-Echo-[A-F0-9]{8}$/;
         return pattern.test(deviceName);
     },
     connectToDevice: function(deviceId) {
@@ -111,22 +144,20 @@ var app = {
 			logMessage("Already connected. Ignoring: " + deviceId);
 			return;
 		}
-		//Avoid multiple connections to device
 		app.isDeviceConnected = true;
         logMessage("Attempting to connect to device with ID: " + deviceId);
         ble.connect(deviceId, function(peripheral) {
-            // Verify if we are getting the peripheral object and deviceId
             if (peripheral && peripheral.id) {
                 logMessage("Successfully connected to " + peripheral.name);
                 logMessage("Device ID: " + peripheral.id);
                 updateDeviceStatus("Connected to " + peripheral.name);
+                setStatusIndicator('connected');
 
-                // Store the connected device ID and set the flag
                 app.connectedDeviceId = peripheral.id;
                 app.isDeviceConnected = true;
 
-                app.readWriteBLE(peripheral.id);  // Set up reading and writing
-                app.startNotification(peripheral.id);  // Start listening for notifications
+                app.readWriteBLE(peripheral.id);
+                app.startNotification(peripheral.id);
             } else {
                 logMessage("Connected, but peripheral.id is not available.");
 				app.isDeviceConnected = false;
@@ -134,31 +165,27 @@ var app = {
         }, function(error) {
             logMessage("Error connecting: " + error);
             updateDeviceStatus("Error connecting to device.");
-            // Re-attempt connection after a delay
+            setStatusIndicator('disconnected');
 			app.isDeviceConnected = false;
             setTimeout(function() {
                 logMessage("Re-attempting to connect...");
-                app.scanForDevice();  // Restart scanning if connection fails
+                app.scanForDevice();
             }, app.reconnectDelay);
         });
     },
     readWriteBLE: function(deviceId) {
         ble.read(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
-            var byteArray = new Uint8Array(data);  // Convert to Uint8Array
-            var receivedValue = app.bytesToString(byteArray);  // Convert only the valid part
-            //logMessage("Received: " + receivedValue);
-            //updateDeviceInfo(receivedValue);  // Show received data in the UI
+            var byteArray = new Uint8Array(data);
+            var receivedValue = app.bytesToString(byteArray);
         }, function(error) {
             logMessage("Error reading: " + error);
         });
 
-        // Monitor disconnection and automatically restart scanning
         ble.isConnected(deviceId, function(connected) {
             if (!connected) {
                 logMessage("Device disconnected.");
                 updateDeviceStatus("Device disconnected.");
-                
-                // Reset the connection status and restart scanning
+                setStatusIndicator('disconnected');
                 app.isDeviceConnected = false;
                 setTimeout(function() {
                     app.scanForDevice();
@@ -166,51 +193,34 @@ var app = {
             }
         });
     },
-    // Function to send data to the connected device
     sendDataToDevice: function(data) {
         if (!app.connectedDeviceId) {
             logMessage("No device connected to send data.");
             return;
         }
         var bytes = app.stringToBytes(data);
-
-        // Use the connected device ID for writing data
         ble.write(app.connectedDeviceId, app.serviceUUID, app.characteristicUUID, bytes, function() {
             logMessage("Data written: " + data);
         }, function(error) {
             logMessage("Error writing data: " + error);
         });
     },
-	// This is called when we receive a BLE message (notification) from the device
 	startNotification: function(deviceId) {
 		logMessage("Starting notifications from device...");
-		app.notificationBuffer = '';  // Buffer to accumulate message chunks
+		app.notificationBuffer = '';
 
 		ble.startNotification(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
 			var byteArray = new Uint8Array(data);
 			var receivedNotification = app.bytesToString(byteArray);
-			//logMessage("Notification chunk received: " + receivedNotification);
 
-			// Accumulate the received chunks in the buffer
 			app.notificationBuffer += receivedNotification;
 
-			// Check if the buffer contains the end marker "~~"
 			var endMarkerIndex = app.notificationBuffer.indexOf("~~");
 
-			// If the end marker "~~" is found, extract and process the complete message
 			while (endMarkerIndex !== -1) {
-				// Extract the complete message up to the end marker "~~"
 				var completeMessage = app.notificationBuffer.slice(0, endMarkerIndex);
-
-				//logMessage("Complete message received: " + completeMessage);
-
-				// Process the complete message
 				app.processCompleteMessage(completeMessage);
-
-				// Remove the processed message and "~~" marker from the buffer
 				app.notificationBuffer = app.notificationBuffer.slice(endMarkerIndex + 2);
-
-				// Check again if there is another complete message in the buffer
 				endMarkerIndex = app.notificationBuffer.indexOf("~~");
 			}
 		}, function(error) {
@@ -218,9 +228,6 @@ var app = {
 		});
 	},
 	processCompleteMessage: function(message) {
-		// Process the complete message
-		//logMessage("Processing complete message: " + message);
-		
 		var lineRegex = /LINE:(\d+)/;
 		var textRegex = /TEXT:(.*)/;
 
@@ -229,13 +236,12 @@ var app = {
 
 		if (lineMatch && textMatch) {
 			var lineNumber = parseInt(lineMatch[1]+lineMatch[2]);
-			var text = textMatch ? textMatch[1] : '';  // Handle the case where TEXT: is empty
-			//Max lines = 10
+			var text = textMatch ? textMatch[1] : '';
 			if(lineNumber<11) {
 				document.getElementById('line' + lineNumber).textContent = text;
+				document.getElementById('screen').classList.remove('empty-hint');
 			}
 		} else {
-			//Normal device message
 			updateDeviceInfo(message);
 			logMessage("Received message: " + message);
 		}
@@ -248,22 +254,18 @@ var app = {
         return array.buffer;
     },
 	stringToBytes: function(string) {
-		// Encode the string as UTF-8
 		var utf8Encoder = new TextEncoder();
-		return utf8Encoder.encode(string).buffer; // Returns an ArrayBuffer
+		return utf8Encoder.encode(string).buffer;
 	},
     bytesToString: function(byteArray) {
 		var result = "";
 		for (var i = 0; i < byteArray.length; i++) {
-			// Stop if we encounter the "~~" marker or null terminator
-			if (i < byteArray.length - 1 && byteArray[i] === 126 && byteArray[i + 1] === 126) {  // Check for "~~"
-				// Process the message up to "~~"
-				result += String.fromCharCode(byteArray[i]);  // Add the first "~"
-				result += String.fromCharCode(byteArray[i + 1]);  // Add the second "~"
-				break;  // Stop reading further
+			if (i < byteArray.length - 1 && byteArray[i] === 126 && byteArray[i + 1] === 126) {
+				result += String.fromCharCode(byteArray[i]);
+				result += String.fromCharCode(byteArray[i + 1]);
+				break;
 			}
 			if (byteArray[i] === 0) {
-				// Stop if we encounter a null terminator
 				break;
 			}
 			result += String.fromCharCode(byteArray[i]);
@@ -271,4 +273,3 @@ var app = {
 		return result;
 	}
 };
-
