@@ -23,6 +23,10 @@
 #define ePaper_Busy         _PINNUM(0,3)
 #define ePaper_Backlight    _PINNUM(1,11)
 
+// NFC pins must be configured as regular GPIO to prevent I2C bus interference on T-Echo
+#define NFC1_Pin            _PINNUM(0,8)
+#define NFC2_Pin            _PINNUM(0,9)
+
 #define LoRa_Miso           _PINNUM(0,23)
 #define LoRa_Mosi           _PINNUM(0,22)
 #define LoRa_Sclk           _PINNUM(0,19)

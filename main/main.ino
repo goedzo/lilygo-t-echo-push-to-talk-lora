@@ -43,9 +43,83 @@ void configVDD(void);
 void boardInit();
 bool probeSX1262_direct();
 
+// ---- HardFault / crash detection ----
+volatile uint32_t fault_cfsr = 0;
+volatile uint32_t fault_bfar = 0;
+volatile uint32_t fault_lr = 0;
+bool fatal_crash_detected = false;
+
+extern "C" void HardFault_Handler(void) {
+    fault_cfsr = SCB->CFSR;
+    fault_bfar = SCB->BFAR;
+    
+    uint32_t lr;
+    __asm volatile("mov %0, lr" : "=r"(lr));
+    fault_lr = lr;
+    
+    fatal_crash_detected = true;
+    
+    if (SerialMon) {
+        SerialMon.println("!!! HARD FAULT DETECTED !!!");
+        SerialMon.print("  LR=0x"); SerialMon.println(fault_lr, HEX);
+        SerialMon.print("  CFSR=0x"); SerialMon.println(fault_cfsr, HEX);
+        if (fault_cfsr & 0x8000) { // MMARVALID
+            SerialMon.print("  BFAR=0x"); SerialMon.println(fault_bfar, HEX);
+        }
+    }
+    
+    while (1) {
+        for (int i = 0; i < 20; i++) {
+            digitalWrite(GreenLed_Pin, HIGH);
+            digitalWrite(RedLed_Pin, HIGH);
+            digitalWrite(BlueLed_Pin, HIGH);
+            delay(30);
+            digitalWrite(GreenLed_Pin, LOW);
+            digitalWrite(RedLed_Pin, LOW);
+            digitalWrite(BlueLed_Pin, LOW);
+            delay(30);
+        }
+    }
+}
+
+void checkCrashState() {
+    if (fatal_crash_detected) {
+        SerialMon.println("\n\n*** FIRMWARE CRASHED ***");
+        SerialMon.print("  HardFault LR=0x"); SerialMon.println(fault_lr, HEX);
+        SerialMon.print("  CFSR=0x"); SerialMon.println(fault_cfsr, HEX);
+        if (fault_cfsr & 0x8000) { // MMARVALID
+            SerialMon.print("  BFAR=0x"); SerialMon.println(fault_bfar, HEX);
+        }
+        if (fault_cfsr & 0x07) { // IACCVIOL
+            SerialMon.println("  -> Illegal Instruction Access Violation");
+        }
+        if (fault_cfsr & 0x70) { // IACCVIOL
+            SerialMon.println("  -> Unmapped / forbidden instruction access");
+        }
+        if (fault_cfsr & 0x200) { // DACPLB
+            SerialMon.println("  -> Data PLB address fault");
+        }
+        if (fault_cfsr & 0x8000) { // MMARVALID
+            SerialMon.print("  -> Faulting data address: 0x"); SerialMon.println(fault_bfar, HEX);
+        }
+        fatal_crash_detected = false;
+    }
+}
+
 uint32_t        blinkMillis = 0;
 uint8_t rgb = 0;
 int count=0;
+
+#define DB(x) do { SerialMon.print(F("[DB] line ")); SerialMon.println(__LINE__); x; } while(0)
+
+// Stack guard pattern — write known value at stack bottom to detect overflow
+void initStackGuard(uint32_t* guard, uint32_t pattern) {
+    *guard = pattern;
+}
+
+bool checkStackGuard(uint32_t* guard, uint32_t pattern) {
+    return (*guard == pattern);
+}
 
 void setup()
 {
@@ -62,6 +136,9 @@ void setup()
     SerialMon.print("[BOOT] delay done, starting boardInit()\n");
     boardInit();
     
+    checkCrashState();
+    DB("after boardInit");
+
     while (Serial.available()) Serial.read();
     delay(10);
     while (Serial.available()) Serial.read();
@@ -70,13 +147,27 @@ void setup()
     
     unsigned long bootStart = millis();
     
+    // Step 0a: check stack pointer before heavy init
+    uint32_t sp;
+    __asm volatile("mov %0, sp" : "=r"(sp));
+    SerialMon.print("[BOOT] MSP=0x"); SerialMon.println(sp, HEX);
+    DB("MSP read");
+
     updDisp(4, "Booting...");
+    checkCrashState();
+    DB("after first updDisp");
 
     // ---------- Frequency Map ----------
     unsigned long step1Start = millis();
     SerialMon.print("[BOOT] === Step 1/7: initializeFrequencyMap() (");
     updDisp(5, "Init frequencymap");
+    checkCrashState();
+    DB("about to call initializeFrequencyMap");
+    
     initializeFrequencyMap();
+    checkCrashState();
+    DB("after initializeFrequencyMap");
+
     SerialMon.print(F(") took "));
     SerialMon.print(millis() - step1Start);
     SerialMon.println("ms");
@@ -88,8 +179,13 @@ void setup()
     // ---------- LoRa ----------
     unsigned long step2Start = millis();
     SerialMon.print("[BOOT] === Step 2/7: setupLoRa() (");
-    updDisp(5, "Init lora...");
+    checkCrashState();
+    DB("about to call setupLoRa");
+    
     bool lora_ok = setupLoRa();
+    checkCrashState();
+    DB("after setupLoRa");
+
     SerialMon.print(F(") took "));
     SerialMon.print(millis() - step2Start);
     SerialMon.print(F("ms, returned: "));
@@ -102,8 +198,13 @@ void setup()
     // ---------- Settings (RTC) ----------
     unsigned long step3Start = millis();
     SerialMon.print("[BOOT] === Step 3/7: setupSettings() (");
-    updDisp(5, "Init settings..");
+    checkCrashState();
+    DB("about to call setupSettings");
+    
     setupSettings();
+    checkCrashState();
+    DB("after setupSettings");
+
     SerialMon.print(F(") took "));
     SerialMon.print(millis() - step3Start);
     SerialMon.println("ms");
@@ -115,8 +216,13 @@ void setup()
     // ---------- GPS ----------
     unsigned long step4Start = millis();
     SerialMon.print("[BOOT] === Step 4/7: setupGPS() (");
-    updDisp(5, "Init gps...");
+    checkCrashState();
+    DB("about to call setupGPS");
+    
     bool gps_ok = setupGPS();
+    checkCrashState();
+    DB("after setupGPS");
+
     SerialMon.print(F(") took "));
     SerialMon.print(millis() - step4Start);
     SerialMon.print(F("ms, returned: "));
@@ -129,8 +235,13 @@ void setup()
     // ---------- App Modes ----------
     unsigned long step5Start = millis();
     SerialMon.print("[BOOT] === Step 5/7: setupAppModes() (");
-    updDisp(5, "Setup app modes");
+    checkCrashState();
+    DB("about to call setupAppModes");
+    
     setupAppModes();
+    checkCrashState();
+    DB("after setupAppModes");
+
     SerialMon.print(F(") took "));
     SerialMon.print(millis() - step5Start);
     SerialMon.println("ms");
@@ -142,8 +253,13 @@ void setup()
     // ---------- BLE ----------
     unsigned long step6Start = millis();
     SerialMon.print("[BOOT] === Step 6/7: setupBLE() (");
-    updDisp(5, "Setup bluetooth");
+    checkCrashState();
+    DB("about to call setupBLE");
+    
     setupBLE();
+    checkCrashState();
+    DB("after setupBLE");
+
     SerialMon.print(F(") took "));
     SerialMon.print(millis() - step6Start);
     SerialMon.println("ms");
@@ -159,8 +275,16 @@ void setup()
     SerialMon.println(F("ms"));
     updDisp(5, "Setup ok!");
 
+    checkCrashState();
+    DB("about to clearScreen");
+
     clearScreen();
+    checkCrashState();
+    DB("after clearScreen");
+
     updModeAndChannelDisplay();
+    checkCrashState();
+    DB("after updModeAndChannelDisplay");
     
     SerialMon.println();
     SerialMon.print("[BOOT] ========================================\n");
@@ -170,6 +294,9 @@ void setup()
 
 void loop()
 {
+    checkCrashState();
+    DB("loop start");
+    
     handleAppModes();
     //handleBLE();  // BLE handling
     if (millis() - blinkMillis > 1000) {
@@ -363,6 +490,14 @@ void boardInit()
     pinMode(GreenLed_Pin, OUTPUT);
     pinMode(RedLed_Pin, OUTPUT);
     pinMode(BlueLed_Pin, OUTPUT);
+
+    // T-Echo specific: configure NFC pins as regular GPIO inputs.
+    // P0.8 (NFC1) and P0.9 (NFC2) share the CST816 touch controller I2C bus.
+    // Left floating or in low-power mode they pull SDA/SCL down causing hard faults
+    // during/after display init when SPI+I2C peripherals are active together.
+    pinMode(NFC1_Pin, INPUT);
+    pinMode(NFC2_Pin, INPUT);
+    SerialMon.println("[Board] NFC pins P0.8/P0.9 configured as inputs");
 
     pinMode(UserButton_Pin, INPUT_PULLUP);
     pinMode(Touch_Pin, INPUT_PULLUP);
