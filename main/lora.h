@@ -122,14 +122,31 @@ void initNakReliability();                     // Called once in setup()
 void checkOutstandingReqs(unsigned int processedCounter);  // Check if any resolved REQs, retry expired ones
 bool markPacketReceived(unsigned int counter);           // Track that a specific counter arrived (resolves outstanding REQs)
 void sendRetransmitRequest(unsigned int counter);        // Send REQ with dedup + spacing logic
-
 // Peer beacon & liveness tracking
 #define PEER_BEACON_INTERVAL 47000  // 47s, matches hop cycle
 #define PEER_TIMEOUT 94000          // 94s = 2 beacon cycles
+
 extern unsigned long lastPeerPacketTime;
 bool isPeerAlive();
 void sendPeerBeacon();
 const char* bleGetDeviceIdShort();
+
+// Peer roster (BEACON mode)
+#define MAX_ROSTER_PEERS 8
+struct PeerEntry {
+    String  deviceId;     // Last 8 hex chars of MAC
+    double  lat;          // From ~GP field
+    double  lon;          // From ~GP field
+    uint8_t battery;      // From ~BT field
+    unsigned long lastSeen; // millis() timestamp
+    float   distanceM;    // Computed from GPS location
+};
+
+extern PeerEntry peerRoster[MAX_ROSTER_PEERS];
+extern int     peerRosterCount;
+extern bool    inBeaconMode;
+void beaconAddOrUpdate(const Packet& packet);
+void beaconDisplayRoster(uint8_t line);
 
 // Probe-based frequency hopping discovery
 #define PROBE_FREQUENCY       startFreq   // Fixed known channel: 863.0 MHz

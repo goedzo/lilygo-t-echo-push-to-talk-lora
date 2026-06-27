@@ -18,6 +18,12 @@ public:
     String gpsData;     // GPS data
     String sendDateTime;// Send date and time
 
+    // Beacon-specific fields (populated when type == "BEACON")
+    double  beacon_lat;      // Latitude from ~GP field
+    double  beacon_lon;      // Longitude from ~GP field
+    uint8_t beacon_battery;  // Battery from ~BT field
+    String  beacon_deviceId; // Device ID from B prefix
+
     // Constructor
     Packet();
     ~Packet();  // Destructor to free raw memory
@@ -27,6 +33,9 @@ public:
 
     // Check if the packet is a valid test message
     bool isTestMessage() const;
+
+    // Check if the packet is a TXT message
+    bool isTxtMessage() const;
 
     // Check if the packet is a valid range message
     bool isRangeMessage() const;

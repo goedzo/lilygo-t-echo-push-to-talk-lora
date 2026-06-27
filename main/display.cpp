@@ -181,6 +181,26 @@ const uint16_t pong_icon[16] = {
     0b0000000111000000   
 };
 
+// Beacon mode icon — radio waves radiating from center
+const uint16_t beacon_icon[16] = {
+    0b0000000000000000,  
+    0b0000011001100000,  
+    0b0000111111110000,  
+    0b0001100000011000,  
+    0b0001100110011000,  
+    0b0001100000011000,  
+    0b0001100110011000,  
+    0b0001111111111000,  
+    0b0001100110011000,  
+    0b0001100000011000,  
+    0b0001100110011000,  
+    0b0001100000011000,  
+    0b0000111111110000,  
+    0b0000011001100000,  
+    0b0000000000000000,  
+    0b0000000000000000   
+};
+
 // Black Icon
 const uint16_t black_icon[16] = {
     0b1111111111111111,
@@ -539,6 +559,9 @@ void drawModeIcon(const char* mode) {
             icon_drawn=true;
         } else if (mode == "PONG") {
             drawIcon(pong_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn=true;
+        } else if (mode == "BEACON") {
+            drawIcon(beacon_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
             icon_drawn=true;
         }
 

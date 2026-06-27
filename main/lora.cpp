@@ -10,6 +10,8 @@
 #include "app_modes.h"
 #include "lora.h"
 #include "packet.h"
+#include "gps.h"
+#include "battery.h"
 #include <time.h>  // For RTC time management
 #include <stdlib.h>  // For random number generation
 
@@ -90,10 +92,121 @@ bool isPeerAlive() {
     return (millis() - lastPeerPacketTime < PEER_TIMEOUT);
 }
 
+// Peer roster globals for BEACON mode
+PeerEntry peerRoster[MAX_ROSTER_PEERS];
+int     peerRosterCount = 0;
+bool    inBeaconMode = false;
+
+void beaconAddOrUpdate(const Packet& packet) {
+    // Extract device ID from B prefix: "B{id_short}"
+    String devId = packet.beacon_deviceId;
+    if (devId.length() == 0 || devId == bleGetDeviceIdShort()) return; // Skip self
+    
+    unsigned long now = millis();
+    
+    // Check if peer already in roster — update it
+    for (int i = 0; i < peerRosterCount; i++) {
+        if (peerRoster[i].deviceId == devId) {
+            peerRoster[i].lat     = packet.beacon_lat;
+            peerRoster[i].lon     = packet.beacon_lon;
+            peerRoster[i].battery = packet.beacon_battery;
+            peerRoster[i].lastSeen = now;
+            
+            // Compute distance if we have GPS fix
+            if (gps_status == GPS_LOC) {
+                peerRoster[i].distanceM = TinyGPSPlus::distanceBetween(
+                    gps_latitude, gps_longitude,
+                    packet.beacon_lat, packet.beacon_lon);
+            }
+            return;
+        }
+    }
+    
+    // Add new entry — find empty slot
+    if (peerRosterCount >= MAX_ROSTER_PEERS) {
+        // Roster full — discard oldest (lowest index is oldest)
+        peerRosterCount--;
+        for (int i = 0; i < peerRosterCount; i++) {
+            peerRoster[i] = peerRoster[i + 1];
+        }
+    }
+    
+    int slot = peerRosterCount++;
+    peerRoster[slot].deviceId  = devId;
+    peerRoster[slot].lat       = packet.beacon_lat;
+    peerRoster[slot].lon       = packet.beacon_lon;
+    peerRoster[slot].battery   = packet.beacon_battery;
+    peerRoster[slot].lastSeen  = now;
+    peerRoster[slot].distanceM = 0;
+    
+    if (gps_status == GPS_LOC) {
+        peerRoster[slot].distanceM = TinyGPSPlus::distanceBetween(
+            gps_latitude, gps_longitude,
+            packet.beacon_lat, packet.beacon_lon);
+    }
+}
+
+void beaconDisplayRoster(uint8_t line) {
+    char buf[30];
+    unsigned long now = millis();
+    
+    // Clean stale entries (beyond PEER_TIMEOUT)
+    int activeCount = 0;
+    for (int i = 0; i < peerRosterCount; i++) {
+        if (now - peerRoster[i].lastSeen > PEER_TIMEOUT) {
+            peerRoster[i] = peerRoster[peerRosterCount - 1];
+            peerRosterCount--;
+            i--; // recheck this index
+        } else {
+            activeCount++;
+        }
+    }
+    
+    updDisp(line, "Peers:", true);
+    
+    int maxLines = (disp_height + disp_top_margin) / disp_font_height;
+    for (int i = 0; i < activeCount && (line + 1 + i) < maxLines; i++) {
+        float dist = peerRoster[i].distanceM;
+        if (dist > 0 && dist < 1000) {
+            snprintf(buf, sizeof(buf), "%s %.0fm", peerRoster[i].deviceId.c_str(), dist);
+        } else if (dist >= 1000) {
+            snprintf(buf, sizeof(buf), "%s %.1fkm", peerRoster[i].deviceId.c_str(), dist / 1000.0);
+        } else {
+            snprintf(buf, sizeof(buf), "%s ???m", peerRoster[i].deviceId.c_str());
+        }
+        // Add battery indicator
+        int batt = peerRoster[i].battery;
+        if (batt > 0) {
+            strncat(buf, " ", sizeof(buf) - strlen(buf) - 1);
+            char battBuf[12];
+            snprintf(battBuf, sizeof(battBuf), "%d%%", batt);
+            strncat(buf, battBuf, sizeof(buf) - strlen(buf) - 1);
+        } else {
+            strncat(buf, " -%", sizeof(buf) - strlen(buf) - 1);
+        }
+        
+        char displayLine[5];
+        snprintf(displayLine, sizeof(displayLine), "%d", line + 1 + i);
+        // Use direct line number
+        updDisp(line + 1 + i, buf, true);
+    }
+}
+
 void sendPeerBeacon() {
-    char beacon[32];
-    snprintf(beacon, sizeof(beacon), "B%s", 
-             bleGetDeviceIdShort());
+    char beacon[MAX_PACKET_SIZE];
+    
+    if (gps_status == GPS_LOC) {
+        int batt = getBatteryPercentage();
+        snprintf(beacon, sizeof(beacon), "B%s~GP%.6f,%.6f~BT%d", 
+                 bleGetDeviceIdShort(),
+                 gps_latitude, gps_longitude,
+                 batt);
+    } else {
+        int batt = getBatteryPercentage();
+        snprintf(beacon, sizeof(beacon), "B%s~BT%d", 
+                 bleGetDeviceIdShort(),
+                 batt);
+    }
     sendPacket((uint8_t*)beacon, strlen(beacon));
 }
 

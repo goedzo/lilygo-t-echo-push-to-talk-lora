@@ -139,6 +139,10 @@ bool Packet::isTestMessage() const {
     return type.startsWith("TX") && content.startsWith("test");
 }
 
+bool Packet::isTxtMessage() const {
+    return type == "TXT" || type == "TXT_MULTI";
+}
+
 bool Packet::isRangeMessage() const {
     return type == "RANGE" && content.startsWith("test");
 }
@@ -214,6 +218,31 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
         // Peer beacon packet — type is already "BEACON" from the check below
         type = "BEACON";
         channel = '\0';  // Beacons don't have a channel in header position
+        
+        // Extract device ID from ~DI field (after B{short_id} prefix, look for ~DI)
+        beacon_deviceId = "";
+        uint16_t diIdx = index;
+        if (diIdx < bufferSize && buffer[diIdx] == '~') {
+            diIdx++; // skip first ~
+            while (diIdx + 1 < bufferSize) {
+                if (buffer[diIdx] == '~' && buffer[diIdx+1] == '~') break;
+                if (buffer[diIdx] == '~') {
+                    diIdx++;
+                    if (diIdx + 1 < bufferSize && buffer[diIdx] == 'D' && buffer[diIdx+1] == 'I') {
+                        diIdx += 2; // skip DI
+                        while (diIdx < bufferSize && buffer[diIdx] != '~' && buffer[diIdx] != 0) {
+                            beacon_deviceId += (char)buffer[diIdx];
+                            diIdx++;
+                        }
+                    } else {
+                        while (diIdx < bufferSize && buffer[diIdx] != '~') diIdx++;
+                    }
+                } else {
+                    while (diIdx < bufferSize && buffer[diIdx] != '~') diIdx++;
+                }
+            }
+        }
+        
         Serial.println(F("Type determined: BEACON"));
     } else if (strncmp((char*)buffer, "PR", 2) == 0 && index >= 3) {
         type = "PRB";  // Probe discovery packet
@@ -279,7 +308,7 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
                     Serial.println(sendDateTime);
                 }
             } else if (strcmp(fieldType, "GP") == 0) {
-                // GPS data (GP)
+                // GPS data (GP) — store as-is for RANGE/other uses
                 if (fieldLength > 0) {  // Ensure some data is available for GPS
                     char gpsStr[fieldLength + 1];  // +1 for null terminator
                     strncpy(gpsStr, (char*)(buffer + fieldStart), fieldLength);
@@ -288,8 +317,28 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
                     Serial.print(F("GPS data (GP) determined: "));
                     Serial.println(gpsData);
                 }
+                
+                // For beacon packets, also parse ~GP as lat,lon for distance calc
+                if (type == "BEACON") {
+                    char gpStr[fieldLength + 1];
+                    strncpy(gpStr, (char*)(buffer + fieldStart), fieldLength);
+                    gpStr[fieldLength] = '\0';
+                    const char* comma = strchr(gpStr, ',');
+                    if (comma) {
+                        beacon_lat = atof(gpStr);
+                        beacon_lon = atof(comma + 1);
+                    }
+                }
+            } else if (strcmp(fieldType, "BT") == 0) {
+                // Beacon battery percentage
+                if (type == "BEACON") {
+                    char battStr[fieldLength + 1];
+                    strncpy(battStr, (char*)(buffer + fieldStart), fieldLength);
+                    battStr[fieldLength] = '\0';
+                    beacon_battery = (uint8_t)atoi(battStr);
+                }
             } else {
-                // Unknown field type, handle accordingly
+                // Unknown field type
                 Serial.print(F("Unknown field: "));
                 Serial.println(fieldType);
             }

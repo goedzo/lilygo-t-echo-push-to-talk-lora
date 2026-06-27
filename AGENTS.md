@@ -4,7 +4,7 @@
 
 | Directory | What it is |
 |---|---|
-| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino CLI. 13 source modules (+ crash_debug.h, utilities.h). Audio is phone-only — device relays Opus frames via BLE ↔ LoRa. |
+| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino CLI. 14 source modules (+ crash_debug.h, utilities.h). Audio is phone-only — device relays Opus frames via BLE ↔ LoRa. |
 | `cordova_app/PTTLora/` | Android companion app built with **Cordova** (`cordova-android 13`). BLE plugin only. Build: `02_build_project.bat`. Output APK at `cordova_app/pttlora.apk`. GATT service UUID `"1235"`, char UUID `"ABCE"`. |
 | `lilygo_lora32_keyboard_bridge/main/` | Separate **bridge firmware** for a LilyGO LoRa32 board (ESP32-based) — relays BLE ↔ LoRa. Independent from the main firmware, but uses similar patterns. |
 | `libraries/` | Vendored Arduino libraries. 19 libs on disk (RadioLib, GxEPD2, Codec2, TinyGPSPlus, Adafruit-GFX-Library, etc.). Must be copied to Arduino's `libraries/` directory when building outside this repo. See `libraries/AGENTS.md` for full inventory. |
@@ -26,7 +26,7 @@ arduino-cli core install adafruit:nrf52@1.7.0
 arduino-cli lib install "RadioLib GxEPD2 AceButton TinyGPSPlus"
 ```
 
-Verified: **~30% flash, ~8% RAM** (release build including crash_debug).
+Verified: **~28% flash, ~16% RAM** (release build including crash_debug + text inbox).
 
 **Prerequisites**: Arduino CLI at `D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe` or in PATH. Adafruit nRF52 core 1.7.0 via `core update-index`.
 
@@ -54,6 +54,7 @@ The project has a stale `platformio.ini` reference but **PlatformIO cannot build
 | `main/battery.cpp/.h` | Battery monitoring |
 | `main/gps.cpp/.h` | GPS parsing (TinyGPSPlus) |
 | `main/packet.cpp/.h` | Packet framing by mode |
+| `main/text_inbox.cpp/.h` | Scrollable message inbox in RTC RAM (8 messages × 256 bytes, 0x200075C0) |
 | `main/scan.cpp/.h` | Frequency scanner / OTA |
 | `main/crash_debug.h` | HardFault recorder, stack guard, debug log buffer, heap tracker |
 | `main/utilities.h` | Pin definitions (VERSION_1 commented out) |
@@ -183,7 +184,7 @@ When the user requests a durable behavior change, record it here or in the relev
 
 | Path | Scope |
 |---|---|
-| `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, 7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT) — 14 source modules + crash_debug.h |
+| `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, 8 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT) — 15 source modules + crash_debug.h |
 | `build_scripts/AGENTS.md` | Arduino CLI build/upload/CI scripts (primary automation path; PlatformIO not functional) |
 | `cordova_app/AGENTS.md` | Android companion app (Cordova android 13 + BLE plugin, GATT `"1235"` / `"ABCE"`) |
 | `lilygo_lora32_keyboard_bridge/AGENTS.md` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) — independent codebase |

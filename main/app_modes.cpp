@@ -8,12 +8,13 @@
 #include "settings.h"
 #include "app_modes.h"
 #include "packet.h"
+#include "text_inbox.h"
 #include "scan.h"
 
 using namespace ace_button;
 
 // Define an array of mode names as strings
-const char* modes[] = { "RAW","TXT", "RANGE", "TST","PONG","SCAN","PTT"};
+const char* modes[] = { "BEACON","RAW","TXT", "RANGE", "TST","PONG","SCAN","PTT"};
 const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 0;
 const char* current_mode=modes[modeIndex];
@@ -43,6 +44,11 @@ int rcv_test_message_counter=0;
 static char txt_reassemble_buf[TXT_MULTI_MAX_MSG_LEN];
 static uint8_t txt_reassemble_expected, txt_reassemble_recv_count;
 static uint32_t txt_reassemble_timer;
+
+// TXT Mode Inbox display state
+uint8_t  txtInboxScrollPage = 0;
+uint8_t  txtInboxMsgCount = 0;
+bool     txtShowInbox = false;
 
 // Range Test vars
 bool range_role_sender=false;
@@ -101,7 +107,7 @@ void updMode() {
     modeIndex = (modeIndex + 1) % numModes;
     current_mode=modes[modeIndex];
 
-    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" || current_mode=="PONG" || current_mode=="RANGE" || current_mode=="SCAN") {
+    if(current_mode=="TST" || current_mode=="RAW" || current_mode=="TXT" || current_mode=="PONG" || current_mode=="RANGE" || current_mode=="SCAN" || current_mode=="BEACON") {
         //We need to reinit the right radio
         setupLoRa();
     }
@@ -169,9 +175,14 @@ void handleAppModes() {
             sendTestMessage();
         } 
         else if (current_mode == "TXT") {
-            if(digitalRead(TOUCH_PIN) == LOW) {
-                //Maybe show text-input for keyboard entry?
-            }
+            // Show latest message or inbox scroll view
+            txtModeInboxDisplay();
+        }
+
+        // Mode-specific behavior for button actions
+        if (!in_settings_mode && current_mode == "TXT" && !txtShowInbox) {
+            // In single-message view, MODE click toggles to inbox view (only when not scrolling)
+            // This is handled in handleEvent() for proper timing with debounce
         }
         else if (current_mode == "RAW") {
             if(digitalRead(TOUCH_PIN) == LOW) {
@@ -216,6 +227,22 @@ void handleAppModes() {
 
             // Handle the SCAN mode
             handleFrequencyScan();  // Call the non-blocking scan function
+        }
+        
+        else if (current_mode == "BEACON") {
+            // Periodically broadcast our own beacon, display roster
+            static unsigned long lastBeaconSend = 0;
+            if (millis() - lastBeaconSend >= 23500) {  // Every ~23.5s (half of PEER_BEACON_INTERVAL)
+                lastBeaconSend = millis();
+                sendPeerBeacon();
+                
+                char buf[20];
+                snprintf(buf, sizeof(buf), "Beacon: %d", peerRosterCount);
+                updDisp(2, buf, true);
+            }
+            
+            // Display roster
+            beaconDisplayRoster(3);
         }    
     }
 }
@@ -252,7 +279,53 @@ void handlePacket(Packet packet) {
     } 
     else {
       // Parse the packet using the current channel configuration
-      if (current_mode == "RAW" || current_mode == "TST") {
+      if (current_mode == "BEACON" && packet.type == "BEACON") {
+          // BEACON mode: add peer to roster and display it
+          beaconAddOrUpdate(packet);
+          
+          char buf[30];
+          snprintf(buf, sizeof(buf), "%d peers", peerRosterCount);
+          updDisp(2, buf, true);
+          
+          // Display roster entries starting at line 3
+          int displayLine = 3;
+          int maxLines = (disp_height + disp_top_margin) / disp_font_height;
+          for (int i = 0; i < peerRosterCount && displayLine < maxLines; i++) {
+              float dist = peerRoster[i].distanceM;
+              snprintf(buf, sizeof(buf), "%s", peerRoster[i].deviceId.c_str());
+              
+              if (dist > 0 && dist < 1000) {
+                  char distBuf[20];
+                  snprintf(distBuf, sizeof(distBuf), " %.0fm", dist);
+                  strncat(buf, distBuf, sizeof(buf) - strlen(buf) - 1);
+              } else if (dist >= 1000) {
+                  char distBuf[20];
+                  snprintf(distBuf, sizeof(distBuf), " %.1fkm", dist / 1000.0);
+                  strncat(buf, distBuf, sizeof(buf) - strlen(buf) - 1);
+              } else if (gps_status != GPS_LOC) {
+                  strncat(buf, " ???m", sizeof(buf) - strlen(buf) - 1);
+              }
+              
+              // Battery
+              int batt = peerRoster[i].battery;
+              if (batt > 0) {
+                  char battBuf[12];
+                  snprintf(battBuf, sizeof(battBuf), " %d%%", batt);
+                  strncat(buf, battBuf, sizeof(buf) - strlen(buf) - 1);
+              } else {
+                  strncat(buf, " -%", sizeof(buf) - strlen(buf) - 1);
+              }
+              
+              updDisp(displayLine, buf, true);
+              displayLine++;
+          }
+          
+          // Clear remaining lines
+          for (int i = displayLine; i < maxLines && i < 20; i++) {
+              updDisp(i, "", false);
+          }
+      }
+      else if (current_mode == "RAW" || current_mode == "TST") {
           //Cool of period to allow receiving of messages because of switching from sent to receive takes time
           sendTestMessageTimer = millis();
 
@@ -302,8 +375,30 @@ void handlePacket(Packet packet) {
       }
       else if (current_mode == "TXT" && packet.type == "TXT") {
           if(packet.channel== channels[deviceSettings.channel_idx]) {
-              //This is actually meant for my channel
+              // Store in inbox and display latest
+              extern const char* bleGetDeviceIdShort();
+              inboxStore(bleGetDeviceIdShort(), 8, (const uint8_t*)packet.content.c_str(), packet.content.length());
+              
               updDisp(4, packet.content.c_str(), true);
+              // Display GPS coordinates and timestamp below the message text
+              if (packet.gpsData.length() > 0) {
+                  char gps_display[32];
+                  snprintf(gps_display, sizeof(gps_display), "GPS: %s", packet.gpsData.c_str());
+                  updDisp(5, gps_display, false);
+              } else {
+                  updDisp(5, "No GPS data", false);
+              }
+              if (packet.sendDateTime.length() > 0) {
+                  char dt_display[32];
+                  snprintf(dt_display, sizeof(dt_display), "%s-%s-%s %s:%s:%s",
+                           packet.sendDateTime.substring(0,4).c_str(),
+                           packet.sendDateTime.substring(4,6).c_str(),
+                           packet.sendDateTime.substring(6,8).c_str(),
+                           packet.sendDateTime.substring(8,10).c_str(),
+                           packet.sendDateTime.substring(10,12).c_str(),
+                           packet.sendDateTime.substring(12,14).c_str());
+                  updDisp(6, dt_display, false);
+              }
           }
           updModeAndChannelDisplay();
       }
@@ -342,9 +437,14 @@ void handlePacket(Packet packet) {
                       updDisp(4, status, true);
 
                       if (txt_reassemble_recv_count == txt_reassemble_expected) {
-                          // All chunks received — display full message
+                          // All chunks received — store full message in inbox and display
+                          extern const char* bleGetDeviceIdShort();
+                          inboxStore(bleGetDeviceIdShort(), 8, (const uint8_t*)txt_reassemble_buf, strlen(txt_reassemble_buf));
+                          
                           updDisp(5, txt_reassemble_buf, true);
                           updDisp(6, "Full", true);
+                          txtShowInbox = false;
+                          txtInboxScrollPage = 0;
                       }
                   } else {
                       updDisp(3, "Overflow", true);
@@ -570,8 +670,11 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
             if (in_settings_mode) {
                 // Cycle through different settings when in settings mode
                 cycleSettings();
+            } else if (!strcmp(current_mode, "TXT") && txtInboxMsgCount > 0) {
+                // In TXT mode with messages: toggle between inbox view and single-message view
+                txtModeToggleInboxView();
             } else {
-                // Single click cycles through modes
+                // Single click cycles through modes (default behavior)
                 updMode();
             }
         }
@@ -695,10 +798,22 @@ void sendTxtMessage(const char* message) {
     int msgLen = strlen(message);
     char display_msg[64];
 
+    // Auto-attach GPS coordinates and timestamp to TXT messages
+    bool hasGPS = (gps_status == GPS_LOC);
+
     if (msgLen <= TXT_CHUNK_SIZE) {
         // Short message — send as a single packet (no chunking needed)
-        char send_pkt_buf[TXT_CHUNK_SIZE + 16];
-        snprintf(send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s", channels[deviceSettings.channel_idx], message);
+        // Format: TX{channel}~GP{lat},{lon}~ST{datetime}message or TX{channel}message
+        char send_pkt_buf[TXT_CHUNK_SIZE + 16 + 80];
+        if (hasGPS) {
+            snprintf(send_pkt_buf, sizeof(send_pkt_buf), "TX%c~GP%.6f,%.6f~ST%s%s",
+                     channels[deviceSettings.channel_idx],
+                     gps_latitude, gps_longitude,
+                     getFormattedDateTime().c_str(), message);
+        } else {
+            snprintf(send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s", channels[deviceSettings.channel_idx], message);
+        }
+
         snprintf(display_msg, sizeof(display_msg), "Sent: %s", message);
         updDisp(2, display_msg, true);
 
@@ -729,10 +844,17 @@ void sendTxtMessage(const char* message) {
             int remaining = msgLen - offset;
             int chunkLen = (remaining < TXT_CHUNK_SIZE) ? remaining : TXT_CHUNK_SIZE;
 
-            // Format: TXM{channel}{seq}/{total}~{content}
+            // Format: TXM{channel}{seq}/{total}~GP{lat},{lon}~ST{datetime}~{content}
             char send_pkt_buf[MAX_PACKET_SIZE];
-            snprintf(send_pkt_buf, sizeof(send_pkt_buf), "TXM%c%d/%d~",
-                     channels[deviceSettings.channel_idx], i + 1, numChunks);
+            if (hasGPS) {
+                snprintf(send_pkt_buf, sizeof(send_pkt_buf), "TXM%c%d/%d~GP%.6f,%.6f~ST%s~",
+                         channels[deviceSettings.channel_idx], i + 1, numChunks,
+                         gps_latitude, gps_longitude,
+                         getFormattedDateTime().c_str());
+            } else {
+                snprintf(send_pkt_buf, sizeof(send_pkt_buf), "TXM%c%d/%d~",
+                         channels[deviceSettings.channel_idx], i + 1, numChunks);
+            }
 
             // Append chunk content after the header
             memcpy(send_pkt_buf + strlen(send_pkt_buf), message + offset, chunkLen);
@@ -786,4 +908,95 @@ void turnoffLed(){
     digitalWrite(GreenLed_Pin, HIGH);
     digitalWrite(RedLed_Pin, HIGH);
     digitalWrite(BlueLed_Pin, HIGH);
+}
+
+// ============================================================
+// Text Inbox — TXT mode display and navigation
+// ============================================================
+
+void txtModeInboxDisplay() {
+    uint8_t msg_count = inboxCount();
+    if (msg_count == 0) {
+        // No messages in inbox
+        updDisp(2, "No messages yet", true);
+        updDisp(3, "Wait for TXT mode", false);
+        updDisp(4, "messages on this", false);
+        updDisp(5, "channel.", false);
+        return;
+    }
+
+    txtInboxMsgCount = msg_count;
+
+    if (txtShowInbox) {
+        // Show inbox page with scrollable list
+        int lines_per_page = 16;  // rows 2-17
+        int total_pages = (msg_count + lines_per_page - 1) / lines_per_page;
+        
+        if (txtInboxScrollPage >= total_pages) {
+            txtInboxScrollPage = total_pages - 1;
+        }
+
+        updDisp(1, "Inbox:", true);
+        
+        // Show page header on row 2
+        char page_header[32];
+        snprintf(page_header, sizeof(page_header), "P %d/%d (%d msgs)", 
+                 txtInboxScrollPage + 1, total_pages, msg_count);
+        updDisp(2, page_header, true);
+
+        // Clear the inbox display area
+        for (int i = 3; i < 19; i++) {
+            updDisp(i, "", false);
+        }
+
+        bool refresh = true;
+        inboxDisplayPage(txtInboxScrollPage * lines_per_page, &txtInboxScrollPage, refresh);
+    } else {
+        // Show latest message view with count indicator
+        char count_line[32];
+        snprintf(count_line, sizeof(count_line), "%d msg(s)", msg_count);
+        
+        // Row 1: "TXT" mode label + "Inbox" toggle hint
+        updDisp(1, "TXT Inbox", true);
+        
+        // Row 2: message count
+        updDisp(2, count_line, false);
+        
+        // Clear remaining lines
+        for (int i = 3; i < 19; i++) {
+            updDisp(i, "", false);
+        }
+
+        // Show latest message preview at row 3
+        inboxShowLatest(3);
+    }
+}
+
+void txtModeToggleInboxView() {
+    txtShowInbox = !txtShowInbox;
+    
+    // If scrolling in inbox mode, adjust page on toggle
+    if (txtShowInbox) {
+        int lines_per_page = 16;
+        if (txtInboxScrollPage == 0 && txtInboxMsgCount > 1) {
+            // Jump to last page when switching from single view
+            txtInboxScrollPage = (txtInboxMsgCount + lines_per_page - 1) / lines_per_page - 1;
+        } else if (!txtShowInbox) {
+            txtInboxScrollPage = 0;
+        }
+    }
+    
+    // Redisplay after toggle
+    txtModeInboxDisplay();
+}
+
+void txtModeClearInbox() {
+    inboxClear();
+    txtInboxScrollPage = 0;
+    txtInboxMsgCount = 0;
+    txtShowInbox = false;
+    updDisp(2, "Inbox cleared", true);
+    delay(1000);
+    // Refresh to show empty state
+    txtModeInboxDisplay();
 }

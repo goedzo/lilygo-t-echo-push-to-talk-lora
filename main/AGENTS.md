@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT) — 14 source modules + crash_debug.h. Audio is entirely handled by the phone app; the T-Echo relays Opus frames via BLE ↔ LoRa only.
+Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 8 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT) — 15 source modules + crash_debug.h. Audio is entirely handled by the phone app; the T-Echo relays Opus frames via BLE ↔ LoRa only.
 
 ## Ownership
 
@@ -10,6 +10,7 @@ Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 7 modes: RAW, TXT, RAN
 - **Mode logic:** `main/app_modes.cpp/.h`
 - **Radio:** `main/lora.cpp/.h`
 - **Display:** `main/display.cpp/.h` (GxDEPG0150BN 1.54" e-paper, GxEPD2)
+- **Text Inbox:** `main/text_inbox.cpp/.h` — Scrollable message inbox stored in RTC RAM (8 messages × 256 bytes, address 0x200075C0) with sender/timestamp. 16-line scroll display on E-Paper. Auto-stored on incoming TXT/TXT_MULTI packets
 - **BLE GATT:** `main/ble.cpp/.h` — relays Opus frames from phone → LoRa, and received LoRa audio → phone via BLE notify (binary)
 - **Packet framing:** `main/packet.cpp/.h`
 - **BLE GATT:** `main/ble.cpp/.h`
@@ -50,19 +51,21 @@ arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/
 
 ### Mode logic (`app_modes`)
 
-Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; on-device keyboard stubbed), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — Opus frames relayed from phone via BLE GATT to LoRa). Button/AceButton handles double-click for SF adjustment and long-press for power-off.
+Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; inbox with scrollable message history on-device), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — Opus frames relayed from phone via BLE GATT to LoRa), BEACON (peer roster — broadcasts GPS/battery beacon, displays list of detected peers with distances and battery levels). Button/AceButton handles double-click for SF adjustment and long-press for power-off. MODE click in TXT mode toggles inbox/single-message view.
 
 ### Packet framing by mode
 
 | Mode | Header | Payload |
 |---|---|---|
-| TXT | `TX{channel}{message}` | ASCII text string |
+| BEACON | `B{id_short}~GP{lat},{lon}~BT{pct}` or `B{id_short}~BT{pct}` (no GPS) | Device ID + lat/lon/battery (peer roster via distanceBetween) |
+| TXT | `TX{channel}{message}` or `TXM{channel}{seq}/{total}~{chunk}` | ASCII text string (auto-stored in RTC RAM inbox) |
 | TST | `test{n}` (via sendTxtMessage) | Counter-incremented test string |
 | RANGE | `RN{channel}test{n}` | Position + distance data (`isRangeMessage()` check) |
 | PONG | `Ping!` | Static string, triggers pong response loop |
 | PTT | `{P}{channel_bitrate_idx_raw audio_bytes}` | Phone-encoded Opus frames relayed via BLE ↔ LoRa |
 | RAW | Passthrough | All received bytes displayed as hex if non-printable |
 | SCAN | N/A | Measures RSSI/SNR only, no custom packets |
+
 
 ### Button behavior (all modes)
 

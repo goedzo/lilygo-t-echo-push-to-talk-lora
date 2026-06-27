@@ -29,4 +29,13 @@ void turnoffLed();
 void printRangeStatus();
 void switchMode(String receivedMode);
 void sendTxtMessage(const char* message);
+
+// Text inbox display state (TXT mode)
+extern uint8_t  txtInboxScrollPage;
+extern uint8_t  txtInboxMsgCount;
+extern bool     txtShowInbox;       // true = showing inbox, false = showing single latest
+void txtModeInboxDisplay();
+void txtModeToggleInboxView();
+void txtModeClearInbox();
+
 #endif
