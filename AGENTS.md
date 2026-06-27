@@ -2,20 +2,17 @@
 
 ## Architecture at a glance
 
-Three codebases live in this repo:
-
 | Directory | What it is |
 |---|---|
-| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino IDE or PlatformIO (see build instructions below). |
-| `cordova_app/PTTLora/` | Android companion app built with **Cordova** (`cordova-android 13`). BLE plugin only. Build: `02_build_project.bat` (Windows) or `cordova build android`. Output APK copied to `cordova_app/pttlora.apk`. |
-| `lilygo_lora32_keyboard_bridge/main/` | Separate **bridge firmware** for a LilyGO LoRa32 board — relays BLE ↔ LoRa. Independent from the main firmware, but uses similar patterns. |
-| `libraries/` | Vendored Arduino libraries (RadioLib, GxEPD2, Codec2, TinyGPSPlus, Adafruit-GFX-Library, etc.). Must be copied to Arduino's `libraries` directory when building outside this repo. 19 libraries present; see `libraries/AGENTS.md` for the full inventory and known gaps. |
+| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino CLI. 14 source modules (+ crash_debug.h, utilities.h). |
+| `cordova_app/PTTLora/` | Android companion app built with **Cordova** (`cordova-android 13`). BLE plugin only. Build: `02_build_project.bat`. Output APK at `cordova_app/pttlora.apk`. GATT service UUID `"1235"`, char UUID `"ABCE"`. |
+| `lilygo_lora32_keyboard_bridge/main/` | Separate **bridge firmware** for a LilyGO LoRa32 board (ESP32-based) — relays BLE ↔ LoRa. Independent from the main firmware, but uses similar patterns. |
+| `libraries/` | Vendored Arduino libraries. 19 libs on disk (RadioLib, GxEPD2, Codec2, TinyGPSPlus, Adafruit-GFX-Library, etc.). Must be copied to Arduino's `libraries/` directory when building outside this repo. See `libraries/AGENTS.md` for full inventory. |
+| `build_scripts/` | Arduino CLI automation: `01_build_firmware.bat`, `02_upload_firmware.bat`, `03_ci_pipeline.bat`. |
 
 ## Firmware build / flash
 
-### Arduino CLI (primary — full automation)
-
-Used for all CI/CD, command-line builds, and deployment. Verified working: **zero errors, 27% flash, 8% RAM**.
+### Arduino CLI (primary — only working path)
 
 ```bash
 # Build
@@ -29,101 +26,67 @@ arduino-cli core install adafruit:nrf52@1.7.0
 arduino-cli lib install "RadioLib GxEPD2 AceButton Codec2 TinyGPSPlus"
 ```
 
-Windows batch scripts in `build_scripts/`:
-| Script | Purpose |
-|---|---|
-| `01_build_firmware.bat` | Full build with dependency check |
-| `02_upload_firmware.bat` | DFU upload to T-Echo |
-| `03_ci_pipeline.bat` | Build > Verify > Flash pipeline |
+Verified: **~30% flash, ~8% RAM** (release build including crash_debug).
 
-**Prerequisites**: Arduino CLI is bundled with Arduino IDE (path: `D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe`) or standalone. Adafruit nRF52 core 1.7.0 installed via `core update-index`.
+**Prerequisites**: Arduino CLI at `D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe` or in PATH. Adafruit nRF52 core 1.7.0 via `core update-index`.
 
-### PlatformIO / VSCode (NOT recommended)
+### PlatformIO — NOT functional
 
-The project has a `platformio.ini` at the repo root but **BLE compilation fails** due to a known incompatibility between PlatformIO's Nordic nRF52 v10+ framework and Bluefruit52Lib. Use Arduino CLI instead for automation.
+The project has a stale `platformio.ini` reference but **PlatformIO cannot build this firmware**. BLE compilation fails due to Nordic nRF52 v10+ framework / Bluefruit52Lib incompatibility. Use Arduino CLI only.
 
-### Build gotchas (Arduino CLI)
+### Build gotchas
 
-- The display is a **GxDEPG0150BN** 1.54" e-paper (not GxEPD2 stock). `display.cpp` includes a vendored header from `epd/GxEPD2_150_BN.h`. If this file changes, update both `main.ino` and `display.cpp` accordingly.
-- Pin definitions differ between **VERSION_1** (commented out in `utilities.h`) and the default revision. Check which hardware revision you have before changing pin assignments.
-- **DFU upload**: Double-click the T-Echo reset button to enter DFU mode, then upload via USB (`arduino-cli upload -b adafruit:nrf52:feather52840 --port auto main.bin`).
-- The bootloader is Adafruit_nRF52_Arduino's default. Using nRF5-SDK will overwrite it — do not mix toolchains without restoring the bootloader first.
-
-### PlatformIO configuration details (reference only)
-
-| Setting | Value |
-|---|---|
-| Platform | `nordicnrf52@8.0.1` |
-| Board | `adafruit_feather_nrf52840` |
-| Framework | `arduino` |
-| Upload | `nrfutil` (DFU) |
-| Monitor speed | `115200` |
-
-Libraries linked via `-I` include paths to `libraries/`. Source filter includes `main/lib/src` for RadioLib.
-
-### PlatformIO environments
-
-| Environment | Purpose |
-|---|---|
-| `t-echo` | Release build (optimized) |
-| `t-echo-debug` | Debug build (`-O0 -g3`) |
+- Display is **GxDEPG0150BN** 1.54" e-paper (not GxEPD2 stock). Vendored header: `epd/GxEPD2_150_BN.h`.
+- Pin definitions differ between **VERSION_1** (commented out in `utilities.h`) and the default revision. Active pins: ePaper_Miso=P1.6, LoRa_Dio0=P0.22, GreenLed=P1.1, RedLed=P1.3, BlueLed=P0.14.
+- **DFU upload**: Double-click T-Echo reset button to enter DFU mode, then `arduino-cli upload -b adafruit:nrf52:feather52840 --port auto main.bin`.
+- nRF5-SDK overwrites Adafruit bootloader — do not mix toolchains without restoring bootloader first.
 
 ## Firmware codebase entrypoints
 
-- `main/main.ino` — setup/loop, board init, mode switch entry points
-- `main/app_modes.cpp` — core mode logic (7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT), button handling via AceButton
-- `main/lora.cpp` — SX1262 radio config with RadioLib, non-blocking transmit/receive queues
-- `main/display.cpp` — e-paper rendering (GxEP2), margin/font constants defined at top of file
-- `main/audio.cpp` — I2S capture/playback + Codec2 encode/decode
-- `main/settings.cpp` — DeviceSettings struct persisted to RTC (PCF8563)
-- `main/ble.cpp` — BLE GATT service for companion app communication
-- `main/battery.cpp` — Battery monitoring
-- `main/gps.cpp` — GPS parsing (TinyGPSPlus)
-- `main/packet.cpp` — Packet framing
-- `main/scan.cpp` — Scan/OTA
-- `main/crash_debug.h` — HardFault recorder, stack overflow guard, debug log buffer, heap tracker
+| File | Purpose |
+|---|---|
+| `main/main.ino` | setup/loop, board init, mode switch entry points |
+| `main/app_modes.cpp/.h` | Core mode logic (7 modes), AceButton handling |
+| `main/lora.cpp/.h` | SX1262 radio config with RadioLib, non-blocking TX/RX queues |
+| `main/display.cpp/.h` | E-paper rendering (GxEPD2 for GxDEPG0150BN) |
+| `main/audio.cpp/.h` | I2S capture/playback + Codec2 — **stubbed** (no onboard mic/speaker) |
+| `main/settings.cpp/.h` | DeviceSettings struct persisted to RTC via PCF8563 |
+| `main/ble.cpp/.h` | BLE GATT service for companion app (`"1235"` / `"ABCE"`) |
+| `main/battery.cpp/.h` | Battery monitoring |
+| `main/gps.cpp/.h` | GPS parsing (TinyGPSPlus) |
+| `main/packet.cpp/.h` | Packet framing by mode |
+| `main/scan.cpp/.h` | Frequency scanner / OTA |
+| `main/crash_debug.h` | HardFault recorder, stack guard, debug log buffer, heap tracker |
+| `main/utilities.h` | Pin definitions (VERSION_1 commented out) |
 
 ## Companion app build steps
 
 ```bash
 cd cordova_app
-# Create fresh project (skip if PTTLora already exists):
-01_create_project.bat
-# Build:
-02_build_project.bat
+01_create_project.bat    # one-time only; skip if PTTLora/ already exists
+02_build_project.bat     # produces pttlora.apk
 ```
 
-The app scans for `LilygoT-Echo-XXXXXXXX` BLE devices and sends/receives LoRa messages.
+The app scans for `LilygoT-Echo-XXXXXXXX` BLE devices and sends/receives LoRa messages over GATT.
 
-## Libraries to watch
+## Libraries to watch (19 on disk)
 
-Key vendored libraries in `libraries/`:
-- **RadioLib** — LoRa radio driver (SX1262)
-- **GxEPD2 + GxEPD** — E-paper display drivers
-- **Codec2** — Audio codec for PTT mode
-- **Adafruit_nRF52** (via Board Manager, not vendored) — nRF52840 core
-- **MCCI_LoRaWAN_LMIC_library** — LoRaWAN stack (may be used in future)
+RadioLib, GxEPD2, GxEPD, Codec2, TinyGPSPlus, Adafruit_EPD, Adafruit-GFX-Library, Adafruit_BusIO, Adafruit_Sensor, MPU9250-0.4.6, PCF8563_Library, AceButton, Button2, SdFat - Adafruit Fork, SoftSPI, Adafruit SPIFlash, Adafruit_BME280_Library, ICM20948_WE, SensorLib.
 
-## No test harness
+Full inventory: `libraries/AGENTS.md`. Do not edit vendored libraries — fork upstream or vendor a patched copy.
 
-This repo has **no automated tests**. Verification is done by:
-1. Compiling firmware in Arduino IDE or PlatformIO
-2. Flashing to physical T-Echo hardware
-3. Testing BLE connection from the companion APK
+## No automated tests
+
+Verification path: 1) Build firmware via Arduino CLI (zero errors) → 2) Flash to T-Echo → 3) Test BLE + LoRa on hardware.
 
 ## Existing conventions
 
-- `#pragma once` for header guards; no include-style guards
-- CamelCase function names, camelCase variables (mixed with some uppercase defines)
-- Global state is declared as `extern` in headers, defined in .cpp files
-- The firmware uses `SerialMon` (alias for `Serial`) for debug output at 115200 baud
-- `updDisp()` calls throughout firmware update the e-paper display; they are display-layer helpers
-
+- `#pragma once` header guards; CamelCase functions, camelCase variables
+- Global state: `extern` in headers, defined in .cpp files
+- Debug output: `SerialMon` at 115200 baud
+- Display updates via `updDisp()` calls from app_modes or other modules that change state
 
 # DOX framework
-
-- DOX is highly performant AGENTS.md hierarchy installed here
-- Agent must follow DOX instructions across any edits
 
 ## Core Contract
 
@@ -207,7 +170,7 @@ If **any** file in `main/` was added, modified, deleted, or renamed:
 2. **Upload:** If the build succeeds, run `build_scripts\02_upload_firmware.bat` with a **5-minute (300s) timeout**
    - Ensures the T-Echo enters DFU mode and the binary flashes without hanging.
 3. **Validate output:** Confirm both steps completed successfully:
-   - Build output shows zero errors and reports flash/RAM usage (~27% / ~8%)
+   - Build output shows zero errors and reports flash/RAM usage (~30% / ~8%)
    - Upload completes without error (device receives the new firmware)
    - If upload times out or fails, note the failure — do **not** mark the task as complete.
 
@@ -221,8 +184,8 @@ When the user requests a durable behavior change, record it here or in the relev
 
 | Path | Scope |
 |---|---|
-| `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, 7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT) |
-| `build_scripts/AGENTS.md` | Arduino CLI build/upload/CI scripts (primary automation path) |
-| `cordova_app/AGENTS.md` | Android companion app (Cordova + BLE plugin) |
-| `lilygo_lora32_keyboard_bridge/AGENTS.md` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) |
-| `libraries/AGENTS.md` | Vendored Arduino libraries (RadioLib, GxEPD2, Codec2, TinyGPSPlus, etc.) — 19 libs on disk, see doc for known gaps |
+| `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, 7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT) — 14 source modules + crash_debug.h |
+| `build_scripts/AGENTS.md` | Arduino CLI build/upload/CI scripts (primary automation path; PlatformIO not functional) |
+| `cordova_app/AGENTS.md` | Android companion app (Cordova android 13 + BLE plugin, GATT `"1235"` / `"ABCE"`) |
+| `lilygo_lora32_keyboard_bridge/AGENTS.md` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) — independent codebase |
+| `libraries/AGENTS.md` | Vendored Arduino libraries — 19 libs on disk, full inventory in that doc |

@@ -10,7 +10,7 @@ Takes care of the T-Echo firmware: `main/` directory. The core device that runs 
 - **Mode logic:** `main/app_modes.cpp/.h`
 - **Radio:** `main/lora.cpp/.h`
 - **Display:** `main/display.cpp/.h` (GxDEPG0150BN 1.54" e-paper, GxEPD2)
-- **Audio:** `main/audio.cpp/.h` (I2S + Codec2)
+- **Audio:** `main/audio.cpp/.h` (I2S + Codec2 — stubbed)
 - **BLE GATT:** `main/ble.cpp/.h`
 - **Settings (RTC):** `main/settings.cpp/.h` (PCF8563)
 - **GPS:** `main/gps.cpp/.h` (TinyGPSPlus)
@@ -22,32 +22,22 @@ Takes care of the T-Echo firmware: `main/` directory. The core device that runs 
 
 ## Local Contracts
 
-- Board: `Nordic nRF52840 (PCA10056)`, target `adafruit_feather_nrf52840_s2`
-- **VERSION_1 pin definitions are commented out** in `utilities.h` — default revision is active with ePaper_Miso=P1.6, LoRa_Dio0=P0.22, GreenLed_Pin=P1.1, RedLed_Pin=P1.3, BlueLed_Pin=P0.14
-- Compile via Arduino IDE or PlatformIO (see build instructions below)
+- Board: nRF52840 (LilyGO T-Echo PCA10056) targeting `adafruit:nrf52:feather52840`
+- **Default revision is active** — VERSION_1 pins are commented out in `utilities.h`
+- Active pins: ePaper_Miso=P1.6, LoRa_Dio0=P0.22, GreenLed_Pin=P1.1, RedLed_Pin=P1.3, BlueLed_Pin=P0.14
+- Compile via **Arduino CLI only** — PlatformIO is not functional for this firmware
 - Debug output: `SerialMon` at 115200 baud
 - Display updates: call `updDisp()` from app_modes or other modules that change state
 - Header guards: `#pragma once`
 
-### Build instructions
+### Build instructions (Arduino CLI)
 
-**Arduino CLI (primary — full automation):**
 ```bash
 arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main
 arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin
 ```
 
-**Arduino IDE:**
-1. Install `Adafruit nRF52` board package via Board Manager URL in Preferences
-2. Select board: `Adafruit Feather nRF52840 Express`
-3. Copy all folders from `libraries/` into your Arduino `libraries` directory
-4. Open `main/main.ino`, verify, upload
-
-**PlatformIO (NOT recommended):** BLE does not compile with PlatformIO's Nordic nRF52 v10+ due to Bluefruit52Lib/SDK config incompatibility. Use Arduino CLI instead.
-
-The project includes a `platformio.ini` at the repo root with two environments: `t-echo` (release) and `t-echo-debug`. All vendored libraries are referenced via `-I` include paths. Build uses `build_src_filter` to also compile RadioLib source from `main/lib/src`.
-
-**No platformio.ini found on disk** — documentation is stale. PlatformIO is not functional; use Arduino CLI.
+**No platformio.ini exists on disk** — any references are stale. Use Arduino CLI only.
 
 ## Build Gotchas
 
@@ -59,14 +49,14 @@ The project includes a `platformio.ini` at the repo root with two environments: 
 
 ### Mode logic (`app_modes`)
 
-Seven modes: RAW (raw packet dump), TXT (text messages — input stubbed), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — audio disabled). Button/AceButton handles double-click for SF adjustment and long-press for power-off.
+Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; on-device keyboard stubbed), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — audio disabled). Button/AceButton handles double-click for SF adjustment and long-press for power-off.
 
 ### Packet framing by mode
 
 | Mode | Header | Payload |
 |---|---|---|
 | TXT | `TX{channel}{message}` | ASCII text string |
-| TST | `test{n}` (via `sendTxtMessage`) | Counter-incremented test string |
+| TST | `test{n}` (via sendTxtMessage) | Counter-incremented test string |
 | RANGE | `RN{channel}test{n}` | Position + distance data (`isRangeMessage()` check) |
 | PONG | `Ping!` | Static string, triggers pong response loop |
 | PTT | `{P}{channel_bitrate_idx_raw audio_bytes}` | Codec2-encoded audio frames (audio stubbed) |
@@ -83,13 +73,16 @@ Seven modes: RAW (raw packet dump), TXT (text messages — input stubbed), RANGE
 | TOUCH (P0.11) — Hold >5s | Power off | Shuts down peripherals → System OFF via softdevice or NRF_POWER |
 
 ### Radio (`lora`)
+
 SX1262 via RadioLib. Non-blocking TX/RX queues. Spread factor adjustable via double-click. Packet counter synchronization across devices.
 
 ### Audio (`audio`)
+
 I2S capture/playback is **disabled** — T-Echo has no onboard audio hardware. `capAudio()` and `playAudio()` are stubbed empty functions. PTT mode packet framing exists but cannot transmit or play audio without external codec hardware (e.g., PCM1270).
 
 ### BLE (`ble`)
-GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-XXXXXXXX`. BLE service UUID: `"1235"`, characteristic UUID: `"ABCE"` (simple string identifiers, not 128-bit standard UUIDs).
+
+GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-XXXXXXXX`. GATT service UUID: `"1235"`, characteristic UUID: `"ABCE"` (simple string identifiers, not 128-bit standard UUIDs). Sends mode commands (`switchMode()`) and text messages (`"SENDTXT:{message}"`).
 
 ## Crash Debug Infrastructure (`crash_debug.h`)
 
@@ -115,6 +108,4 @@ Usage: call `dbgLog("[mod] msg")` in critical paths. On crash, full register dum
 
 ## Child DOX Index
 
-| Path | Scope |
-|---|---|
-| `build_scripts/` | Arduino CLI build/upload/CI scripts (`01_build_firmware.bat`, `02_upload_firmware.bat`, `03_ci_pipeline.bat`) |
+None — this directory is managed by parent `AGENTS.md`.

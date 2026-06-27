@@ -28,11 +28,13 @@ Takes care of all vendored Arduino libraries in `libraries/`. These third-party 
 | `ICM20948_WE` | IMU sensor support |
 | `SensorLib` | General sensor library |
 
+**Total: 19 libraries on disk.**
+
 ## Local Contracts
 
 - **Do not edit vendored libraries.** If a library needs changes, fork it upstream or vendor a patched copy.
 - Libraries must be copied to Arduino's `libraries` directory before building.
-- Run instructions in `libraries/copy to arduino_libraries.txt` for setup.
+- There is no `copy to arduino_libraries.txt` file — users should manually copy all folders.
 
 ## Work Guidance
 

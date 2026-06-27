@@ -10,7 +10,6 @@ Takes care of the independent bridge firmware: `lilygo_lora32_keyboard_bridge/ma
 - **BLE logic:** `main/ble.cpp/.h`, `main/bluetooth.cpp/.h`
 - **Display:** `main/display.cpp/.h` (e-paper)
 - **Utility/pins:** `main/utility.cpp/.h`, `main/utilities.h`, `main/globals.h`
-- **Archive:** `main/main_old.cpp.old`
 
 ## Local Contracts
 

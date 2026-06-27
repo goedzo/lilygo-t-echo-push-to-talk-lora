@@ -186,7 +186,9 @@ bool extractSDField(const uint8_t* buffer, uint16_t bufferSize, String& outDateT
     return false;
 }
 
-// Automatically sync local RTC from received packet if time not yet set via GPS
+// Automatically sync local RTC from received packet timestamp when GPS has
+// not yet provided a fix — attempts to use the parsed sendDateTime field,
+// falling back to raw SD field extraction if the packet type lacks it.
 void autoSyncRTCFromPacket(const Packet& packet) {
     if (!packet.sendDateTime.length()) {
         // Try raw extraction as fallback (for non-standard packet types)

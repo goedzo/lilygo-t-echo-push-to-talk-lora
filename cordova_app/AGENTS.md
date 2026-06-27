@@ -21,6 +21,7 @@ Takes care of the Android companion app: `cordova_app/PTTLora/`. A Cordova-based
 - Then run `02_build_project.bat` or `cordova build android`
 - BLE plugin only (no other native features)
 - Device discovery: scans for `LilygoT-Echo-XXXXXXXX` MAC-prefixed BLE devices
+- GATT service UUID: `"1235"`, characteristic UUID: `"ABCE"` (non-standard simple string identifiers)
 
 ## Work Guidance
 
@@ -32,7 +33,7 @@ Takes care of the Android companion app: `cordova_app/PTTLora/`. A Cordova-based
 
 ### Development notes
 - Android-only target (cordova-android 13)
-- BLE communication with the T-Echo uses custom GATT service UUIDs
+- BLE communication with the T-Echo uses custom GATT service UUIDs (`"1235"` / `"ABCE"`)
 - LoRa message relay between phone and device
 
 ## Verification

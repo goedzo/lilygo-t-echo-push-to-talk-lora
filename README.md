@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa communication on a LilyGO T-Echo board with an NRF52840 microcontroller. The device supports **7 operating modes** via single/double/long-press button combinations, with an e-paper display for status and message rendering.
+This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa communication on a LilyGO T-Echo board with an nRF52840 microcontroller. The device supports **7 operating modes** via single/double/long-press button combinations, with an e-paper display for status and message rendering.
 
 ## Modes
 
@@ -18,7 +18,7 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 
 ## Features
 
-- **LoRa Communication**: Enables long-range, low-power communication between devices using the SX1262 LoRa module.
+- **LoRa Communication**: Long-range, low-power communication between devices using the SX1262 LoRa module.
 - **PTT Mode**: Push-to-talk voice mode with Codec2 audio encoding. **I2S audio capture/playback is currently stubbed** (no onboard microphone/speaker on T-Echo); PTT packet framing exists for external codec hardware.
 - **TXT Mode**: Send/receive text messages over LoRa (input via BLE companion app).
 - **RAW Mode**: Displays raw data packets received over LoRa with SNR, RSSI, and receive count.
@@ -26,193 +26,157 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 - **RANGE Mode**: Distance testing with GPS — sender/receiver roles track stable range, max range, and packet loss.
 - **PONG Mode**: Manual ping-pong for latency testing (touch to send "Ping!").
 - **SCAN Mode**: Frequency scanner that ranks the top 10 channels by quality score.
-- **E-Paper Display**: Displays current mode, messages, and other relevant information on an e-paper display.
+- **E-Paper Display**: GxDEPG0150BN 1.54" e-paper display showing current mode, messages, and status.
 - **Power-Off Function**: Hold the action button for 5 seconds to power off the device.
-- **Double-Click Action Button**: Quickly adjust the spreading factor (SF) using double-click. (Note: documented as "SPF" in some places, correct term is SF — Spreading Factor.)
+- **Double-Click Spreading Factor**: Quickly adjust the LoRa spreading factor (SF) using double-click on MODE button.
 - **Battery Support**: Includes monitoring and display of battery status.
-- **Non-Blocking Send & Receive**: Improved performance through non-blocking packet transmission and reception.
-- **Packet Counter Synchronization**: Keeps track of the number of packets sent and received, improving communication reliability.
+- **Non-Blocking Send & Receive**: Non-blocking packet transmission and reception queues.
+- **Packet Counter Synchronization**: Keeps track of the number of packets sent and received.
+- **Crash Diagnostics**: HardFault handler with register dump, stack guard, debug log buffer, and heap tracker (`main/crash_debug.h`).
+
+## Codebase Structure
+
+| Directory | What it is |
+|---|---|
+| `main/` | T-Echo firmware (nRF52840, SX1262, BLE, 7 modes) — Arduino sketch (.ino + .cpp/.h files) |
+| `cordova_app/PTTLora/` | Android companion app (Cordova + BLE plugin). Build APK → `cordova_app/pttlora.apk` |
+| `lilygo_lora32_keyboard_bridge/main/` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) — independent from main firmware |
+| `libraries/` | Vendored Arduino libraries (19 libs) — copied to Arduino `libraries/` when building outside repo |
+| `build_scripts/` | Arduino CLI automation: `01_build_firmware.bat`, `02_upload_firmware.bat`, `03_ci_pipeline.bat` |
 
 ## Hardware Requirements
 
-- **Microcontroller**: LilyGO T-Echo with NRF52840
+- **Microcontroller**: LilyGO T-Echo with nRF52840
 - **LoRa Module**: SX1262
-- **E-Paper Display**: GxEPD2 1.54" e-paper display or similar
-- **Buttons**: Two buttons (MODE on P1.10, TOUCH on P0.11) — mode switching, button actions per mode
-- **Audio Components**: Codec2 library included but I2S hardware is stubbed (no onboard mic/speaker). External audio codec required for PTT functionality.
-- **OTG Cable**: For connecting the microcontroller to an Android device (if using an Android development environment)
-- **Battery**: For mobile operation, with support for battery status monitoring
+- **E-Paper Display**: GxDEPG0150BN 1.54" e-paper (not stock GxEPD2)
+- **Buttons**: MODE on P1.10, TOUCH on P0.11
+- **Audio**: External codec hardware required for PTT (T-Echo has no onboard mic/speaker); PCM1270 via I2S recommended
+- **Battery**: For mobile operation with battery status monitoring
 
-## Software Requirements
+## Firmware Build & Flash
 
-- **Arduino IDE** (or **Arduino Studio** on Android)
-- **Adafruit nRF52 Board Package**
-- **Required Libraries**:
-  - AceButton
-  - Adafruit_BME280_Library
-  - Adafruit_BusIO
-  - Adafruit_EPD
-  - Adafruit_GFX_Library
-  - Adafruit_Sensor
-  - Adafruit_Unified_Sensor
-  - Button2
-  - Codec2
-  - GxEPD
-  - GxEPD2
-  - MCCI_LoRaWAN_LMIC_library
-  - MPU9250
-  - PCF8563_Library
-  - RadioLib
-  - SdFat_-_Adafruit_Fork
-  - SerialFlash
-  - SoftSPI
-  - SoftSPIB
-  - TinyGPSPlus
+### Arduino CLI (primary build tool)
 
-## Setup Instructions
+```bash
+# Build
+arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main
 
-### Using Arduino IDE
+# Upload (T-Echo in DFU mode — double-click reset button first)
+arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin
 
-1. **Download and Install Arduino IDE**:
-   - Download the latest version of the Arduino IDE from the [official website](https://www.arduino.cc/en/software).
+# Install dependencies
+arduino-cli core install adafruit:nrf52@1.7.0
+arduino-cli lib install "RadioLib GxEPD2 AceButton Codec2 TinyGPSPlus"
+```
 
-2. **Configure Board Manager**:
-   - Open Arduino IDE, then navigate to `File > Preferences`.
-   - In the "Additional Boards Manager URLs" field, add the following URL:
-     ```
-     https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
-     ```
-   - Click "OK" to save the preferences.
+Verified build output: **~30% flash, ~8% RAM** (release build with crash_debug).
 
-3. **Install the Adafruit nRF52 Board Package**:
-   - Go to `Tools > Board > Boards Manager`.
-   - Search for "Adafruit nRF52" and click "Install" next to "Adafruit nRF52 by Adafruit".
-   - After installation, select `Nordic nRF52840 (PCA10056)` from the board list.
+### Prerequisites
 
-4. **Copy Required Libraries**:
-   - Copy all the folders from the `libraries` directory in this project to your Arduino libraries directory:
-     ```
-     C:\Users\<YourName>\Documents\Arduino\libraries
-     ```
-   - The required libraries include:
-     - AceButton
-     - Adafruit_BME280_Library
-     - Adafruit_BusIO
-     - Adafruit_EPD
-     - Adafruit_GFX_Library
-     - Adafruit_Sensor
-     - Adafruit_Unified_Sensor
-     - Button2
-     - Codec2
-     - GxEPD
-     - GxEPD2
-     - MCCI_LoRaWAN_LMIC_library
-     - MPU9250
-     - PCF8563_Library
-     - RadioLib
-     - SdFat_-_Adafruit_Fork
-     - SerialFlash
-     - SoftSPI
-     - SoftSPIB
-     - TinyGPSPlus
-     - SPI.h (usually pre-installed with Arduino IDE)
-     - Wire.h (usually pre-installed with Arduino IDE)
+- Arduino IDE installed at `D:\Tools\Arduino IDE` or standalone `arduino-cli.exe` in PATH
+- Adafruit nRF52 core 1.7.0 (`arduino-cli core install adafruit:nrf52@1.7.0`)
+- All vendored libraries from `libraries/` copied to Arduino's `libraries/` directory
 
-5. **Connect the T-Echo Board**:
-   - Connect your T-Echo board to your computer via USB.
-   - In the Arduino IDE, go to `Tools > Port` and select the port corresponding to your board.
+### Build gotchas
 
-6. **Upload the Code**:
-   - Open the project sketch in Arduino IDE.
-   - Click the upload button to compile and upload the code to your T-Echo board.
-
-### Using PlatformIO
-
-1. **Install VSCode and Python**:
-   - Download and install [Visual Studio Code (VSCode)](https://code.visualstudio.com/) and [Python](https://www.python.org/downloads/).
-
-2. **Install PlatformIO**:
-   - Open VSCode and go to the Extensions view by clicking on the square icon on the left sidebar.
-   - Search for "PlatformIO IDE" and install the extension.
-
-3. **Open the Project**:
-   - Open the T-Echo project folder in VSCode by going to `File > Open Folder`.
-
-4. **Compile and Upload**:
-   - On the PlatformIO home page, click the checkmark (√) in the lower left corner to compile the project.
-   - Click the arrow (→) to upload the firmware to the T-Echo board.
-
-5. **DFU Mode (for USB Upload)**:
-   - If you are uploading firmware via USB (`upload_protocol = nrfutil`), double-click the reset button on the T-Echo to enter DFU mode before uploading.
-
-### Precautions
-
-- **Library Files**: Ensure that the files in the `libraries` directory are correctly placed in your Arduino libraries directory, as they include crucial dependencies.
-- **Pin Compatibility**: The T-Echo pin assignments may not be directly compatible with the official SDK. Pay special attention to pin definitions if using the nRF5-SDK.
-- **Bootloader**: The T-Echo comes with the Adafruit_nRF52_Arduino bootloader pre-installed. Programming the board with the nRF5-SDK will overwrite this bootloader.
-- **NFC Functionality**: NFC is not supported in the Adafruit_nRF52_Arduino environment; use the nRF5-SDK if NFC functionality is required.
-- **Flash Memory**: The T-Echo may use either the MX25R1635FZUIL0 or ZD25WQ16B flash memory chip. Be aware of the differences when programming.
-- **Burning a New Bootloader**: If you need to restore the bootloader, refer to the official documentation on burning a new bootloader.
+- E-paper is **GxDEPG0150BN**. Vendored header: `epd/GxEPD2_150_BN.h`. Update both `main.ino` and `display.cpp` if this changes.
+- DFU upload: double-click the T-Echo reset button to enter DFU mode before uploading.
+- The bootloader is Adafruit_nRF52_Arduino's default. **nRF5-SDK overwrites it** — do not mix toolchains without restoring bootloader first.
+- **PlatformIO is NOT functional** for this project. BLE compilation fails due to Bluefruit52Lib/SoftDevice SDK incompatibility with Nordic nRF52 v10+ framework.
 
 ## Code Overview
 
-### `main.cpp`
-The main entry point of the program. Initializes all peripherals and handles the main loop, switching between modes.
+### Firmware entrypoints (`main/`)
 
-### `display.cpp`
-Manages the e-paper display, including rendering icons and text. Handles mode-specific display updates.
+| File | Purpose |
+|---|---|
+| `main.ino` | setup/loop, board init, mode switch entry points |
+| `app_modes.cpp/.h` | Core mode logic (7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT), button handling via AceButton |
+| `lora.cpp/.h` | SX1262 radio config with RadioLib, non-blocking TX/RX queues |
+| `display.cpp/.h` | E-paper rendering (GxEPD2) for GxDEPG0150BN |
+| `audio.cpp/.h` | I2S capture/playback + Codec2 encode/decode — **stubbed** (no onboard audio hardware) |
+| `settings.cpp/.h` | DeviceSettings struct persisted to RTC via PCF8563 |
+| `ble.cpp/.h` | BLE GATT service for companion app communication |
+| `battery.cpp/.h` | Battery monitoring |
+| `gps.cpp/.h` | GPS parsing (TinyGPSPlus) |
+| `packet.cpp/.h` | Packet framing by mode |
+| `scan.cpp/.h` | Frequency scanner / OTA |
+| `crash_debug.h` | HardFault recorder, stack overflow guard, debug log buffer, heap tracker |
+| `utilities.h` | Pin definitions (VERSION_1 is commented out; default revision active) |
 
-### `lora.cpp`
-Configures and controls the LoRa communication module, including setting power and current limits.
+### BLE companion app (`cordova_app/PTTLora/`)
 
-### `audio.cpp`
-**Audio capture/playback is disabled.** T-Echo has no onboard microphone or speaker. Both `capAudio()` and `playAudio()` are empty stubs. PTT mode packet framing exists (`PTT` type with Codec2-encoded frames) but cannot transmit or play audio without external codec hardware (e.g., PCM1270 via I2S).
+- Cordova Android project with BLE plugin (`cordova-android 13`, `cordova-plugin-ble-central ^1.7.8`)
+- Scans for `LilygoT-Echo-XXXXXXXX` MAC-prefixed BLE devices
+- GATT service UUID: `"1235"`, characteristic UUID: `"ABCE"` (non-standard identifiers)
+- Sends mode commands (`switchMode()`) and text messages (`"SENDTXT:{message}"`)
+- Build: `01_create_project.bat` → `02_build_project.bat` → `cordova_app/pttlora.apk`
 
-### `settings.cpp`
-Manages user settings, including mode switching and configuration adjustments. Refactored to store settings in a `DeviceSettings` struct.
+### Packet framing by mode
 
-### `app_modes.cpp`
-Implements the core logic for all 7 operational modes (RAW, TXT, RANGE, TST, PONG, SCAN, PTT). Uses an array of mode strings and AceButton library for button handling. Includes `sendTestMessage()` (auto every 5s), `sendRangeMessage()`, `sendTxtMessage()`, `powerOff()` (System OFF via softdevice or NRF_POWER), and debounced touch press detection. Packet reception is routed per-mode: RAW/TST display SNR/RSSI/counters, TXT shows text, RANGE tracks distance/packet loss, PONG responds with ping loop, PTT decodes Codec2 audio. Audio I2S functions (`capAudio`, `playAudio`) are stubbed — PTT requires external hardware.
+| Mode | Header / Format | Payload |
+|---|---|---|
+| TXT | `TX{channel}` | ASCII text string |
+| TST | test{n} | Counter-incremented test string |
+| RANGE | `RN{channel}` | Position + distance data (`isRangeMessage()` check) |
+| PONG | Ping! | Static string, triggers pong response loop |
+| PTT | `{P}{channel_bitrate_idx_raw audio_bytes}` | Codec2-encoded audio frames (audio stubbed) |
+| RAW | Passthrough | All received bytes displayed as hex if non-printable |
+| SCAN | N/A | Measures RSSI/SNR only, no custom packets |
 
-## License
+### Button behavior (all modes)
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+| Button | Action | Effect |
+|---|---|---|
+| MODE (P1.10) — Single click | Cycle to next mode | Wraps around through all 7 |
+| MODE — Double click | Next spreading factor | Reinitializes LoRa with new SF |
+| MODE — Long press | Enter/exit settings mode | Cycles device settings |
+| TOUCH (P0.11) — Hold >5s | Power off | Shuts down peripherals → System OFF via softdevice or NRF_POWER |
 
-## Acknowledgements
+## Vendored Libraries (`libraries/`)
 
-- **Adafruit** for providing robust hardware and software libraries for the NRF52840.
-- **RadioLib** for comprehensive LoRa communication support.
-- **Codec2** for the open-source audio codec.
-- **LilyGO** for the T-Echo hardware platform.
+19 libraries on disk:
+
+- **RadioLib** — LoRa radio driver (SX1262)
+- **GxEPD2** + **GxEPD** — E-paper display drivers
+- **Codec2** — Audio codec for PTT voice
+- **TinyGPSPlus** — GPS parsing
+- **Adafruit-EPD**, **Adafruit-GFX-Library**, **Adafruit_BusIO**, **Adafruit_Sensor** — Graphics/display stack
+- **Adafruit_BME280_Library** — BME280 sensor driver
+- **Adafruit SPIFlash** — SPI flash filesystem
+- **MPU9250-0.4.6** — IMU support (versioned folder)
+- **ICM20948_WE** — IMU sensor support
+- **SensorLib** — General sensor library
+- **PCF8563_Library** — RTC for settings persistence
+- **AceButton**, **Button2** — Button handling
+- **SdFat - Adafruit Fork** — SD card filesystem
+- **SoftSPI** — Software SPI
+
+> Libraries must be copied to Arduino's `libraries/` directory before building. Do not edit vendored libraries — fork upstream or vendor a patched copy.
+
+## No Automated Tests
+
+Verification is done by:
+1. Compiling firmware (Arduino CLI)
+2. Flashing to physical T-Echo hardware
+3. Testing BLE connection from companion APK
 
 ## Troubleshooting
 
-If you encounter any issues:
-
-- **Ensure all libraries are correctly installed and up to date**.
-- **Verify wiring connections**, particularly for SPI and I2S peripherals.
-- **Check the serial monitor for debugging messages** during setup and operation.
-- **Consult the documentation** for the respective libraries and hardware modules.
-- **DFU Mode**: If the board does not appear to respond when trying to upload new firmware, double-click the reset button to enter DFU mode and try uploading again.
-
-For further assistance, feel free to open an issue in the repository or contact the project maintainers.
-
-## Additional Notes
-
-- **NFC Functionality**: The NFC feature is not supported when using the Adafruit_nRF52_Arduino environment. To use NFC, you must switch to using the nRF5-SDK. Be aware that doing so will overwrite the pre-installed bootloader on your T-Echo.
-- **Flash Memory Variants**: The T-Echo board may come with either the MX25R1635FZUIL0 or ZD25WQ16B flash memory chip. Ensure you account for the specific chip variant in your code if flash memory is used.
-- **Using nRF5-SDK**: If you intend to use the nRF5-SDK, remember to check the pin configurations and manage the bootloader accordingly. Instructions for burning a new bootloader can be found in the official T-Echo documentation.
+- **All libraries installed**: Ensure every folder in `libraries/` is present in Arduino's `libraries/` directory.
+- **DFU mode**: If the board does not respond during upload, double-click the reset button to enter DFU mode and retry.
+- **Serial debugging**: Check serial monitor at 115200 baud for `SerialMon` debug output.
+- **Bootloader conflicts**: nRF5-SDK overwrites Adafruit bootloader — restore it before using Arduino toolchain again.
+- **Flash variants**: T-Echo may ship with MX25R1635FZUIL0 or ZD25WQ16B flash memory chip.
+- **NFC**: Not supported in Adafruit_nRF52_Arduino environment; use nRF5-SDK if NFC is required (will overwrite bootloader).
 
 ## Related Resources
 
-- **T-Echo Official Documentation**: Visit the [T-Echo GitHub repository](https://github.com/Xinyuan-LilyGO/LilyGo-T-Echo) for detailed hardware documentation and additional resources.
-- **Adafruit nRF52 Libraries**: The [Adafruit GitHub repository](https://github.com/adafruit/Adafruit_nRF52_Arduino) contains the official libraries and tools for working with the nRF52 series.
-- **Codec2 Documentation**: Learn more about the [Codec2 audio codec](https://www.rowetel.com/?page_id=452) used in this project.
-
-## Contributing
-
-Contributions are welcome! If you find a bug or want to add a new feature, feel free to open an issue or submit a pull request. Please ensure your code adheres to the project's coding standards.
+- [LilyGO T-Echo](https://github.com/Xinyuan-LilyGO/LilyGo-T-Echo) — Hardware documentation
+- [Adafruit nRF52 Arduino](https://github.com/adafruit/Adafruit_nRF52_Arduino) — Board package and libraries
+- [Codec2](https://www.rowetel.com/?page_id=452) — Audio codec documentation
+- [RadioLib](https://github.com/jgromes/RadioLib) — LoRa radio driver
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
