@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Takes care of the T-Echo firmware: `main/` directory. The core device that runs 7 modes (RAW, TXT, RANGE, TST, PONG, SCAN, PTT) on nRF52840 with SX1262 LoRa, e-paper display, BLE GATT, audio (Codec2 — stubbed), GPS, battery monitoring, and button input.
+Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 7 modes: RAW, TXT, RANGE, TST, PONG, SCAN, PTT) — 14 source modules + crash_debug.h. Audio is entirely handled by the phone app; the T-Echo relays Opus frames via BLE ↔ LoRa only.
 
 ## Ownership
 
@@ -10,7 +10,8 @@ Takes care of the T-Echo firmware: `main/` directory. The core device that runs 
 - **Mode logic:** `main/app_modes.cpp/.h`
 - **Radio:** `main/lora.cpp/.h`
 - **Display:** `main/display.cpp/.h` (GxDEPG0150BN 1.54" e-paper, GxEPD2)
-- **Audio:** `main/audio.cpp/.h` (I2S + Codec2 — stubbed)
+- **BLE GATT:** `main/ble.cpp/.h` — relays Opus frames from phone → LoRa, and received LoRa audio → phone via BLE notify (binary)
+- **Packet framing:** `main/packet.cpp/.h`
 - **BLE GATT:** `main/ble.cpp/.h`
 - **Settings (RTC):** `main/settings.cpp/.h` (PCF8563)
 - **GPS:** `main/gps.cpp/.h` (TinyGPSPlus)
@@ -49,7 +50,7 @@ arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/
 
 ### Mode logic (`app_modes`)
 
-Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; on-device keyboard stubbed), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — audio disabled). Button/AceButton handles double-click for SF adjustment and long-press for power-off.
+Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; on-device keyboard stubbed), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — Opus frames relayed from phone via BLE GATT to LoRa). Button/AceButton handles double-click for SF adjustment and long-press for power-off.
 
 ### Packet framing by mode
 
@@ -59,7 +60,7 @@ Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; on
 | TST | `test{n}` (via sendTxtMessage) | Counter-incremented test string |
 | RANGE | `RN{channel}test{n}` | Position + distance data (`isRangeMessage()` check) |
 | PONG | `Ping!` | Static string, triggers pong response loop |
-| PTT | `{P}{channel_bitrate_idx_raw audio_bytes}` | Codec2-encoded audio frames (audio stubbed) |
+| PTT | `{P}{channel_bitrate_idx_raw audio_bytes}` | Phone-encoded Opus frames relayed via BLE ↔ LoRa |
 | RAW | Passthrough | All received bytes displayed as hex if non-printable |
 | SCAN | N/A | Measures RSSI/SNR only, no custom packets |
 
@@ -78,7 +79,7 @@ SX1262 via RadioLib. Non-blocking TX/RX queues. Spread factor adjustable via dou
 
 ### Audio (`audio`)
 
-I2S capture/playback is **disabled** — T-Echo has no onboard audio hardware. `capAudio()` and `playAudio()` are stubbed empty functions. PTT mode packet framing exists but cannot transmit or play audio without external codec hardware (e.g., PCM1270).
+Audio is **phone-only** — the T-Echo has no onboard mic/speaker. The device's role in PTT mode is to relay Opus frames: phone captures audio → encodes Opus → sends via BLE GATT → T-Echo transmits over LoRa; and vice versa for received audio.
 
 ### BLE (`ble`)
 

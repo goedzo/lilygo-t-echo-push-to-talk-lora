@@ -31,7 +31,6 @@
 #include "settings.h"
 #include "app_modes.h"
 #include "lora.h"
-#include "audio.h"
 #include "ble.h"
 
 // GPS SoftwareSerial on P1.8 (TX) / P1.9 (RX)

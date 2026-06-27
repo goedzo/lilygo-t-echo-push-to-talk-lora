@@ -4,7 +4,7 @@
 
 | Directory | What it is |
 |---|---|
-| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino CLI. 14 source modules (+ crash_debug.h, utilities.h). |
+| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino CLI. 13 source modules (+ crash_debug.h, utilities.h). Audio is phone-only — device relays Opus frames via BLE ↔ LoRa. |
 | `cordova_app/PTTLora/` | Android companion app built with **Cordova** (`cordova-android 13`). BLE plugin only. Build: `02_build_project.bat`. Output APK at `cordova_app/pttlora.apk`. GATT service UUID `"1235"`, char UUID `"ABCE"`. |
 | `lilygo_lora32_keyboard_bridge/main/` | Separate **bridge firmware** for a LilyGO LoRa32 board (ESP32-based) — relays BLE ↔ LoRa. Independent from the main firmware, but uses similar patterns. |
 | `libraries/` | Vendored Arduino libraries. 19 libs on disk (RadioLib, GxEPD2, Codec2, TinyGPSPlus, Adafruit-GFX-Library, etc.). Must be copied to Arduino's `libraries/` directory when building outside this repo. See `libraries/AGENTS.md` for full inventory. |
@@ -23,7 +23,7 @@ arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/
 
 # Install dependencies
 arduino-cli core install adafruit:nrf52@1.7.0
-arduino-cli lib install "RadioLib GxEPD2 AceButton Codec2 TinyGPSPlus"
+arduino-cli lib install "RadioLib GxEPD2 AceButton TinyGPSPlus"
 ```
 
 Verified: **~30% flash, ~8% RAM** (release build including crash_debug).
@@ -49,7 +49,6 @@ The project has a stale `platformio.ini` reference but **PlatformIO cannot build
 | `main/app_modes.cpp/.h` | Core mode logic (7 modes), AceButton handling |
 | `main/lora.cpp/.h` | SX1262 radio config with RadioLib, non-blocking TX/RX queues |
 | `main/display.cpp/.h` | E-paper rendering (GxEPD2 for GxDEPG0150BN) |
-| `main/audio.cpp/.h` | I2S capture/playback + Codec2 — **stubbed** (no onboard mic/speaker) |
 | `main/settings.cpp/.h` | DeviceSettings struct persisted to RTC via PCF8563 |
 | `main/ble.cpp/.h` | BLE GATT service for companion app (`"1235"` / `"ABCE"`) |
 | `main/battery.cpp/.h` | Battery monitoring |
@@ -71,7 +70,7 @@ The app scans for `LilygoT-Echo-XXXXXXXX` BLE devices and sends/receives LoRa me
 
 ## Libraries to watch (19 on disk)
 
-RadioLib, GxEPD2, GxEPD, Codec2, TinyGPSPlus, Adafruit_EPD, Adafruit-GFX-Library, Adafruit_BusIO, Adafruit_Sensor, MPU9250-0.4.6, PCF8563_Library, AceButton, Button2, SdFat - Adafruit Fork, SoftSPI, Adafruit SPIFlash, Adafruit_BME280_Library, ICM20948_WE, SensorLib.
+RadioLib, GxEPD2, GxEPD, TinyGPSPlus, Adafruit_EPD, Adafruit-GFX-Library, Adafruit_BusIO, Adafruit_Sensor, MPU9250-0.4.6, PCF8563_Library, AceButton, Button2, SdFat - Adafruit Fork, SoftSPI, Adafruit SPIFlash, Adafruit_BME280_Library, ICM20948_WE, SensorLib.
 
 Full inventory: `libraries/AGENTS.md`. Do not edit vendored libraries — fork upstream or vendor a patched copy.
 

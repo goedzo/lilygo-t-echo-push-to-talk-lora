@@ -1,7 +1,6 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
-#include <codec2.h>
 #include <stdint.h>
 #include <cstddef>
 #include <pcf8563.h>

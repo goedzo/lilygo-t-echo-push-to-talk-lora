@@ -1,12 +1,10 @@
 #include <AceButton.h>
-#include <codec2.h>
 #include <TinyGPS++.h>
 #include "utilities.h"
 
 #include "gps.h"
 #include "display.h"
 #include "lora.h"
-#include "audio.h"
 #include "settings.h"
 #include "app_modes.h"
 #include "packet.h"
@@ -32,8 +30,8 @@ short raw_buf[RAW_SIZE];
 //This buffer receives LORA messages
 //unsigned char rcv_pkt_buf[MAX_PKT];
 
-// Codec2 instance
-CODEC2* codec;
+
+
 
 // Test message counter
 int test_message_counter = 0;
@@ -621,7 +619,6 @@ void powerOff() {
 
     // Step 1: Shut down peripherals
     sleepLoRa();       // Put LoRa module to sleep
-    sleepAudio();      // Put audio subsystem to sleep (implement sleepAudio() for your specific setup)
     turnoffLed();      // Turn off the LED
     //sleepGPS();        // Put GPS to sleep if available
     // Add other peripheral shutdowns as needed
@@ -648,32 +645,8 @@ void powerOff() {
     // Note: The system will remain in this state until reset or a wake-up interrupt occurs.
 }
 
-void sendAudio() {
-    codec = codec2_create(bitrate_modes[deviceSettings.bitrate_idx]);
-    int bits_per_frame = codec2_bits_per_frame(codec);
-    int enc_size = (bits_per_frame + 7) / 8;
-    while (digitalRead(TOUCH_PIN) == LOW) {
-
-        unsigned char send_pkt_buf[MAX_PKT];
-        capAudio(raw_buf, RAW_SIZE);
-        codec2_encode(codec, send_pkt_buf, raw_buf);  
-
-        memmove(send_pkt_buf + 4, send_pkt_buf, enc_size); //Move the binary data 4 bytes, so the header can be added
-        send_pkt_buf[0] = 'P';
-        send_pkt_buf[1] = 'T';
-        send_pkt_buf[2] = channels[deviceSettings.channel_idx];  // Kanaal toevoegen
-        send_pkt_buf[3] = deviceSettings.bitrate_idx;  // Bitrate index toevoegen als byte
-        sendPacket(send_pkt_buf, enc_size + 4);
-        updDisp(1, "Transmitting...");
-        checkLoraPacketComplete(); // Allow receiving packets during transmission
-
-        //Allow buttonpresses
-        modeButton.check();
-        touchButton.check();
 
 
-    }
-}
 
 void sendRangeMessage() {
     if (millis() - sendTestMessageTimer > 5000 ) {
@@ -806,16 +779,8 @@ void updChannel() {
     updModeAndChannelDisplay();
 }
 
-void sleepAudio() {
-    // If using Codec2, disable or reset the codec instance
-    if (codec) {
-        codec2_destroy(codec);  // Release Codec2 resources
-        Serial.println(F("Audio codec is now disabled."));
-    }
 
-    // If using any DAC or external audio hardware, handle those here
-    // Example: pinMode(DAC_PIN, INPUT);  // Set DAC pin to a low-power state
-}
+
 
 void turnoffLed(){
     digitalWrite(GreenLed_Pin, HIGH);

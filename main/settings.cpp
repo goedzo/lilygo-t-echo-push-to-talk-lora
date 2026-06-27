@@ -106,8 +106,6 @@ char channels[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 uint8_t setting_idx = 0;
 bool in_settings_mode = false;
 
-const int bitrate_modes[] = {CODEC2_MODE_3200, CODEC2_MODE_2400, CODEC2_MODE_1600, CODEC2_MODE_1400, CODEC2_MODE_1200, CODEC2_MODE_700};
-const size_t num_bitrate_modes = sizeof(bitrate_modes) / sizeof(bitrate_modes[0]);
 
 void setupSettings() {
     SerialMon.println("[SETTINGS] >>> setupSettings() START");
