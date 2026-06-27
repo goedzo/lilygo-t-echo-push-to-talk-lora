@@ -13,13 +13,25 @@
 #include <time.h>  // For RTC time management
 #include <stdlib.h>  // For random number generation
 
-#define RETRANSMIT_BUFFER_SIZE 5
 #define RECEIVE_PACKET_QUEUE_SIZE 5
 #define SEND_PACKET_QUEUE_SIZE 10
+
+// NAK reliability globals — initialized in initNakReliability()
+PendingReq outstandingReqs[RETRANSMIT_BUFFER_SIZE];
+
+ReqDedupEntry recentReqs[8];
+
+unsigned long lastReqSendTime = 0;  // millis() of last outgoing REQ transmission
+
+bool nakInitialized = false;
+
+// Track counters we've already received — used to resolve outstanding REQs
+unsigned int packetsReceivedSinceLastCheck = 0;
 
 PacketQueue receivePacketQueue[RECEIVE_PACKET_QUEUE_SIZE];
 int receivePacketQueueCount = 0;
 
+// Fixed-size retransmit buffer (no heap allocation)
 PacketBuffer retransmitPacketBuffer[RETRANSMIT_BUFFER_SIZE];
 int bufferIndex = 0;
 
@@ -87,7 +99,7 @@ void sendPeerBeacon() {
 
 unsigned int messageCounter = 0;       // The counter I add to each message so that it can be tracket
 unsigned int lastReceivedCounter = 0;  // Global variable to store the last received packet counter
-uint8_t* lastMessageBuffer = nullptr;  // Buffer to store the last message sent
+uint8_t lastMessageBuffer[MAX_PACKET_SIZE];  // Fixed-size buffer for last message
 uint16_t lastMessageLength = 0;        // Length of the last message sent
 unsigned int lastMessageCounter=0;     // The packetCounter of the last message
 
@@ -305,24 +317,23 @@ void handleMapSharing() {
 }
 
 void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
-    if (receivePacketQueueCount < RECEIVE_PACKET_QUEUE_SIZE) {
-        receivePacketQueue[receivePacketQueueCount].packetData = new uint8_t[len];
-        memcpy(receivePacketQueue[receivePacketQueueCount].packetData, pkt_buf, len);
-        receivePacketQueue[receivePacketQueueCount].packetLen = len;
-        receivePacketQueue[receivePacketQueueCount].packetCounter = counter;
-        receivePacketQueueCount++;
-    } else {
+    if (receivePacketQueueCount >= RECEIVE_PACKET_QUEUE_SIZE) {
         Serial.println(F("Newer packet queue full, discarding packet."));
+        return;
     }
+    // Truncate to max size — no heap allocation needed
+    uint16_t safeLen = len > MAX_PACKET_SIZE ? MAX_PACKET_SIZE : len;
+    memcpy(receivePacketQueue[receivePacketQueueCount].packetData, pkt_buf, safeLen);
+    receivePacketQueue[receivePacketQueueCount].packetLen = safeLen;
+    receivePacketQueue[receivePacketQueueCount].packetCounter = counter;
+    receivePacketQueueCount++;
 }
 
 void processPacketQueue() {
     // Sort the packets by packetCounter (ascending order)
     for (int i = 0; i < receivePacketQueueCount - 1; i++) {
         for (int j = 0; j < receivePacketQueueCount - i - 1; j++) {
-            // Compare packet counters and swap if needed
             if (receivePacketQueue[j].packetCounter > receivePacketQueue[j + 1].packetCounter) {
-                // Swap the queue entries
                 PacketQueue temp = receivePacketQueue[j];
                 receivePacketQueue[j] = receivePacketQueue[j + 1];
                 receivePacketQueue[j + 1] = temp;
@@ -340,12 +351,8 @@ void processPacketQueue() {
             // Only process this queue when we have the next packet available
             unsigned int expectedPacketCounter = lastReceivedCounter + 1;
             if (packet.packetCounter == expectedPacketCounter) {
-                // Ok to process!
                 handlePacket(packet);  // Process the packet
-                // Set the last received counter to the actual packet number
                 lastReceivedCounter = packet.packetCounter;
-                // Free the memory after processing
-                delete[] receivePacketQueue[i].packetData;
             }
         }
     }
@@ -364,11 +371,9 @@ bool checkForMissingPackets(Packet& packet, uint8_t* rcv_pkt_buf, uint16_t packe
             lastReceivedCounter = packet.packetCounter;  // Skip to the newest packet
             return true;  // Continue processing since no retransmission request is needed
         } else {
-            // Request all missed packets sequentially
+            // Request all missed packets with spacing and dedup tracking
             for (unsigned int missedCounter = expectedPacketCounter; missedCounter < packet.packetCounter; missedCounter++) {
-                char requestBuf[50];
-                snprintf(requestBuf, sizeof(requestBuf), "REQ%d", missedCounter);  // Format the packet request
-                sendPacket((uint8_t*)requestBuf, strlen(requestBuf));
+                sendRetransmitRequest(missedCounter);
                 Serial.print(F("Requesting retransmission of packet: "));
                 Serial.println(missedCounter);
 
@@ -376,6 +381,12 @@ bool checkForMissingPackets(Packet& packet, uint8_t* rcv_pkt_buf, uint16_t packe
                 snprintf(buf, sizeof(buf), "Missed: %d", missedCounter);
                 showError(buf);
 
+                // Space out REQ transmissions — LoRa airtime + processing time between each REQ
+                unsigned long now = millis();
+                unsigned long timeSinceLastReq = now - lastReqSendTime;
+                if (timeSinceLastReq < REQ_PACKET_SPACING_MS) {
+                    delay(REQ_PACKET_SPACING_MS - timeSinceLastReq);
+                }
             }
             // Store the newer packet in the queue until all missing packets are received
             storePacketInQueue(rcv_pkt_buf, packet_len, packet.packetCounter);
@@ -416,9 +427,6 @@ void handleRetransmitRequestComplete() {
                     packetProcessed = true;
                 }
 
-                // Remove the packet from the queue and free memory
-                delete[] receivePacketQueue[i].packetData;
-
                 // Shift the remaining packets in the queue
                 for (int j = i; j < receivePacketQueueCount - 1; j++) {
                     receivePacketQueue[j] = receivePacketQueue[j + 1];
@@ -454,10 +462,10 @@ void checkLoraPacketComplete() {
             if (hopAfterTxRx) {
                 hopAfterTxRx = false;
                 setFrequency(hopToFrequency);  // Set the new frequency
-                if (lastMessageBuffer && lastMessageLength > 0) {
+                if (lastMessageLength > 0) {
                     delay(1000);  // Allow some deviation in other devices
                     Serial.println(F("Resending last message after frequency hop"));
-                    sendPacket(lastMessageBuffer, lastMessageLength,lastMessageCounter);
+                    sendPacket(lastMessageBuffer, lastMessageLength, lastMessageCounter);
                 }
             } else {
                 radio->startReceive();  // Start receiving after transmission
@@ -584,10 +592,18 @@ void checkLoraPacketComplete() {
                         }
 
                         // Check for missing packets and process if nothing is missing
-                        if (checkForMissingPackets(packet, rcv_pkt_buf, packet_len)) {
+                        bool gapResolved = checkForMissingPackets(packet, rcv_pkt_buf, packet_len);
+                        
+                        // Track received counter for NAK resolution
+                        markPacketReceived(packet.packetCounter);
+                        
+                        if (gapResolved) {
                             handlePacket(packet);
-                            //Also make sure we process saved messages.
+                            // Also process queued packets now that we have the next in sequence
                             processPacketQueue();
+                            
+                            // After processing a packet, check if it resolved any outstanding REQs
+                            checkOutstandingReqs(packet.packetCounter);
                         }
 
                         // Update quality of the current frequency
@@ -660,6 +676,15 @@ void checkLoraPacketComplete() {
     // Handle map sharing logic
     handleMapSharing();
 
+    // Periodically check outstanding REQs for retry / exhaustion
+    if (nakInitialized && lastReceivedCounter > 0) {
+        static unsigned long lastReqCheck = 0;
+        if (millis() - lastReqCheck >= 1500) {
+            checkOutstandingReqs(lastReceivedCounter);
+            lastReqCheck = millis();
+        }
+    }
+
     // Send peer beacon periodically (only when not in probe mode)
     if (!inProbeMode) {
         unsigned long currentTime = millis();
@@ -708,6 +733,11 @@ bool setupLoRa() {
     hopAfterTxRx=false;
     transmitFlag = false;
     operationDone = false;
+
+    // Initialize NAK reliability on first LoRa setup
+    if (!nakInitialized) {
+        initNakReliability();
+    }
 
     pinMode(LoRa_Cs, OUTPUT);
     digitalWrite(LoRa_Cs, HIGH);
@@ -775,22 +805,53 @@ String getFormattedDateTime() {
 }
 
 void storePacketInBuffer(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
-    // Free previous buffer data
-    if (retransmitPacketBuffer[bufferIndex].packetData) {
-        delete[] retransmitPacketBuffer[bufferIndex].packetData;
-    }
+    // Truncate to max size — no heap allocation needed
+    uint16_t safeLen = len > MAX_PACKET_SIZE ? MAX_PACKET_SIZE : len;
 
-    // Store new packet
-    retransmitPacketBuffer[bufferIndex].packetData = new uint8_t[len];
-    memcpy(retransmitPacketBuffer[bufferIndex].packetData, pkt_buf, len);
-    retransmitPacketBuffer[bufferIndex].packetLen = len;
+    // Free previous slot data is automatic now (static buffer)
+    
+    // Store new packet in fixed-size buffer
+    memcpy(retransmitPacketBuffer[bufferIndex].packetData, pkt_buf, safeLen);
+    retransmitPacketBuffer[bufferIndex].packetLen = safeLen;
     retransmitPacketBuffer[bufferIndex].messageCounter = counter;
+    retransmitPacketBuffer[bufferIndex].storedAt = millis();
+    retransmitPacketBuffer[bufferIndex].valid = true;
 
     bufferIndex = (bufferIndex + 1) % RETRANSMIT_BUFFER_SIZE;  // Circular increment
 }
 
 void handleRetransmitRequest(unsigned int requestedCounter) {
+    // Dedup: skip if we saw this REQ recently
+    for (int i = 0; i < 8; i++) {
+        if (recentReqs[i].counter == requestedCounter && 
+            (millis() - recentReqs[i].timeReceived) < REQ_DEDUP_WINDOW_MS) {
+            return;  // Already handling this one within dedup window
+        }
+    }
+
+    // Add to dedup table (find empty slot first)
+    int dedupSlot = -1;
+    for (int i = 0; i < 8; i++) {
+        if (!recentReqs[i].counter || (millis() - recentReqs[i].timeReceived) > REQ_DEDUP_WINDOW_MS) {
+            dedupSlot = i;
+            break;
+        }
+    }
+    if (dedupSlot >= 0) {
+        recentReqs[dedupSlot].counter = requestedCounter;
+        recentReqs[dedupSlot].timeReceived = millis();
+    }
+
+    // Look for the packet in buffer — reject stale entries
     for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
+        if (!retransmitPacketBuffer[i].valid) continue;
+        
+        unsigned long age = millis() - retransmitPacketBuffer[i].storedAt;
+        if (age > MAX_BUFFER_AGE_MS) {
+            retransmitPacketBuffer[i].valid = false;  // Discard stale entry
+            continue;
+        }
+        
         if (retransmitPacketBuffer[i].messageCounter == requestedCounter) {
             Serial.print(F("Resending packet with counter: "));
             Serial.println(requestedCounter);
@@ -826,45 +887,45 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverr
     strncpy(typeBuffer, (char*)pkt_buf, 3);  // Extract the first 3 characters (packet type)
     typeBuffer[3] = '\0';
 
-    // Construct the rest of the header starting after the packet type
-    String header = String(typeBuffer);  // Initialize with the packet type
-
-    // Add message counter with the "~PC" field
-    header += "~PC" + String(currentMessageCounter);  // Ensure 4 digits for messageCounter
-
-    // Add sendDateTime from RTC
-    header += "~SD" + getFormattedDateTime();  // Example: "20230921183045"
-
-    // Optionally add GPS data if available
-    /*
-    if (gpsDataAvailable()) {
-        header += "~GP" + getGPSData();  // Ensure GPS data is formatted properly (12 characters)
+    // Estimate max header size: "~PC123456789~SD20230921183045~~" = ~30 chars
+    char* send_pkt_buf;
+    
+    // Use stack buffer for small packets, heap only if payload exceeds max
+    uint16_t headerLen = 0;
+    char localBuf[MAX_PACKET_SIZE + 32];  // Header + packet data
+    
+    // Count type length to find where content starts (skip first 3 chars)
+    char* contentStart = (char*)(pkt_buf + 3);
+    uint16_t contentLen = len - 3;
+    
+    headerLen = snprintf(localBuf, sizeof(localBuf), "~PC%d~SD%s~~", currentMessageCounter, getFormattedDateTime().c_str());
+    
+    // Copy type prefix (first 3 chars)
+    memmove(localBuf, pkt_buf, 3);
+    
+    // Append rest of original content after header length offset
+    uint16_t newLen = headerLen + contentLen;
+    
+    if (newLen > MAX_PACKET_SIZE) {
+        // Fall back to heap for oversized packets (shouldn't happen in normal use)
+        send_pkt_buf = new char[newLen + 1];
+        memmove(send_pkt_buf, pkt_buf, 3);
+        snprintf(send_pkt_buf + 3, newLen - 2, "~PC%d~SD%s~~", currentMessageCounter, getFormattedDateTime().c_str());
+        memcpy(send_pkt_buf + headerLen, contentStart, contentLen);
+        send_pkt_buf[newLen] = '\0';
+    } else {
+        memmove(localBuf + 3, "~PC", 3);
+        snprintf(localBuf + 3, sizeof(localBuf) - 3, "~PC%d~SD%s~~", currentMessageCounter, getFormattedDateTime().c_str());
+        memcpy(localBuf + headerLen, contentStart, contentLen);
+        localBuf[newLen] = '\0';
+        send_pkt_buf = localBuf;
     }
-    */
 
-    header += "~~";  // Always end with ~~ before the actual content
-
-    // Calculate the new length (header + the remaining content after the first 3 characters)
-    uint16_t headerLen = header.length();
-    uint16_t newLen = headerLen + (len - 3);  // Total length minus the first 3 characters of pkt_buf
-
-    // Create a dynamically sized buffer for the new packet
-    char* send_pkt_buf = new char[newLen + 1];  // +1 for null terminator
-
-    // Copy the header into the new buffer
-    strcpy(send_pkt_buf, header.c_str());
-
-    // Append the rest of the original content (after the first 3 characters)
-    memcpy(send_pkt_buf + headerLen, pkt_buf + 3, len - 3);
-    send_pkt_buf[newLen] = '\0';  // Null-terminate the packet
-
-    // Store the last message
-    if (lastMessageBuffer) {
-        delete[] lastMessageBuffer;  // Free the previous buffer
-    }
-    lastMessageBuffer = new uint8_t[newLen];
-    memcpy(lastMessageBuffer, send_pkt_buf, newLen);
-    lastMessageLength = newLen;
+    // Store the last message for retransmit after frequency hop
+    static uint8_t lastMsgBuffer[MAX_PACKET_SIZE];
+    uint16_t copyLen = (newLen > MAX_PACKET_SIZE) ? MAX_PACKET_SIZE : newLen;
+    memcpy(lastMsgBuffer, send_pkt_buf, copyLen);
+    lastMessageLength = copyLen;
     lastMessageCounter = currentMessageCounter;
 
     // Get time-on-air for logging
@@ -875,7 +936,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverr
     Serial.println(send_pkt_buf);
 
     //In case we need to resent, store it in the buffer
-    storePacketInBuffer((uint8_t*)pkt_buf, newLen, currentMessageCounter);  // Store in buffer in case we need to resend
+    storePacketInBuffer((uint8_t*)send_pkt_buf, newLen, currentMessageCounter);  // Store in buffer in case we need to resend
 
     // Start the transmission
     int state = radio->startTransmit((uint8_t*)send_pkt_buf, newLen);
@@ -890,8 +951,10 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverr
         setupLoRa();  // Reinitialize the radio
     }
 
-    // Free the dynamically allocated buffer
-    delete[] send_pkt_buf;
+    // Free heap fallback buffer if we used it
+    if (newLen > MAX_PACKET_SIZE) {
+        delete[] send_pkt_buf;
+    }
 }
 
 
@@ -1000,21 +1063,21 @@ bool isQueueEmpty() {
     return queueHead == queueTail;
 }
 
-// Function to enqueue a packet
+// Function to enqueue a packet — fixed-size buffer, no heap allocation
 void enqueuePacket(uint8_t* pkt_buf, uint16_t len) {
     if (isQueueFull()) {
         Serial.println(F("Packet queue full, dropping packet"));
         return;
     }
     
-    packetQueue[queueTail].packetData = new uint8_t[len];
-    memcpy(packetQueue[queueTail].packetData, pkt_buf, len);
-    packetQueue[queueTail].packetLen = len;
+    uint16_t safeLen = len > MAX_PACKET_SIZE ? MAX_PACKET_SIZE : len;
+    memcpy(packetQueue[queueTail].packetData, pkt_buf, safeLen);
+    packetQueue[queueTail].packetLen = safeLen;
     queueTail = (queueTail + 1) % SEND_PACKET_QUEUE_SIZE;
 }
 
 
-// Function to dequeue the next packet
+// Function to dequeue the next packet — copies into caller-provided buffer
 bool dequeuePacket(uint8_t*& pkt_buf, uint16_t& len) {
     if (isQueueEmpty()) {
         return false;
@@ -1022,14 +1085,7 @@ bool dequeuePacket(uint8_t*& pkt_buf, uint16_t& len) {
 
     // Get the packet data and length
     len = packetQueue[queueHead].packetLen;
-
-    // Allocate new memory for the dequeued packet
-    pkt_buf = new uint8_t[len];
-    memcpy(pkt_buf, packetQueue[queueHead].packetData, len);  // Copy the packet data
-
-    // Now it is safe to free the original memory in the queue
-    delete[] packetQueue[queueHead].packetData;
-    packetQueue[queueHead].packetData = nullptr;
+    pkt_buf = packetQueue[queueHead].packetData;  // Return pointer to static buffer slot
 
     // Move to the next item in the queue
     queueHead = (queueHead + 1) % SEND_PACKET_QUEUE_SIZE;
@@ -1049,11 +1105,165 @@ void handleTransmissionComplete() {
         Serial.println(F("Sending next packet from queue"));
         sendPacket(nextPacketData, nextPacketLen);
 
-        // After sending the packet, free the memory allocated for the packet data
-        delete[] nextPacketData;
+        // no heap free needed — buffer is static
     } else {
         // Packet queue is empty
         //Serial.println(F("Packet queue is empty"));
+    }
+}
+
+
+// ============================================================
+// NAK reliability helpers
+// ============================================================
+
+// Initialize the NAK reliability system — call once in setup()
+void initNakReliability() {
+    for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
+        outstandingReqs[i].counter = 0;
+        outstandingReqs[i].attempts = 0;
+        outstandingReqs[i].resolved = false;
+    }
+    for (int i = 0; i < 8; i++) {
+        recentReqs[i].counter = 0;
+        recentReqs[i].timeReceived = 0;
+    }
+    lastReqSendTime = 0;
+    nakInitialized = true;
+    
+    // Initialize all retransmit buffer slots as invalid
+    for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
+        retransmitPacketBuffer[i].valid = false;
+        retransmitPacketBuffer[i].storedAt = 0;
+    }
+    
+    Serial.println(F("[NAK] Reliability system initialized"));
+}
+
+// Send a retransmission request with dedup and spacing logic
+void sendRetransmitRequest(unsigned int counter) {
+    if (!nakInitialized) return;
+    
+    // Dedup: check if we already have an outstanding REQ for this counter
+    for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
+        if (outstandingReqs[i].counter == counter && !outstandingReqs[i].resolved) {
+            // Already requesting this — no need to resend
+            return;
+        }
+    }
+    
+    // Check dedup window: skip if we recently saw this REQ at sender side
+    for (int i = 0; i < 8; i++) {
+        if (recentReqs[i].counter == counter && 
+            (millis() - recentReqs[i].timeReceived) < REQ_DEDUP_WINDOW_MS) {
+            return;
+        }
+    }
+    
+    // Enforce spacing between REQ transmissions
+    unsigned long timeSinceLastReq = millis() - lastReqSendTime;
+    if (timeSinceLastReq < REQ_PACKET_SPACING_MS && lastReqSendTime > 0) {
+        delay(REQ_PACKET_SPACING_MS - timeSinceLastReq);
+    }
+    
+    // Mark as outstanding
+    int slot = -1;
+    for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
+        if (!outstandingReqs[i].counter || outstandingReqs[i].resolved) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) return;  // No free slot
+    
+    outstandingReqs[slot].counter = counter;
+    outstandingReqs[slot].attempts = 1;
+    outstandingReqs[slot].resolved = false;
+    outstandingReqs[slot].lastSentTime = millis();
+    
+    // Send the REQ packet
+    char requestBuf[50];
+    snprintf(requestBuf, sizeof(requestBuf), "REQ%d", counter);
+    sendPacket((uint8_t*)requestBuf, strlen(requestBuf));
+    lastReqSendTime = millis();
+    
+    Serial.print(F("[NAK] REQ sent for counter: "));
+    Serial.println(counter);
+}
+
+// Check if a specific counter has been received (resolves outstanding REQs)
+bool markPacketReceived(unsigned int counter) {
+    // Check if any outstanding REQ matches this counter
+    for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
+        if (outstandingReqs[i].counter == counter && !outstandingReqs[i].resolved) {
+            outstandingReqs[i].resolved = true;
+            Serial.print(F("[NAK] REQ for counter "));
+            Serial.print(counter);
+            Serial.println(F(" resolved — packet received"));
+            return true;
+        }
+    }
+    return false;  // No matching outstanding REQ
+}
+
+// Check outstanding REQs: retry expired ones, discard exhausted ones
+void checkOutstandingReqs(unsigned int processedCounter) {
+    if (!nakInitialized) return;
+    
+    unsigned long now = millis();
+    
+    for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
+        // Skip resolved or empty slots
+        if (!outstandingReqs[i].counter || outstandingReqs[i].resolved) continue;
+        
+        // Check if the retransmitted packet arrived
+        if (outstandingReqs[i].counter == processedCounter) {
+            outstandingReqs[i].resolved = true;
+            Serial.print(F("[NAK] REQ for counter "));
+            Serial.print(processedCounter);
+            Serial.println(F(" resolved via processed counter"));
+            continue;
+        }
+        
+        // Check timeout and retry
+        unsigned long elapsed = now - outstandingReqs[i].lastSentTime;
+        unsigned long retryDelay = (unsigned long)(REQ_BASE_TIMEOUT_MS << (outstandingReqs[i].attempts - 1));
+        
+        if (elapsed >= retryDelay) {
+            outstandingReqs[i].attempts++;
+            
+            if (outstandingReqs[i].attempts > REQ_RETRY_MAX) {
+                // Give up — gap is permanent, advance past it
+                Serial.print(F("[NAK] Giving up on counter "));
+                Serial.print(outstandingReqs[i].counter);
+                Serial.println(F(" after max retries"));
+                
+                // Advance lastReceivedCounter to skip this gap permanently
+                if (outstandingReqs[i].counter > lastReceivedCounter) {
+                    lastReceivedCounter = outstandingReqs[i].counter;
+                }
+                
+                outstandingReqs[i].resolved = true;
+                outstandingReqs[i].counter = 0;
+            } else {
+                // Retry with exponential backoff
+                unsigned long nextDelay = (unsigned long)(REQ_BASE_TIMEOUT_MS << (outstandingReqs[i].attempts - 1));
+                Serial.print(F("[NAK] Retrying REQ for counter "));
+                Serial.print(outstandingReqs[i].counter);
+                Serial.print(F(" (attempt "));
+                Serial.print(outstandingReqs[i].attempts);
+                Serial.print(F(", delay "));
+                Serial.print(nextDelay);
+                Serial.println(F("ms)"));
+                
+                outstandingReqs[i].lastSentTime = now;
+                
+                // Send the REQ again
+                char requestBuf[50];
+                snprintf(requestBuf, sizeof(requestBuf), "REQ%d", outstandingReqs[i].counter);
+                sendPacket((uint8_t*)requestBuf, strlen(requestBuf));
+            }
+        }
     }
 }
 

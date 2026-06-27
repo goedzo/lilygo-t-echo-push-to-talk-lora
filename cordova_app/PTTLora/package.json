@@ -21,7 +21,11 @@
       "android"
     ],
     "plugins": {
-      "cordova-plugin-ble-central": {}
+      "cordova-plugin-ble-central": {},
+      "cordova-plugin-opus-android": {}
     }
+  },
+  "dependencies": {
+    "cordova-plugin-opus-android": "file:plugins/cordova-plugin-opus-android"
   }
 }

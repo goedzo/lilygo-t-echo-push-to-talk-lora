@@ -19,11 +19,18 @@ const char* bleGetDeviceIdShort();
 
 // Notification queue — defer BLE notify calls to loop() to avoid hard faults
 #define NOTIF_QUEUE_SIZE 8
+#define BIN_NOTIF_QUEUE_SIZE 4
 static char notif_queue[NOTIF_QUEUE_SIZE][102];
 static uint8_t notif_queue_len[NOTIF_QUEUE_SIZE];
 static uint8_t notif_head = 0;
 static uint8_t notif_tail = 0;
 static volatile bool notif_queue_empty = true;
+
+// Binary notification queue for Opus frames (raw bytes, no text wrapping)
+static uint8_t bin_notif_queue[BIN_NOTIF_QUEUE_SIZE][128];
+static uint8_t bin_notif_len[BIN_NOTIF_QUEUE_SIZE];
+static uint8_t bin_notif_head = 0;
+static uint8_t bin_notif_tail = 0;
 
 static bool queueFull() {
     uint8_t next = (notif_head + 1) % NOTIF_QUEUE_SIZE;
@@ -76,6 +83,44 @@ static void drainQueue() {
     }
 }
 
+// Binary notification helpers (for Opus frames)
+static bool binQueueFull() {
+    uint8_t next = (bin_notif_head + 1) % BIN_NOTIF_QUEUE_SIZE;
+    return next == bin_notif_tail;
+}
+
+static bool enqueueBinary(const uint8_t* data, uint8_t len) {
+    if (len > 127) return false;
+    if (binQueueFull()) return false;
+    memcpy(bin_notif_queue[bin_notif_head], data, len);
+    bin_notif_len[bin_notif_head] = len;
+    bin_notif_head = (bin_notif_head + 1) % BIN_NOTIF_QUEUE_SIZE;
+    return true;
+}
+
+static void drainBinaryQueue() {
+    if (bin_notif_head == bin_notif_tail) return;
+    
+    bool drained = false;
+    for (int i = 0; i < BIN_NOTIF_QUEUE_SIZE && bin_notif_head != bin_notif_tail; i++) {
+        uint8_t len = bin_notif_len[i];
+        if (bleCharacteristic.notify(bin_notif_queue[i], len) == ERROR_NONE) {
+            drained = true;
+            delay(20);
+            
+            bin_notif_len[i] = 0;
+            bin_notif_tail = (bin_notif_tail + 1) % BIN_NOTIF_QUEUE_SIZE;
+        } else {
+            break;
+        }
+    }
+}
+
+void sendBinaryNotification(const uint8_t* data, uint8_t len) {
+    if (!data || len == 0) return;
+    enqueueBinary(data, len);
+}
+
 void setupBLE() {
     Bluefruit.begin();
     Bluefruit.setTxPower(4);  // Set the TX power to max (4dBm)
@@ -122,6 +167,7 @@ void setupBLE() {
 
 void handleBLE() {
     drainQueue();
+    drainBinaryQueue();
 }
 
 void onConnect(uint16_t conn_handle) {
@@ -253,12 +299,20 @@ void sendNotificationToApp(const char* message) {
     }
 }
 
-// Helper function to check if the data contains printable characters
+// Helper function to check if the data contains printable characters.
+// Accepts UTF-8 multi-byte sequences (bytes with high bit set) while rejecting
+// control characters (0x00-0x1F except 0x09 TAB, 0x0A LF, 0x0D CR).
 bool isDataPrintable(const uint8_t* data, int length) {
     for (int i = 0; i < length; i++) {
-        if (!isPrintable(data[i])) {  // Use built-in Arduino isPrintable for individual bytes
-            return false;  // Non-printable character found
-        }
+        uint8_t b = data[i];
+        // UTF-8 continuation bytes (10xxxxxx) and lead bytes (11xxxxxx) are valid
+        if (b >= 0xC2) continue;   // Lead byte for 2+,3+ byte UTF-8 sequences
+        if (b >= 0x80 && b < 0xC2) continue;  // Continuation byte 10xxxxxx
+        // Reject control chars 0x00-0x1F except TAB, LF, CR
+        if (b < 0x20 && b != 0x09 && b != 0x0A && b != 0x0D) return false;
+        // DEL (0x7F) and bytes 0xA0-0xBF alone (invalid UTF-8 continuation) are bad
+        if (b == 0x7F) return false;
+        if (b >= 0xA0 && b < 0xC2) return false;
     }
     return true;
 }

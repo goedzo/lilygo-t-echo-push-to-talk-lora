@@ -39,6 +39,13 @@ CODEC2* codec;
 int test_message_counter = 0;
 int rcv_test_message_counter=0;
 
+// TXT Multi-packet reassembly state
+#define TXT_MULTI_MAX_MSG_LEN 512
+#define TXT_MULTI_TIMEOUT_MS 30000
+static char txt_reassemble_buf[TXT_MULTI_MAX_MSG_LEN];
+static uint8_t txt_reassemble_expected, txt_reassemble_recv_count;
+static uint32_t txt_reassemble_timer;
+
 // Range Test vars
 bool range_role_sender=false;
 //Test counters start at 1
@@ -267,31 +274,31 @@ void handlePacket(Packet packet) {
       } 
       else if (current_mode == "PTT" && packet.type == "PTT") {
           // Received PTT audio via LoRa — forward Opus bytes to connected phone via BLE
+          extern void sendBinaryNotification(const uint8_t* data, uint8_t len);
           if(packet.channel== channels[deviceSettings.channel_idx]) {
-              // Forward the raw payload to the phone app over BLE
-              extern void sendNotificationToApp(const char* message);
+              // Use raw buffer to avoid Arduino String() null-byte truncation
+              uint8_t* p = packet.raw;
+              uint16_t off = 0;
               
-              // Pack as binary: \xFE\x01 [len LE u16] [opus bytes]
-              const char* content = packet.content.c_str();
-              int contentLen = packet.content.length();
+              // Skip "PT" (2) + channel (1) + 'O' (1) = 4 bytes header
+              if (packet.rawLength >= 4 && p[0] == 'P' && p[1] == 'T' && p[3] == 'O') {
+                  off = 4;
+                  // Skip "~~" separator to get to content
+                  while (off < packet.rawLength - 1 && !(p[off] == '~' && p[off+1] == '~')) off++;
+                  off += 2;
+              }
               
-              if (contentLen > 0) {
-                  // Convert binary content to a string-friendly format for BLE notification
-                  // Use LINE format with embedded binary markers
-                  char notifBuf[128];
-                  snprintf(notifBuf, sizeof(notifBuf), "LINE:%d|DATA:\xFE\x01", 
-                           packet.type == "PTT" ? 9 : 0);
-                  
-                  // Append the raw content as hex-escaped bytes
-                  int offset = strlen(notifBuf);
-                  for (int i = 0; i < contentLen && offset < 120; i++) {
-                      uint8_t byteVal = (uint8_t)content[i];
-                      snprintf(notifBuf + offset, sizeof(notifBuf) - offset, 
-                               "%02X", byteVal);
-                      offset += 2;
+              if (off + 4 <= packet.rawLength) {
+                  int opusLen = packet.rawLength - off;
+                  if (opusLen > 0 && opusLen < 120) {
+                      uint8_t frame[124];
+                      frame[0] = 0xFE;
+                      frame[1] = 0x01;
+                      frame[2] = opusLen & 0xFF;
+                      frame[3] = (opusLen >> 8) & 0xFF;
+                      memcpy(frame + 4, p + off, opusLen);
+                      sendBinaryNotification(frame, 4 + opusLen);
                   }
-                  notifBuf[offset] = '\0';
-                  sendNotificationToApp(notifBuf);
               }
           }
       }
@@ -299,6 +306,52 @@ void handlePacket(Packet packet) {
           if(packet.channel== channels[deviceSettings.channel_idx]) {
               //This is actually meant for my channel
               updDisp(4, packet.content.c_str(), true);
+          }
+          updModeAndChannelDisplay();
+      }
+      else if (current_mode == "TXT" && packet.type == "TXT_MULTI") {
+          if(packet.channel == channels[deviceSettings.channel_idx]) {
+              // Extract seq/total from content: "1/N~{text}" or similar
+              const char* content = packet.content.c_str();
+              const char* slashPos = strchr(content, '/');
+              const char* tildePos = strchr(slashPos ? (slashPos + 1) : content, '~');
+
+              if (slashPos && tildePos && tildePos > slashPos) {
+                  uint8_t seq = (uint8_t)atoi(content);
+                  uint8_t total = (uint8_t)atoi(slashPos + 1);
+                  const char* chunkData = tildePos + 1;
+                  int chunkLen = strlen(chunkData);
+
+                  // Check if this is a fresh batch or still within timeout
+                  if (seq == 1 || (millis() - txt_reassemble_timer > TXT_MULTI_TIMEOUT_MS)) {
+                      // Start new reassembly buffer
+                      txt_reassemble_expected = total;
+                      txt_reassemble_recv_count = 0;
+                      txt_reassemble_buf[0] = '\0';
+                      txt_reassemble_timer = millis();
+                      updDisp(2, "Multi:", true);
+                      updDisp(3, "Receiving", true);
+                  }
+
+                  // Append chunk data to buffer (memcpy for safety with null bytes)
+                  int currentLen = strlen(txt_reassemble_buf);
+                  if (currentLen + chunkLen < TXT_MULTI_MAX_MSG_LEN) {
+                      memcpy(txt_reassemble_buf + currentLen, chunkData, chunkLen + 1);
+                      txt_reassemble_recv_count++;
+
+                      char status[32];
+                      snprintf(status, sizeof(status), "%d/%d", txt_reassemble_recv_count, (int)txt_reassemble_expected);
+                      updDisp(4, status, true);
+
+                      if (txt_reassemble_recv_count == txt_reassemble_expected) {
+                          // All chunks received — display full message
+                          updDisp(5, txt_reassemble_buf, true);
+                          updDisp(6, "Full", true);
+                      }
+                  } else {
+                      updDisp(3, "Overflow", true);
+                  }
+              }
           }
           updModeAndChannelDisplay();
       }
@@ -664,18 +717,71 @@ void sendRangeMessage() {
 
 
 void sendTxtMessage(const char* message) {
-    char send_pkt_buf[50];
-    snprintf((char*)send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s", channels[deviceSettings.channel_idx], message);
+    // Max payload per chunk after all overhead: header(~30) + TXM type(4) + channel(1) + seq/total(8) = ~43, leaving ~85 bytes for text
+    #define TXT_CHUNK_SIZE 80
+    int msgLen = strlen(message);
+    char display_msg[64];
 
-    char display_msg[30];
-    snprintf(display_msg, sizeof(display_msg), "Sent: %s", message);
-    updDisp(2, display_msg, true);
+    if (msgLen <= TXT_CHUNK_SIZE) {
+        // Short message — send as a single packet (no chunking needed)
+        char send_pkt_buf[TXT_CHUNK_SIZE + 16];
+        snprintf(send_pkt_buf, sizeof(send_pkt_buf), "TX%c%s", channels[deviceSettings.channel_idx], message);
+        snprintf(display_msg, sizeof(display_msg), "Sent: %s", message);
+        updDisp(2, display_msg, true);
 
-    sendPacket(send_pkt_buf);
-    // Small delay to process sending
-    delay(100);
-    snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
-    updDisp(3, display_msg, true);
+        extern void sendNotificationToApp(const char* msg);
+        static char ackBuf[160];
+        snprintf(ackBuf, sizeof(ackBuf), "LINE:TX|TEXT:Sent: %s", message);
+        sendNotificationToApp(ackBuf);
+
+        sendPacket(send_pkt_buf);
+        delay(100);
+        snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
+        updDisp(3, display_msg, true);
+    } else {
+        // Long message — split into chunks with TXM multi-packet header
+        int numChunks = (msgLen + TXT_CHUNK_SIZE - 1) / TXT_CHUNK_SIZE;
+
+        // Notify phone of the full message upfront
+        extern void sendNotificationToApp(const char* msg);
+        static char ackBuf[256];
+        snprintf(ackBuf, sizeof(ackBuf), "LINE:TX|MULTI:%d|%s", numChunks, message);
+        sendNotificationToApp(ackBuf);
+
+        updDisp(2, "Sent:", true);
+        updDisp(3, "Chunks:", true);
+
+        for (int i = 0; i < numChunks; i++) {
+            int offset = i * TXT_CHUNK_SIZE;
+            int remaining = msgLen - offset;
+            int chunkLen = (remaining < TXT_CHUNK_SIZE) ? remaining : TXT_CHUNK_SIZE;
+
+            // Format: TXM{channel}{seq}/{total}~{content}
+            char send_pkt_buf[MAX_PACKET_SIZE];
+            snprintf(send_pkt_buf, sizeof(send_pkt_buf), "TXM%c%d/%d~",
+                     channels[deviceSettings.channel_idx], i + 1, numChunks);
+
+            // Append chunk content after the header
+            memcpy(send_pkt_buf + strlen(send_pkt_buf), message + offset, chunkLen);
+            send_pkt_buf[strlen(send_pkt_buf) + chunkLen] = '\0';
+
+            sendPacket(send_pkt_buf);
+
+            if (i < 5 || i == numChunks - 1) {
+                char chunkDisplay[32];
+                snprintf(chunkDisplay, sizeof(chunkDisplay), "%d/%d", i + 1, numChunks);
+                updDisp(4, chunkDisplay, true);
+            }
+
+            // Brief gap between chunks to avoid radio contention
+            if (i < numChunks - 1) {
+                delay(200);
+            }
+        }
+
+        snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
+        updDisp(3, display_msg, true);
+    }
     updModeAndChannelDisplay();
 }
 

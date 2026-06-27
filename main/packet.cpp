@@ -94,6 +94,14 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
         content = String((char*)(buffer + index));
         Serial.print(F("Content determined: "));
         Serial.println(content);
+        
+        // For binary payloads (PTT Opus), also store raw buffer length for binary handling
+        rawLength = bufferSize;
+        if (raw != nullptr) {
+            delete[] raw;
+        }
+        raw = new uint8_t[bufferSize];
+        memcpy(raw, buffer, bufferSize);
     } else {
         // Handle the case where there's not enough data for content
         content = String("");
@@ -191,10 +199,10 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
         channel = buffer[2];  // Set the channel (e.g., A, B, C, etc.)
         Serial.print(F("Type determined: RANGE on channel "));
         Serial.println(channel);
-    } else if (strncmp((char*)buffer, "TX", 2) == 0 && index == 3) {
-        type = "TXT";  // Set type to "TXT"
-        channel = buffer[2];  // Set the channel (TXA, TXB, etc.)
-        Serial.print(F("Type determined: TXT on channel "));
+    } else if (strncmp((char*)buffer, "TXM", 3) == 0 && index >= 5) {
+        type = "TXT_MULTI";  // Set type to TXT_MULTI for chunked messages
+        channel = buffer[3];  // Set the channel (TXMA, TXMB, etc.)
+        Serial.print(F("Type determined: TXT_MULTI on channel "));
         Serial.println(channel);
     } else if (strncmp((char*)buffer, "MAP", 3) == 0 && index == 3) {
         type = "MAP";

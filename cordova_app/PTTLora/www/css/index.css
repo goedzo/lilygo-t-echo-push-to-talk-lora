@@ -91,7 +91,7 @@ body {
 }
 
 .log-toggle,
-.log-close {
+.mode-action-btn {
     background: none;
     border: none;
     color: #6B8299;
@@ -99,12 +99,28 @@ body {
     padding: 4px;
     border-radius: 6px;
     transition: color 0.2s, background 0.2s;
+    position: relative;
 }
 
 .log-toggle:hover,
-.log-close:hover {
+.mode-action-btn:hover {
     color: #E8ECF1;
     background: rgba(255,255,255,0.06);
+}
+
+.history-badge {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    background: #EF4444;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 10px;
+    min-width: 16px;
+    text-align: center;
+    display: none;
 }
 
 /* === Toast Notification === */
@@ -237,6 +253,43 @@ body {
     background: #15202B;
 }
 
+.txt-input-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 14px 0 14px;
+}
+
+.char-counter {
+    font-size: 11px;
+    font-weight: 600;
+    color: #27AE60;
+    transition: color 0.2s;
+}
+
+.char-counter.near-limit {
+    color: #F5A623;
+}
+
+.char-counter.over-limit {
+    color: #E74C3C;
+}
+
+.clear-history-btn {
+    background: none;
+    border: none;
+    color: #3D5A73;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+}
+
+.clear-history-btn:hover {
+    color: #E8ECF1;
+    background: rgba(255,255,255,0.06);
+}
+
 .send-form {
     display: flex;
     gap: 8px;
@@ -275,16 +328,157 @@ body {
     font-size: 15px;
     font-weight: 700;
     cursor: pointer;
-    transition: background 0.2s, transform 0.1s;
+    transition: background 0.2s, transform 0.1s, border-color 0.2s;
     white-space: nowrap;
 }
 
-.send-btn:hover {
+.send-btn:hover:not([disabled]) {
     background: #1863C0;
 }
 
-.send-btn:active {
+.send-btn:active:not([disabled]) {
     transform: scale(0.97);
+}
+
+.send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* TXT send state machine CSS (mirrors PTT button states) */
+.send-btn.sending {
+    background: #F5A623;
+    border-color: #F5A623;
+}
+
+.send-btn.transmitting {
+    background: #E67E22;
+    border-color: #E67E22;
+    animation: tx-pulse 1.2s infinite;
+}
+
+@keyframes tx-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.send-btn.sent {
+    background: #27AE60;
+    border-color: #27AE60;
+}
+
+/* TXT status line (mirrors PTT ptt-status-bar) */
+.txt-status-area {
+    padding: 4px 14px 8px 14px;
+    min-height: 22px;
+}
+
+.txt-status {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.txt-status.txt-sending {
+    background: rgba(245, 166, 35, 0.15);
+    color: #F5A623;
+}
+
+.txt-status.txt-transmitting {
+    background: rgba(230, 126, 34, 0.15);
+    color: #E67E22;
+}
+
+.txt-status.txt-sent {
+    background: rgba(39, 174, 96, 0.15);
+    color: #27AE60;
+}
+
+.txt-status.txt-failed {
+    background: rgba(231, 76, 60, 0.15);
+    color: #E74C3C;
+}
+
+/* === Message History Section === */
+.history-section {
+    background: #15202B;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.history-section.open {
+    max-height: 400px;
+}
+
+.history-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #111D2B;
+    border-bottom: 1px solid #1A2B3E;
+    font-size: 12px;
+    color: #5A7A96;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.history-body {
+    padding: 8px 14px;
+    max-height: 300px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #1E3040 transparent;
+}
+
+.history-body::-webkit-scrollbar {
+    width: 4px;
+}
+
+.history-body::-webkit-scrollbar-thumb {
+    background: #1E3040;
+    border-radius: 2px;
+}
+
+.history-msg {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.history-msg.sent {
+    background: rgba(26, 111, 212, 0.1);
+    border-left: 2px solid #1A6FD4;
+}
+
+.history-msg.received {
+    background: rgba(39, 174, 96, 0.08);
+    border-left: 2px solid #27AE60;
+}
+
+.history-msg-time {
+    font-size: 10px;
+    color: #5A7A96;
+    margin-bottom: 2px;
+}
+
+.history-msg-text {
+    color: #C8DCE8;
+    word-break: break-word;
+}
+
+.history-msg-status {
+    font-size: 11px;
+    color: #5A7A96;
+    margin-top: 3px;
 }
 
 /* === Info Section === */
