@@ -65,7 +65,8 @@ function updateMessageHistoryUI() {
             html += '<div class="history-msg-text">' + escapeHtml(m.text) + '</div>';
         } else {
             html += '<div class="history-msg-text">' + escapeHtml(m.text) + '</div>';
-            html += '<div class="history-msg-status">' + statusIcon + ' ' + m.status + '</div>';
+            const devTag = m.deviceName ? '[' + m.deviceName + '] ' : '';
+            html += '<div class="history-msg-status">' + statusIcon + ' ' + devTag + m.status + '</div>';
         }
         html += '</div>';
     }
@@ -123,7 +124,14 @@ function clearMessageHistory() {
 
 function switchMode(aMode) {
 	app.currentMode = aMode;
-	app.sendDataToDevice("SETMODE:"+aMode);
+	var targetDeviceName = app.targetDeviceName;
+	if (targetDeviceName) {
+		app.sendDataToDevice(targetDeviceName, "SETMODE:"+aMode);
+	} else {
+		app.sendDataToDeviceToAll("SETMODE:"+aMode);
+		showToast(aMode + ' mode');
+		return;
+	}
 	showToast(aMode + ' mode');
 	// Update active pill
 	document.querySelectorAll('.modePill').forEach(btn => {
@@ -140,7 +148,7 @@ function switchMode(aMode) {
 	} else if (aMode === 'TXT') {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
-		app.startTxtStatusPolling();
+		app.startTxtStatusPolling(targetDeviceName);
 	} else {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
@@ -165,8 +173,9 @@ function sendData() {
         app.setTxtSendState('sending');
         
         logMessage('Sending: ' + data);
-        app.sendDataToDevice("SENDTXT:"+data, function(success) {
+        app.sendDataToDevice(app.targetDeviceName, "SENDTXT:"+data, function(success) {
             if (success) {
+                var devName = app.getShortDeviceId(app.targetDeviceName) || app.targetDeviceName;
                 addMessageToHistory('sent', data, formatTimestamp(), 'pending');
                 // After send succeeds over BLE, show "Sent" and wait for LoRa confirm
                 setTimeout(function() {
@@ -266,17 +275,23 @@ function setTxtSendState(state) {
 
 // TXT mode status polling (reuses PTT's GETSTATUS pattern)
 var txtStatusPollingEnabled = false;
-function startTxtStatusPolling() {
+function startTxtStatusPolling(deviceName) {
     if (txtStatusPollingEnabled) return;
     txtStatusPollingEnabled = true;
     
-    app.txtLoraAlive = false;
-    app.txtBleAlive = false;
-    
-    // Reset TXT send state to idle
-    setTxtSendState('idle');
-    document.getElementById('txtChannelBadge').textContent = 'Checking...';
-    document.getElementById('txtChannelBadge').className = 'status-badge checking';
+    // Use the passed deviceName, or default to first connected device
+    app.txtPollTimer = setInterval(function() {
+        var target = deviceName || app.targetDeviceName;
+        if (!target || !app.connectedDevices[target]) return;
+        ble.write(
+            app.connectedDevices[target].peripheralId,
+            app.serviceUUID,
+            app.characteristicUUID,
+            app.stringToBytes("GETSTATUS"),
+            function() {},
+            function(err) { logMessage("Status poll error: " + err); }
+        );
+    }, 3000);
 }
 
 function stopTxtStatusPolling() {
@@ -285,7 +300,7 @@ function stopTxtStatusPolling() {
     // Clear status indicators
     var badge = document.getElementById('txtChannelBadge');
     if (badge) {
-        badge.textContent = '—';
+        badge.textContent = '\u2014';
         badge.className = 'status-badge';
     }
 }
@@ -322,12 +337,14 @@ function openLogPanel() { document.getElementById('logPanel').classList.add('ope
 function closeLogPanel() { document.getElementById('logPanel').classList.remove('open'); }
 
 var app = {
-    connectedDeviceId: null,
+    // Multi-device: map of device name -> { peripheralId, status, notificationBuffer, txtLoraAlive, txtBleAlive }
+    connectedDevices: {},
+    
+    targetDeviceName: null,  // Which device to send TXT/SETMODE to (defaults to first if null)
     reconnectDelay: 3000,
-    isDeviceConnected: false,
+    
     serviceUUID: "1235",
     characteristicUUID: "ABCE",
-	notificationBuffer: "",
     
     // TXT mode state (mirrors PTT's pttLoraAlive pattern)
     txtLoraAlive: false,
@@ -354,6 +371,98 @@ var app = {
     analyserNode: null,
     micStream: null,
     pttStartMs: 0,
+    
+    // Helpers
+    getShortDeviceId: function(deviceName) {
+        if (!deviceName) return '';
+        var m = deviceName.match(/LilygoT-Echo-([A-F0-9]{8})$/);
+        return m ? m[1] : deviceName;
+    },
+    
+    updateMultiDeviceStatus: function() {
+        var count = Object.keys(this.connectedDevices).length;
+        var ids = [];
+        for (var name in this.connectedDevices) {
+            if (this.connectedDevices[name]) {
+                ids.push(this.getShortDeviceId(name));
+            }
+        }
+        if (count > 0) {
+            updateDeviceStatus(count + ' device(s): ' + ids.join(', '));
+        } else {
+            updateDeviceStatus('No devices connected');
+        }
+        
+        // Update status dot: green if any connected, scanning if none
+        var dot = document.getElementById('statusDot');
+        if (count === 0) {
+            setStatusIndicator('scanning');
+        } else {
+            setStatusIndicator('connected');
+        }
+        
+        // Update device selector UI
+        this.renderDeviceSelector();
+    },
+    
+    renderDeviceSelector: function() {
+        var section = document.getElementById('deviceSection');
+        var strip = document.getElementById('deviceStrip');
+        if (!section || !strip) return;
+        
+        var keys = Object.keys(this.connectedDevices);
+        if (keys.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+        
+        section.style.display = 'block';
+        var html = '';
+        for (var i = 0; i < keys.length; i++) {
+            var name = keys[i];
+            var shortId = this.getShortDeviceId(name);
+            var isActive = (name === this.targetDeviceName) ? ' active' : '';
+            html += '<button class="devicePill' + isActive + '" data-device="' + name + '" onclick="app.selectDevice(\'' + name.replace(/'/g, "\\'") + '\')">' +
+                    '<span class="device-dot"></span><span>' + shortId + '</span></button>';
+        }
+        strip.innerHTML = html;
+    },
+    
+    selectDevice: function(deviceName) {
+        this.targetDeviceName = deviceName;
+        logMessage("Target set to " + deviceName);
+        this.renderDeviceSelector();
+        
+        var badge = document.getElementById('txtChannelBadge');
+        if (badge) {
+            badge.textContent = 'Target: ' + this.getShortDeviceId(deviceName);
+            badge.className = 'status-badge connected';
+        }
+    },
+    
+    renderDeviceSelector: function() {
+        var section = document.getElementById('deviceSection');
+        var strip = document.getElementById('deviceStrip');
+        if (!section || !strip) return;
+        
+        var keys = Object.keys(this.connectedDevices);
+        if (keys.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+        
+        section.style.display = 'block';
+        var html = '';
+        for (var i = 0; i < keys.length; i++) {
+            var name = keys[i];
+            var shortId = this.getShortDeviceId(name);
+            var isActive = (name === this.targetDeviceName) ? ' active' : '';
+            html += '<button class="devicePill' + isActive + '" data-device="' + name + '" onclick="app.selectDevice(\'' + name.replace(/'/g, "\\'") + '\')">' +
+                    '<span class="device-dot"></span><span>' + shortId + '</span></button>';
+        }
+        strip.innerHTML = html;
+    },
+
     initialize: function() {
         this.bindEvents();
         const sendButton = document.getElementById('sendForm');
@@ -381,7 +490,7 @@ var app = {
         if (pttBtn) {
             pttBtn.addEventListener('touchstart', function(e) {
                 e.preventDefault();
-                if (!app.isDeviceConnected || !app.pttLoraAlive) return;
+                if (!app.isAnyDeviceConnected() || !app.pttLoraAlive) return;
                 app.p ttIsPressing = true;
                 startPttCapture();
             });
@@ -394,6 +503,19 @@ var app = {
             });
         }
     },
+    
+    isAnyDeviceConnected: function() {
+        var count = 0;
+        for (var k in this.connectedDevices) {
+            if (this.connectedDevices[k]) count++;
+        }
+        return count > 0;
+    },
+    
+    getActiveDeviceId: function() {
+        return this.targetDeviceName || Object.keys(this.connectedDevices)[0];
+    },
+
     bindEvents: function() {
         document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
     },
@@ -401,7 +523,12 @@ var app = {
         this.scanForDevice();
     },
     scanForDevice: function() {
-        if (this.isDeviceConnected) {
+		var connectedCount = 0;
+		for (var k in this.connectedDevices) {
+			if (this.connectedDevices[k]) connectedCount++;
+		}
+		
+        if (connectedCount > 0) {
             return;
         }
 		else {
@@ -413,10 +540,14 @@ var app = {
         logMessage("Scanning for BLE devices...");
         ble.scan([], 10, function(device) {
             if (device.name && app.isValidDeviceName(device.name)) {
+                // Check if already connected to this device
+                if (app.connectedDevices[device.name]) {
+                    return;
+                }
                 logMessage("Device found: " + device.name);
                 updateDeviceStatus("Device found, connecting...");
                 setStatusIndicator('scanning');
-                app.connectToDevice(device.id);
+                app.connectToDevice(device.id, device.name);
             }
         }, function(error) {
             logMessage("Error scanning: " + error);
@@ -432,77 +563,144 @@ var app = {
         const pattern = /^LilygoT-Echo-[A-F0-9]{8}$/;
         return pattern.test(deviceName);
     },
-    connectToDevice: function(deviceId) {
-		if(app.isDeviceConnected) {
-			logMessage("Already connected. Ignoring: " + deviceId);
+    connectToDevice: function(deviceId, deviceName) {
+		if (app.connectedDevices[deviceName]) {
+			logMessage("Already connected to " + deviceName + ". Ignoring.");
 			return;
 		}
-		app.isDeviceConnected = true;
-        logMessage("Attempting to connect to device with ID: " + deviceId);
+		
+		app.connectedDevices[deviceName] = {
+            peripheralId: null,
+            status: 'connecting',
+            notificationBuffer: '',
+            txtLoraAlive: false,
+            txtBleAlive: false,
+            pttLoraAlive: false,
+            pttBleAlive: false,
+            pttIsCapturing: false,
+            pttIsPressing: false
+        };
+
+        logMessage("Attempting to connect to " + deviceName + "...");
         ble.connect(deviceId, function(peripheral) {
             if (peripheral && peripheral.id) {
-                logMessage("Successfully connected to " + peripheral.name);
-                logMessage("Device ID: " + peripheral.id);
-                updateDeviceStatus("Connected to " + peripheral.name);
+                logMessage("Connected to " + peripheral.name + " (" + deviceName + ")");
+                updateDeviceStatus("Connected: " + deviceName);
                 setStatusIndicator('connected');
 
-                app.connectedDeviceId = peripheral.id;
-                app.isDeviceConnected = true;
+                app.connectedDevices[deviceName].peripheralId = peripheral.id;
+                app.connectedDevices[deviceName].status = 'connected';
 
-                app.readWriteBLE(peripheral.id);
-                app.startNotification(peripheral.id);
+                // Auto-select first device as target if none chosen yet
+                if (!app.targetDeviceName) {
+                    app.targetDeviceName = deviceName;
+                    logMessage("Selected " + deviceName + " as active device.");
+                }
+
+                app.updateMultiDeviceStatus();
+                app.readWriteBLE(deviceName, peripheral.id);
+                app.startNotification(deviceName, peripheral.id);
             } else {
-                logMessage("Connected, but peripheral.id is not available.");
-				app.isDeviceConnected = false;
+                logMessage("Connected, but peripheral.id is not available for " + deviceName);
+				delete app.connectedDevices[deviceName];
+                app.updateMultiDeviceStatus();
             }
         }, function(error) {
-            logMessage("Error connecting: " + error);
-            updateDeviceStatus("Error connecting to device.");
+            logMessage("Error connecting to " + deviceName + ": " + error);
+            updateDeviceStatus("Error connecting to " + deviceName);
             setStatusIndicator('disconnected');
-			app.isDeviceConnected = false;
-            setTimeout(function() {
-                logMessage("Re-attempting to connect...");
-                app.scanForDevice();
-            }, app.reconnectDelay);
+			delete app.connectedDevices[deviceName];
+            app.updateMultiDeviceStatus();
         });
     },
-    readWriteBLE: function(deviceId) {
+    readWriteBLE: function(deviceName, deviceId) {
         ble.read(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
             var byteArray = new Uint8Array(data);
             var receivedValue = app.bytesToString(byteArray);
         }, function(error) {
-            logMessage("Error reading: " + error);
+            logMessage("Error reading from " + deviceName + ": " + error);
         });
 
         ble.isConnected(deviceId, function(connected) {
             if (!connected) {
-                logMessage("Device disconnected.");
-                updateDeviceStatus("Device disconnected.");
-                setStatusIndicator('disconnected');
-                app.isDeviceConnected = false;
-                setTimeout(function() {
-                    app.scanForDevice();
-                }, app.reconnectDelay);
+                logMessage(deviceName + " disconnected.");
+                updateDeviceStatus("Disconnected: " + deviceName);
+                setStatusIndicator('connected'); // Keep connected status if others remain
+                delete app.connectedDevices[deviceName];
+                
+                // If this was the target device, reset target to first available
+                if (app.targetDeviceName === deviceName) {
+                    var keys = Object.keys(app.connectedDevices);
+                    app.targetDeviceName = keys.length > 0 ? keys[0] : null;
+                    updateDeviceStatus("Target changed to: " + app.getShortDeviceId(app.targetDeviceName));
+                }
+                
+                // If no devices left, restart scan
+                var remaining = Object.keys(app.connectedDevices).length;
+                if (remaining === 0) {
+                    setStatusIndicator('scanning');
+                    setTimeout(function() {
+                        logMessage("Re-attempting to scan...");
+                        app.scanForDevice();
+                    }, app.reconnectDelay);
+                } else {
+                    app.updateMultiDeviceStatus();
+                }
             }
         });
     },
-    sendDataToDevice: function(data, onComplete) {
-        if (!app.connectedDeviceId) {
-            logMessage("No device connected to send data.");
+    
+    sendDataToDevice: function(deviceName, data, onComplete) {
+        if (!deviceName || !this.connectedDevices[deviceName]) {
+            logMessage("No device connected to send data: " + deviceName);
             if (onComplete) onComplete(false);
             return;
         }
+        var peripheralId = this.connectedDevices[deviceName].peripheralId;
+        if (!peripheralId) {
+            logMessage("Peripheral ID not ready for " + deviceName);
+            if (onComplete) onComplete(false);
+            return;
+        }
+        
         var bytes = app.stringToBytes(data);
-        ble.write(app.connectedDeviceId, app.serviceUUID, app.characteristicUUID, bytes, function() {
-            logMessage("Data written: " + data);
+        ble.write(peripheralId, app.serviceUUID, app.characteristicUUID, bytes, function() {
+            logMessage("Data written to " + deviceName + ": " + data);
             if (onComplete) onComplete(true);
         }, function(error) {
-            logMessage("Error writing data: " + error);
+            logMessage("Error writing to " + deviceName + ": " + error);
             if (onComplete) onComplete(false);
         });
     },
-	startNotification: function(deviceId) {
-		logMessage("Starting notifications from device...");
+    
+    sendDataToDeviceToAll: function(data) {
+        for (var name in this.connectedDevices) {
+            if (this.connectedDevices[name]) {
+                this.sendDataToDevice(name, data);
+            }
+        }
+    },
+    
+    disconnectDevice: function(deviceName) {
+        if (!deviceName || !this.connectedDevices[deviceName]) return;
+        var peripheralId = this.connectedDevices[deviceName].peripheralId;
+        ble.disconnect(peripheralId, function() {
+            logMessage("Disconnected from " + deviceName);
+            delete app.connectedDevices[deviceName];
+            
+            if (app.targetDeviceName === deviceName) {
+                var keys = Object.keys(app.connectedDevices);
+                app.targetDeviceName = keys.length > 0 ? keys[0] : null;
+            }
+            
+            app.updateMultiDeviceStatus();
+        }, function(err) {
+            logMessage("Disconnect error for " + deviceName + ": " + err);
+        });
+    },
+
+	startNotification: function(deviceName, deviceId) {
+		logMessage("Starting notifications from " + deviceName + "...");
 
 		ble.startNotification(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
 			var byteArray = new Uint8Array(data);
@@ -521,156 +719,184 @@ var app = {
 			
 			var receivedNotification = app.bytesToString(byteArray);
 
-			app.notificationBuffer += receivedNotification;
+            // Route notification to the correct device's buffer
+            if (!app.connectedDevices[deviceName]) {
+                app.connectedDevices[deviceName] = {};
+            }
+            if (!app.connectedDevices[deviceName].notificationBuffer) {
+                app.connectedDevices[deviceName].notificationBuffer = '';
+            }
+            
+			app.connectedDevices[deviceName].notificationBuffer += receivedNotification;
 
-			var endMarkerIndex = app.notificationBuffer.indexOf("~~");
+			var endMarkerIndex = app.connectedDevices[deviceName].notificationBuffer.indexOf("~~");
 
 			while (endMarkerIndex !== -1) {
-				var completeMessage = app.notificationBuffer.slice(0, endMarkerIndex);
-				app.processCompleteMessage(completeMessage);
-				app.notificationBuffer = app.notificationBuffer.slice(endMarkerIndex + 2);
-				endMarkerIndex = app.notificationBuffer.indexOf("~~");
+				var completeMessage = app.connectedDevices[deviceName].notificationBuffer.slice(0, endMarkerIndex);
+				app.processCompleteMessage(deviceName, completeMessage);
+				app.connectedDevices[deviceName].notificationBuffer = app.connectedDevices[deviceName].notificationBuffer.slice(endMarkerIndex + 2);
+				endMarkerIndex = app.connectedDevices[deviceName].notificationBuffer.indexOf("~~");
 			}
 		}, function(error) {
-			logMessage("Error receiving notification: " + error);
+			logMessage("Error receiving notification from " + deviceName + ": " + error);
 		});
 	},
-		processCompleteMessage: function(message) {
-			var lineRegex = /LINE:(\w+)/;
-			var textRegex = /TEXT:(.*)/;
-			var statusRegex = /^OK\{BLE:(\d+)\}\{LORA:(\d+)\}/;
-			var opusRegex = /^LINE:\d+\|DATA:(\xFE\x01)/;
+    
+    processCompleteMessage: function(deviceName, message) {
+        var shortId = this.getShortDeviceId(deviceName) || deviceName;
+        
+		var lineRegex = /LINE:(\w+)/;
+		var textRegex = /TEXT:(.*)/;
+		var statusRegex = /^OK\{BLE:(\d+)\}\{LORA:(\d+)\}/;
+		var opusRegex = /^LINE:\d+\|DATA:(\xFE\x01)/;
 
-			var lineMatch = message.match(lineRegex);
-			var textMatch = message.match(textRegex);
-			var statusMatch = message.match(statusRegex);
-			var opusMatch = message.match(opusRegex);
+		var lineMatch = message.match(lineRegex);
+		var textMatch = message.match(textRegex);
+		var statusMatch = message.match(statusRegex);
+		var opusMatch = message.match(opusRegex);
 
-			// Handle Opus audio frame received from firmware via BLE notify
-			if (opusMatch) {
-				// Extract hex-encoded Opus bytes after the \xFE\x01 prefix
-				var hexData = message.slice(message.indexOf('\xFE\x01') + 4); // skip prefix and "DATA:" marker
-				// Actually find the part after the DATA: marker in the LINE format
-				// Format is: LINE:9|DATA:\xFE\x01[hex bytes]...
-				var dataMarker = message.indexOf('|DATA:');
-				if (dataMarker !== -1) {
-					hexData = message.slice(dataMarker + 6); // skip past "|DATA:"
-					
-					// Parse hex-encoded binary back to byte array
-					var opusBytes = [];
-					for (var i = 0; i < hexData.length; i += 2) {
-						if (i + 1 < hexData.length) {
-							opusBytes.push(parseInt(hexData.substr(i, 2), 16));
-						}
-					}
-					
-					if (opusBytes.length >= 4 && opusBytes[0] === 0xFE && opusBytes[1] === 0x01) {
-						var payloadLen = (opusBytes[3] << 8) | opusBytes[2];
-						var actualOpusData = new Uint8Array(opusBytes.slice(4, 4 + payloadLen));
-						
-						// Play through native Opus decoder on Android
-						if (actualOpusData.length > 0) {
-							var arrayBuffer = actualOpusData.buffer;
-							cordova.exec(function() {}, function(err) {}, 'OpusEncoder', 'playPCM', [arrayBuffer]);
-							logMessage('Playing audio: ' + payloadLen + ' bytes');
-						}
+        // Update this device's BLE/LoRa liveness state
+        if (this.connectedDevices[deviceName]) {
+            if (statusMatch) {
+                this.connectedDevices[deviceName].txtBleAlive = parseInt(statusMatch[1]) === 1;
+                this.connectedDevices[deviceName].txtLoraAlive = parseInt(statusMatch[2]) === 1;
+            }
+        }
+        
+        // Handle Opus audio frame received from firmware via BLE notify
+		if (opusMatch) {
+			var dataMarker = message.indexOf('|DATA:');
+			if (dataMarker !== -1) {
+				hexData = message.slice(dataMarker + 6);
+				
+				var opusBytes = [];
+				for (var i = 0; i < hexData.length; i += 2) {
+					if (i + 1 < hexData.length) {
+						opusBytes.push(parseInt(hexData.substr(i, 2), 16));
 					}
 				}
-				return;
+				
+				if (opusBytes.length >= 4 && opusBytes[0] === 0xFE && opusBytes[1] === 0x01) {
+					var payloadLen = (opusBytes[3] << 8) | opusBytes[2];
+					var actualOpusData = new Uint8Array(opusBytes.slice(4, 4 + payloadLen));
+					
+					if (actualOpusData.length > 0) {
+						var arrayBuffer = actualOpusData.buffer;
+						cordova.exec(function() {}, function(err) {}, 'OpusEncoder', 'playPCM', [arrayBuffer]);
+						logMessage('Playing audio from ' + shortId + ': ' + payloadLen + ' bytes');
+					}
+				}
 			}
+			return;
+		}
 
-			// Handle PTT/TXT status response (GETSTATUS)
-			if (statusMatch) {
-				var bleAlive = parseInt(statusMatch[1]) === 1;
-				var loraAlive = parseInt(statusMatch[2]) === 1;
-				
-				if (app.currentMode === 'PTT') {
-					app.updatePttButtonState(bleAlive, loraAlive);
-				}
-				
-				// TXT mode: update channel liveness badge
-				if (app.currentMode === 'TXT' || app.currentMode === null) {
-					app.txtLoraAlive = loraAlive;
-					app.txtBleAlive = bleAlive;
-					
-					var badge = document.getElementById('txtChannelBadge');
-					if (badge) {
-						if (loraAlive) {
-							badge.textContent = '✓ On channel';
-							badge.className = 'status-badge connected';
-						} else {
-							badge.textContent = '✗ No one on channel';
-							badge.className = 'status-badge disconnected';
-						}
-					}
-					
-					// If we just received a valid GETSTATUS and were waiting for ACK,
-					// that means the device is alive. If we're in TXT transmit state,
-					// check if the peer (other device) is also alive to infer delivery.
-					if (app.txtSendState === 'transmitting' && loraAlive) {
-						// Peer might be on channel — give a bit more time for ACK
-						// If the other side received, they'll respond with their own status
-					}
-				}
-				
-				return;
-			}
+		// Handle PTT/TXT status response (GETSTATUS)
+		if (statusMatch) {
+			var bleAlive = parseInt(statusMatch[1]) === 1;
+			var loraAlive = parseInt(statusMatch[2]) === 1;
+            
+            // Update this device's state
+            if (this.connectedDevices[deviceName]) {
+                this.connectedDevices[deviceName].txtBleAlive = bleAlive;
+                this.connectedDevices[deviceName].txtLoraAlive = loraAlive;
+                this.connectedDevices[deviceName].pttBleAlive = bleAlive;
+                this.connectedDevices[deviceName].pttLoraAlive = loraAlive;
+            }
+            
+            // Update global state from the active/target device
+            var activeDeviceName = app.getActiveDeviceId() || deviceName;
+            if (activeDeviceName === deviceName) {
+				app.txtLoraAlive = loraAlive;
+				app.txtBleAlive = bleAlive;
+                
+                var badge = document.getElementById('txtChannelBadge');
+                if (badge) {
+                    if (loraAlive) {
+                        badge.textContent = '\u2713 On channel';
+                        badge.className = 'status-badge connected';
+                    } else {
+                        badge.textContent = '\u2717 No one on channel';
+                        badge.className = 'status-badge disconnected';
+                    }
+                }
+                
+                // Update PTT button state if in PTT mode
+                if (app.currentMode === 'PTT') {
+                    app.updatePttButtonState(bleAlive, loraAlive);
+                }
+            } else {
+                // For non-active device, show status as info log
+                logMessage(shortId + (statusMatch[2] === '1' ? ' is on channel' : ' offline'));
+            }
+            
+			return;
+		}
 
-			// Handle TXT send confirmation (device echoes back "Sent: {text}")
-			if (lineMatch && lineMatch[1] === 'TX') {
-				var sentText = '';
-				var dataMarker2 = message.indexOf('|DATA:');
-				if (dataMarker2 !== -1) {
-					sentText = message.slice(dataMarker2 + 6);
-				} else {
-					// Try TEXT: format
-					if (textMatch) {
-						sentText = textMatch[1];
-					}
-				}
-				
-				// Clear the ACK timer
-				if (app.txtAckTimer) {
-					clearTimeout(app.txtAckTimer);
-					app.txtAckTimer = null;
-				}
-				
-				// Update send state to "sent"
-				if (app.txtSendState === 'transmitting') {
-					app.setTxtSendState('sent');
-					// Update the message history entry for the last sent message
-					for (var i = messageHistory.length - 1; i >= 0; i--) {
-						if (messageHistory[i].type === 'sent' && messageHistory[i].status === 'pending') {
-							messageHistory[i].status = 'sent';
-							updateMessageHistoryUI();
-							break;
-						}
-					}
-				}
-				return;
-			}
-
-			if (lineMatch && textMatch) {
-				var lineNumber = parseInt(lineMatch[1], 10);
-				var text = textMatch ? textMatch[1] : '';
-				
-				if(lineNumber<11) {
-					document.getElementById('line' + lineNumber).textContent = text;
-					document.getElementById('screen').classList.remove('empty-hint');
-				}
-				
-				// Also add received TXT messages to history
-				if (lineNumber === 4 && app.currentMode !== 'PTT') {
-					var cleanText = text.replace(/^Sent:\s*/, '');
-					if (cleanText.length > 0) {
-						addMessageToHistory('received', cleanText, formatTimestamp(), 'read');
-					}
-				}
+		// Handle TXT send confirmation (device echoes back "Sent: {text}")
+		if (lineMatch && lineMatch[1] === 'TX') {
+			var sentText = '';
+			var dataMarker2 = message.indexOf('|DATA:');
+			if (dataMarker2 !== -1) {
+				sentText = message.slice(dataMarker2 + 6);
 			} else {
-				updateDeviceInfo(message);
-				logMessage("Received message: " + message);
+				if (textMatch) {
+					sentText = textMatch[1];
+				}
 			}
-		},
+			
+			// Only process ACK if from the target device
+			var activeDeviceName = app.getActiveDeviceId();
+            if (activeDeviceName && activeDeviceName !== deviceName) return;
+            
+			if (app.txtAckTimer) {
+				clearTimeout(app.txtAckTimer);
+				app.txtAckTimer = null;
+			}
+			
+			if (app.txtSendState === 'transmitting') {
+				app.setTxtSendState('sent');
+				for (var i = messageHistory.length - 1; i >= 0; i--) {
+					if (messageHistory[i].type === 'sent' && messageHistory[i].status === 'pending') {
+						messageHistory[i].status = 'sent';
+                        messageHistory[i].deviceName = app.getShortDeviceId(deviceName);
+						updateMessageHistoryUI();
+						break;
+					}
+				}
+			}
+			return;
+		}
+
+		if (lineMatch && textMatch) {
+			var lineNumber = parseInt(lineMatch[1], 10);
+			var text = textMatch ? textMatch[1] : '';
+			
+			if(lineNumber<11) {
+				document.getElementById('line' + lineNumber).textContent = text;
+				document.getElementById('screen').classList.remove('empty-hint');
+			}
+			
+			// Add received TXT messages to history (from any device, but only line 4 = content lines)
+			if (lineNumber === 4 && app.currentMode !== 'PTT') {
+				var cleanText = text.replace(/^Sent:\s*/, '');
+                var displayName = app.getShortDeviceId(deviceName);
+                
+                // If the received message is from a device OTHER than our target, it's a LoRa receive
+                var activeDeviceName = app.getActiveDeviceId();
+                if (activeDeviceName && activeDeviceName !== deviceName && cleanText.length > 0) {
+                    addMessageToHistory('received', '[LoRa via ' + displayName + '] ' + cleanText, formatTimestamp(), 'read');
+                    showToast('Received from ' + displayName);
+                } else if (!activeDeviceName || activeDeviceName === deviceName) {
+                    // Echo ACK from our target device — just log it
+                    logMessage("Echo from " + displayName + ": " + cleanText);
+                }
+			}
+		} else {
+            var displayName = app.getShortDeviceId(deviceName);
+			updateDeviceInfo(displayName + ': ' + message);
+			logMessage("Received from " + shortId + ": " + message);
+		}
+	},
     stringToBytesUtf16: function(string) {
         var array = new Uint8Array(string.length);
         for (var i = 0, l = string.length; i < l; i++) {
@@ -699,12 +925,13 @@ var app = {
 	},
 
     // === TXT Mode Methods (mirrors PTT pattern) ===
-    startTxtStatusPolling: function() {
+    startTxtStatusPolling: function(deviceName) {
         if (app.txtPollTimer) clearInterval(app.txtPollTimer);
         app.txtPollTimer = setInterval(function() {
-            if (!app.isDeviceConnected || !app.connectedDeviceId) return;
+            var target = deviceName || app.targetDeviceName;
+            if (!target || !app.connectedDevices[target]) return;
             ble.write(
-                app.connectedDeviceId,
+                app.connectedDevices[target].peripheralId,
                 app.serviceUUID,
                 app.characteristicUUID,
                 app.stringToBytes("GETSTATUS"),
@@ -721,9 +948,10 @@ var app = {
     startPttStatusPolling: function() {
         if (app.pttPollTimer) clearInterval(app.pttPollTimer);
         app.pttPollTimer = setInterval(function() {
-            if (!app.isDeviceConnected || !app.connectedDeviceId) return;
+            var target = app.getActiveDeviceId();
+            if (!target || !app.connectedDevices[target]) return;
             ble.write(
-                app.connectedDeviceId,
+                app.connectedDevices[target].peripheralId,
                 app.serviceUUID,
                 app.characteristicUUID,
                 app.stringToBytes("GETSTATUS"),
@@ -900,8 +1128,10 @@ var app = {
     },
     
     sendOpusFrame: function(opusBytes) {
-        if (!app.connectedDeviceId || !opusBytes) return;
+        var targetDeviceName = app.getActiveDeviceId();
+        if (!targetDeviceName || !app.connectedDevices[targetDeviceName] || !opusBytes) return;
         
+        var peripheralId = app.connectedDevices[targetDeviceName].peripheralId;
         var len = opusBytes.byteLength || opusBytes.length;
         var header = new Uint8Array(4);
         header[0] = 0xFE;
@@ -914,13 +1144,12 @@ var app = {
         if (opusBytes.byteLength !== undefined && opusBytes.buffer) {
             packet.set(new Uint8Array(opusBytes), 4);
         } else {
-            // opusBytes might be ArrayBuffer from native plugin
             var arr = new Uint8Array(opusBytes);
             packet.set(arr, 4);
         }
         
         ble.write(
-            app.connectedDeviceId,
+            peripheralId,
             app.serviceUUID,
             app.characteristicUUID,
             packet.buffer,

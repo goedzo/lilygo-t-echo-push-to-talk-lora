@@ -160,6 +160,63 @@ body {
     background: #15202B;
 }
 
+.device-section {
+    background: #15202B;
+}
+
+.device-strip {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.device-strip::-webkit-scrollbar {
+    display: none;
+}
+
+.devicePill {
+    flex-shrink: 0;
+    background: #1E3040;
+    border: 1.5px solid transparent;
+    color: #7A9BB5;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.devicePill:hover {
+    background: #243B50;
+    color: #A8D8EA;
+}
+
+.devicePill.active {
+    background: #1A6FD4;
+    color: #FFFFFF;
+    border-color: #2E8AF5;
+    box-shadow: 0 0 12px rgba(26, 111, 212, 0.35);
+}
+
+.devicePill .device-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4ADE80;
+}
+
+/* === Mode Strip === */
+.mode-section {
+    background: #15202B;
+}
+
 .mode-strip {
     display: flex;
     gap: 6px;
