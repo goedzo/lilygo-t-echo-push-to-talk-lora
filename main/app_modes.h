@@ -53,6 +53,11 @@ void turnoffLed();
 void printRangeStatus();
 void switchMode(String receivedMode);
 
+// Beacon mode distance tracking
+extern double beacon_display_dist;
+extern String beacon_display_name;
+extern unsigned long beacon_last_distance_update;
+
 // Text inbox display state (TXT mode)
 extern uint8_t  txtInboxScrollPage;
 extern uint8_t  txtInboxMsgCount;

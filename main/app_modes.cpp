@@ -16,7 +16,7 @@ using namespace ace_button;
 // Define an array of mode names as strings
 const char* modes[] = { "BEACON","RAW","TXT", "RANGE", "TST","PONG","SCAN","PTT"};
 const int numModes = sizeof(modes) / sizeof(modes[0]);
-int modeIndex = 0;
+int modeIndex = 2;
 const char* current_mode=modes[modeIndex];
 
 uint32_t        sendTestMessageTimer = 0;
@@ -49,6 +49,11 @@ static uint32_t txt_reassemble_timer;
 uint8_t  txtInboxScrollPage = 0;
 uint8_t  txtInboxMsgCount = 0;
 bool     txtShowInbox = false;
+
+// Beacon mode distance tracking
+double beacon_display_dist = -1;
+String beacon_display_name;
+unsigned long beacon_last_distance_update = 0;
 
 // Range Test vars
 bool range_role_sender=false;
@@ -230,19 +235,90 @@ void handleAppModes() {
         }
         
         else if (current_mode == "BEACON") {
-            // Periodically broadcast our own beacon, display roster
-            static unsigned long lastBeaconSend = 0;
-            if (millis() - lastBeaconSend >= 23500) {  // Every ~23.5s (half of PEER_BEACON_INTERVAL)
-                lastBeaconSend = millis();
-                sendPeerBeacon();
-                
-                char buf[20];
-                snprintf(buf, sizeof(buf), "Beacon: %d", peerRosterCount);
-                updDisp(2, buf, true);
+            // Find the closest peer with GPS for distance readout
+            double bestDist = -1;
+            String bestName;
+            unsigned long now = millis();
+            
+            for (int i = 0; i < peerRosterCount; i++) {
+                if (peerRoster[i].distanceM > 0 && peerRoster[i].distanceM < 50000) {
+                    if (bestDist < 0 || peerRoster[i].distanceM < bestDist) {
+                        bestDist = peerRoster[i].distanceM;
+                        const char* displayName = peerRoster[i].callSign[0] != '\0' ? peerRoster[i].callSign : peerRoster[i].deviceId.c_str();
+                        bestName = displayName;
+                    }
+                }
             }
             
-            // Display roster
-            beaconDisplayRoster(3);
+            // Update distance display if we have a valid peer
+            if (bestDist >= 0) {
+                beacon_display_dist = bestDist;
+                beacon_display_name = bestName;
+                beacon_last_distance_update = now;
+                
+                char distBuf[32];
+                if (bestDist < 1000) {
+                    snprintf(distBuf, sizeof(distBuf), "D:%.0fm", bestDist);
+                } else {
+                    snprintf(distBuf, sizeof(distBuf), "D:%.1fkm", bestDist / 1000.0);
+                }
+                
+                // Show name and big distance in center lines
+                updDisp(2, beacon_display_name.c_str(), true);
+                updDisp(4, distBuf, true);
+            } else {
+                updDisp(2, "No peer loc", true);
+                updDisp(4, "???", true);
+            }
+            
+            // Roster count on line 1
+            char buf[30];
+            snprintf(buf, sizeof(buf), "%d peers", peerRosterCount);
+            updDisp(1, buf, false);
+            
+            // List roster entries starting at line 6
+            int displayLine = 6;
+            int maxLines = (disp_height + disp_top_margin) / disp_font_height;
+            for (int i = 0; i < peerRosterCount && (displayLine + 1) < maxLines; i++) {
+                float dist = peerRoster[i].distanceM;
+                const char* displayName = peerRoster[i].callSign[0] != '\0' ? peerRoster[i].callSign : peerRoster[i].deviceId.c_str();
+                
+                int batt = peerRoster[i].battery;
+                
+                // Clear the line first
+                updDisp(displayLine, "", false);
+                
+                char lineBuf[40];
+                snprintf(lineBuf, sizeof(lineBuf), "%s", displayName);
+                
+                if (dist > 0 && dist < 1000) {
+                    char dBuf[20];
+                    snprintf(dBuf, sizeof(dBuf), " %.0fm", dist);
+                    strncat(lineBuf, dBuf, sizeof(lineBuf) - strlen(lineBuf) - 1);
+                } else if (dist >= 1000) {
+                    char dBuf[20];
+                    snprintf(dBuf, sizeof(dBuf), " %.1fkm", dist / 1000.0);
+                    strncat(lineBuf, dBuf, sizeof(lineBuf) - strlen(lineBuf) - 1);
+                } else if (gps_status != GPS_LOC) {
+                    strncat(lineBuf, " ???m", sizeof(lineBuf) - strlen(lineBuf) - 1);
+                }
+                
+                if (batt > 0) {
+                    char bBuf[12];
+                    snprintf(bBuf, sizeof(bBuf), " %d%%", batt);
+                    strncat(lineBuf, bBuf, sizeof(lineBuf) - strlen(lineBuf) - 1);
+                } else {
+                    strncat(lineBuf, " -%", sizeof(lineBuf) - strlen(lineBuf) - 1);
+                }
+                
+                updDisp(displayLine, lineBuf, true);
+                displayLine++;
+            }
+            
+            // Clear remaining roster lines
+            for (int i = displayLine; i < 18; i++) {
+                updDisp(i, "", false);
+            }
         }    
     }
 }
@@ -283,48 +359,60 @@ void handlePacket(Packet packet) {
           // BEACON mode: add peer to roster and display it
           beaconAddOrUpdate(packet);
           
+          // Re-scan for closest peer with distance after adding/updating roster
+          double bestDist = -1;
+          String bestName;
+          for (int i = 0; i < peerRosterCount; i++) {
+              if (peerRoster[i].distanceM > 0 && peerRoster[i].distanceM < 50000) {
+                  if (bestDist < 0 || peerRoster[i].distanceM < bestDist) {
+                      bestDist = peerRoster[i].distanceM;
+                      const char* dn = peerRoster[i].callSign[0] != '\0' ? peerRoster[i].callSign : peerRoster[i].deviceId.c_str();
+                      bestName = dn;
+                  }
+              }
+          }
+          
+          // Update distance display immediately
+          if (bestDist >= 0) {
+              char distBuf[32];
+              if (bestDist < 1000) {
+                  snprintf(distBuf, sizeof(distBuf), "D:%.0fm", bestDist);
+              } else {
+                  snprintf(distBuf, sizeof(distBuf), "D:%.1fkm", bestDist / 1000.0);
+              }
+              updDisp(1, "Peers:", false);
+              updDisp(2, bestName.c_str(), true);
+              updDisp(4, distBuf, true);
+              
+              // Show roster entries starting at line 6
+              int displayLine = 6;
+              int maxLines = (disp_height + disp_top_margin) / disp_font_height;
+              for (int j = 0; j < peerRosterCount && (displayLine + 1) < maxLines; j++) {
+                  float d2 = peerRoster[j].distanceM;
+                  const char* dn2 = peerRoster[j].callSign[0] != '\0' ? peerRoster[j].callSign : peerRoster[j].deviceId.c_str();
+                  int batt = peerRoster[j].battery;
+                  updDisp(displayLine, "", false);
+                  char lb[40];
+                  snprintf(lb, sizeof(lb), "%s", dn2);
+                  if (d2 > 0 && d2 < 1000) { char db[20]; snprintf(db, sizeof(db), " %.0fm", d2); strncat(lb, db, sizeof(lb) - strlen(lb) - 1); }
+                  else if (d2 >= 1000) { char db[20]; snprintf(db, sizeof(db), " %.1fkm", d2 / 1000.0); strncat(lb, db, sizeof(lb) - strlen(lb) - 1); }
+                  else if (gps_status != GPS_LOC) { strncat(lb, " ???m", sizeof(lb) - strlen(lb) - 1); }
+                  if (batt > 0) { char bb[12]; snprintf(bb, sizeof(bb), " %d%%", batt); strncat(lb, bb, sizeof(lb) - strlen(lb) - 1); }
+                  else { strncat(lb, " -%", sizeof(lb) - strlen(lb) - 1); }
+                  updDisp(displayLine, lb, true);
+                  displayLine++;
+              }
+              for (int j = displayLine; j < 18; j++) { updDisp(j, "", false); }
+          } else {
+              updDisp(1, "Peers:", false);
+              updDisp(2, "No peer loc", true);
+              updDisp(4, "???", true);
+              for (int j = 6; j < 18; j++) { updDisp(j, "", false); }
+          }
+          
           char buf[30];
           snprintf(buf, sizeof(buf), "%d peers", peerRosterCount);
-          updDisp(2, buf, true);
-          
-          // Display roster entries starting at line 3
-          int displayLine = 3;
-          int maxLines = (disp_height + disp_top_margin) / disp_font_height;
-           for (int i = 0; i < peerRosterCount && displayLine < maxLines; i++) {
-               float dist = peerRoster[i].distanceM;
-               const char* displayName = peerRoster[i].callSign[0] != '\0' ? peerRoster[i].callSign : peerRoster[i].deviceId.c_str();
-               snprintf(buf, sizeof(buf), "%s", displayName);
-              
-              if (dist > 0 && dist < 1000) {
-                  char distBuf[20];
-                  snprintf(distBuf, sizeof(distBuf), " %.0fm", dist);
-                  strncat(buf, distBuf, sizeof(buf) - strlen(buf) - 1);
-              } else if (dist >= 1000) {
-                  char distBuf[20];
-                  snprintf(distBuf, sizeof(distBuf), " %.1fkm", dist / 1000.0);
-                  strncat(buf, distBuf, sizeof(buf) - strlen(buf) - 1);
-              } else if (gps_status != GPS_LOC) {
-                  strncat(buf, " ???m", sizeof(buf) - strlen(buf) - 1);
-              }
-              
-              // Battery
-              int batt = peerRoster[i].battery;
-              if (batt > 0) {
-                  char battBuf[12];
-                  snprintf(battBuf, sizeof(battBuf), " %d%%", batt);
-                  strncat(buf, battBuf, sizeof(buf) - strlen(buf) - 1);
-              } else {
-                  strncat(buf, " -%", sizeof(buf) - strlen(buf) - 1);
-              }
-              
-              updDisp(displayLine, buf, true);
-              displayLine++;
-          }
-          
-          // Clear remaining lines
-          for (int i = displayLine; i < maxLines && i < 20; i++) {
-              updDisp(i, "", false);
-          }
+          updDisp(5, buf, true);
       }
       else if (current_mode == "RAW" || current_mode == "TST") {
           //Cool of period to allow receiving of messages because of switching from sent to receive takes time
