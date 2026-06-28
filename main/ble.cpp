@@ -2,6 +2,7 @@
 #include <bluefruit.h>
 #include "display.h"
 #include "app_modes.h"
+#include "buddy_list.h"
 
 // Create BLE service and characteristic
 BLEService bleService("1235");
@@ -217,6 +218,33 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
             else if (action == "SENDTXT") {
                 sendTxtMessage(value.c_str());
             } 
+            else if (action == "SETNAME") {
+                static char localName[32];
+                int len = strlen(value.c_str());
+                if (len > 0 && len < sizeof(localName)) {
+                    strncpy(localName, value.c_str(), sizeof(localName) - 1);
+                    localName[sizeof(localName) - 1] = '\0';
+                    buddySetDisplayName(localName);
+                    char resp[48]; snprintf(resp, sizeof(resp), "OK{NAME:%s}", localName);
+                    sendNotificationToApp(resp);
+                } else {
+                    sendNotificationToApp("ERR{NAME:too long}");
+                }
+            }
+            else if (action == "SETBUDDY") {
+                int count = buddyImportCsv(value.c_str());
+                char resp[48]; snprintf(resp, sizeof(resp), "OK{BUDDY:%d}", count);
+                sendNotificationToApp(resp);
+            }
+            else if (action == "GETBUDDY") {
+                static char csvBuf[512];
+                if (buddyExportCsv(csvBuf, sizeof(csvBuf))) {
+                    char resp[560]; snprintf(resp, sizeof(resp), "OK{BUDDY:%s}", csvBuf);
+                    sendNotificationToApp(resp);
+                } else {
+                    sendNotificationToApp("OK{BUDDY:}");
+                }
+            }
             else if (action == "GETSTATUS") {
                 // Return connection status: BLE link + LoRa peer liveness
                 // If we're in the write callback, BLE is connected by definition.

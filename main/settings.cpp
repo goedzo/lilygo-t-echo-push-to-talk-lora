@@ -107,6 +107,23 @@ uint8_t setting_idx = 0;
 bool in_settings_mode = false;
 
 
+// Release I2C bus if SDA is held low by a slave (e.g. CST816 touch controller)
+// This toggles SCL 10 times to force the slave to release SDA
+void releaseI2Cbus() {
+    pinMode(SDA_Pin, OUTPUT);
+    digitalWrite(SDA_Pin, HIGH);        // Ensure SDA is high
+    pinMode(SCL_Pin, OUTPUT);
+    for (int i = 0; i < 10; i++) {
+        digitalWrite(SCL_Pin, LOW);
+        delay(1);
+        digitalWrite(SCL_Pin, HIGH);
+        delay(1);
+    }
+    // Restore pins to input (high-Z)
+    pinMode(SDA_Pin, INPUT);
+    pinMode(SCL_Pin, INPUT);
+}
+
 void setupSettings() {
     SerialMon.println("[SETTINGS] >>> setupSettings() START");
     
@@ -116,31 +133,44 @@ void setupSettings() {
 
     // On nRF52 T-Echo, the CST816 touch controller shares I2C with PCF8563.
     // After power-on, CST816 may hold SDA low causing Wire.beginTransmission to hang forever.
-    // Workaround: call Wire.begin() first, then probe with retries matching reference Sleep.ino pattern.
+    // Workaround: release I2C bus before attempting any I2C communication.
     
+    SerialMon.println("[SETTINGS]   Releasing I2C bus from touch controller...");
+    releaseI2Cbus();
+
     SerialMon.println("[SETTINGS]   Using Wire probe for RTC");
 
     Wire.begin();
 
-    int retry = 3;
+    int retry = 5;
     uint8_t txAddr = PCF8563_I2C_ADDR;  // 7-bit address, Wire.beginTransmission handles shifting
     
     int ret = 0;
+    unsigned long start = millis();
     do {
+        SerialMon.print(F("  RTC probe attempt "));
+        SerialMon.print(6 - retry);
+        SerialMon.println("/5...");
         Wire.beginTransmission(txAddr);
         ret = Wire.endTransmission();
+        if (ret == 0) break;  // Success
         delay(200);
-
     } while (retry--);
     
+    unsigned long probeTime = millis() - start;
+
     if (ret != 0) {
-        SerialMon.println("[SETTINGS]   RTC not responding on I2C");
+        SerialMon.print(F("[SETTINGS]   RTC not responding on I2C (probed in "));
+        SerialMon.print(probeTime);
+        SerialMon.println("ms)");
         
         // Still init Wire for other uses (touch controller etc.)
         Wire.begin();
         SerialMon.println("[SETTINGS]   Wire begin OK (no RTC)");
     } else {
-        SerialMon.println("[SETTINGS]   Wire probe: PCF8563 FOUND");
+        SerialMon.print(F("[SETTINGS]   Wire probe: PCF8563 FOUND (probed in "));
+        SerialMon.print(probeTime);
+        SerialMon.println("ms)");
         rtc.begin(Wire);
         rtc.disableAlarm();
         
