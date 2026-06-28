@@ -27,6 +27,7 @@
 #include <GxIO/GxIO.h>
 
 #include "display.h"
+#include "boot_animation.h"
 #include "gps.h"
 #include "settings.h"
 #include "app_modes.h"
@@ -312,10 +313,13 @@ void setup()
     SerialMon.print(F("[BOOT] Total boot time: "));
     SerialMon.print(millis() - bootStart);
     SerialMon.println(F("ms"));
-    updDisp(5, "Setup ok!");
 
     checkCrashState();
-    DB("about to clearScreen");
+    
+    // Boot animation replaces the old clearScreen + updModeAndChannelDisplay sequence
+    showBootAnimation(lora_ok, gps_ok);
+    checkCrashState();
+    DB("after showBootAnimation");
 
     clearScreen();
     checkCrashState();
