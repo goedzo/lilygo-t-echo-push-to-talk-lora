@@ -290,9 +290,10 @@ void handlePacket(Packet packet) {
           // Display roster entries starting at line 3
           int displayLine = 3;
           int maxLines = (disp_height + disp_top_margin) / disp_font_height;
-          for (int i = 0; i < peerRosterCount && displayLine < maxLines; i++) {
-              float dist = peerRoster[i].distanceM;
-              snprintf(buf, sizeof(buf), "%s", peerRoster[i].deviceId.c_str());
+           for (int i = 0; i < peerRosterCount && displayLine < maxLines; i++) {
+               float dist = peerRoster[i].distanceM;
+               const char* displayName = peerRoster[i].callSign[0] != '\0' ? peerRoster[i].callSign : peerRoster[i].deviceId.c_str();
+               snprintf(buf, sizeof(buf), "%s", displayName);
               
               if (dist > 0 && dist < 1000) {
                   char distBuf[20];

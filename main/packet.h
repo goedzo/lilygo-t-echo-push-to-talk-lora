@@ -23,6 +23,7 @@ public:
     double  beacon_lon;      // Longitude from ~GP field
     uint8_t beacon_battery;  // Battery from ~BT field
     String  beacon_deviceId; // Device ID from B prefix
+    char    beacon_callSign[17]; // Call sign from ~CN field (max 16 bytes + null)
 
     // Constructor
     Packet();

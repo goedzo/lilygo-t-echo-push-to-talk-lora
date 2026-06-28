@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 8 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT) — 15 source modules + crash_debug.h. Audio is entirely handled by the phone app; the T-Echo relays Opus frames via BLE ↔ LoRa only.
+Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 9 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT, WP) — 16 source modules + crash_debug.h. Audio is entirely handled by the phone app; the T-Echo relays Opus frames via BLE ↔ LoRa only.
 
 ## Ownership
 
@@ -51,13 +51,17 @@ arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/
 
 ### Mode logic (`app_modes`)
 
-Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; inbox with scrollable message history on-device), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — Opus frames relayed from phone via BLE GATT to LoRa), BEACON (peer roster — broadcasts GPS/battery beacon, displays list of detected peers with distances and battery levels). Button/AceButton handles double-click for SF adjustment and long-press for power-off. MODE click in TXT mode toggles inbox/single-message view.
+Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; inbox with scrollable message history on-device), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — Opus frames relayed from phone via BLE GATT to LoRa), BEACON (peer roster — broadcasts GPS/battery beacon, displays list of detected peers with distances and battery levels), WP (waypoint — touch to save current GPS as waypoint packet, broadcast on LoRa for 60s). Button/AceButton handles double-click for SF adjustment and long-press for power-off. MODE click in TXT mode toggles inbox/single-message view.
+
+### Named Contacts / Call Sign System
+
+Every beacon packet includes an optional `~CN{call_sign}` field (up to 16 ASCII chars). The device stores a buddy list of name→device_id mappings in RTC RAM (16 contacts, address 0x20007C00). On receiving a beacon with `~CN`, the call sign is stored in the roster entry and in the local buddy list. The e-paper roster screen shows call signs instead of hex IDs when available. The companion app can set its own display name via `SETNAME` GATT action, and sync the full buddy list via `GETBUDDY`/`SETBUDDY` actions. New source: `buddy_list.h` / `buddy_list.cpp`.
 
 ### Packet framing by mode
 
 | Mode | Header | Payload |
 |---|---|---|
-| BEACON | `B{id_short}~GP{lat},{lon}~BT{pct}` or `B{id_short}~BT{pct}` (no GPS) | Device ID + lat/lon/battery (peer roster via distanceBetween) |
+| BEACON | `B{id_short}~CN{call_sign}~GP{lat},{lon}~BT{pct}` or `B{id_short}~CN{call_sign}~BT{pct}` (no GPS) | Device ID + call sign + lat/lon/battery (peer roster via distanceBetween) |
 | TXT | `TX{channel}{message}` or `TXM{channel}{seq}/{total}~{chunk}` | ASCII text string (auto-stored in RTC RAM inbox) |
 | TST | `test{n}` (via sendTxtMessage) | Counter-incremented test string |
 | RANGE | `RN{channel}test{n}` | Position + distance data (`isRangeMessage()` check) |
@@ -65,13 +69,14 @@ Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; in
 | PTT | `{P}{channel_bitrate_idx_raw audio_bytes}` | Phone-encoded Opus frames relayed via BLE ↔ LoRa |
 | RAW | Passthrough | All received bytes displayed as hex if non-printable |
 | SCAN | N/A | Measures RSSI/SNR only, no custom packets |
+| WP | `WP~LA{lat},{lon}~AL{alt}~LB{label}~DI{id}` | Waypoint: lat/lng/altitude + 24 byte label, broadcast every 3s for 60s |
 
 
 ### Button behavior (all modes)
 
 | Button | Action | Effect |
 |---|---|---|
-| MODE (P1.10) — Single click | Cycle to next mode | Wraps around through all 7 |
+| MODE (P1.10) — Single click | Cycle to next mode | Wraps around through all 9 |
 | MODE — Double click | Next spreading factor | Reinitializes LoRa with new SF |
 | MODE — Long press | Enter/exit settings mode | Cycles device settings |
 | TOUCH (P0.11) — Hold >5s | Power off | Shuts down peripherals → System OFF via softdevice or NRF_POWER |

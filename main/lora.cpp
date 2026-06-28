@@ -12,6 +12,7 @@
 #include "packet.h"
 #include "gps.h"
 #include "battery.h"
+#include "buddy_list.h"
 #include <time.h>  // For RTC time management
 #include <stdlib.h>  // For random number generation
 
@@ -110,6 +111,11 @@ void beaconAddOrUpdate(const Packet& packet) {
             peerRoster[i].lat     = packet.beacon_lat;
             peerRoster[i].lon     = packet.beacon_lon;
             peerRoster[i].battery = packet.beacon_battery;
+            strncpy(peerRoster[i].callSign, packet.beacon_callSign, 16);
+            peerRoster[i].callSign[16] = '\0';
+            if (packet.beacon_callSign[0] != '\0') {
+                buddyAddOrUpdate(devId.c_str(), packet.beacon_callSign);
+            }
             peerRoster[i].lastSeen = now;
             
             // Compute distance if we have GPS fix
@@ -133,6 +139,11 @@ void beaconAddOrUpdate(const Packet& packet) {
     
     int slot = peerRosterCount++;
     peerRoster[slot].deviceId  = devId;
+    strncpy(peerRoster[slot].callSign, packet.beacon_callSign, 16);
+    peerRoster[slot].callSign[16] = '\0';
+    if (packet.beacon_callSign[0] != '\0') {
+        buddyAddOrUpdate(devId.c_str(), packet.beacon_callSign);
+    }
     peerRoster[slot].lat       = packet.beacon_lat;
     peerRoster[slot].lon       = packet.beacon_lon;
     peerRoster[slot].battery   = packet.beacon_battery;
@@ -167,12 +178,13 @@ void beaconDisplayRoster(uint8_t line) {
     int maxLines = (disp_height + disp_top_margin) / disp_font_height;
     for (int i = 0; i < activeCount && (line + 1 + i) < maxLines; i++) {
         float dist = peerRoster[i].distanceM;
+        const char* displayName = peerRoster[i].callSign[0] != '\0' ? peerRoster[i].callSign : peerRoster[i].deviceId.c_str();
         if (dist > 0 && dist < 1000) {
-            snprintf(buf, sizeof(buf), "%s %.0fm", peerRoster[i].deviceId.c_str(), dist);
+            snprintf(buf, sizeof(buf), "%s %.0fm", displayName, dist);
         } else if (dist >= 1000) {
-            snprintf(buf, sizeof(buf), "%s %.1fkm", peerRoster[i].deviceId.c_str(), dist / 1000.0);
+            snprintf(buf, sizeof(buf), "%s %.1fkm", displayName, dist / 1000.0);
         } else {
-            snprintf(buf, sizeof(buf), "%s ???m", peerRoster[i].deviceId.c_str());
+            snprintf(buf, sizeof(buf), "%s ???m", displayName);
         }
         // Add battery indicator
         int batt = peerRoster[i].battery;
@@ -193,19 +205,24 @@ void beaconDisplayRoster(uint8_t line) {
 }
 
 void sendPeerBeacon() {
-    char beacon[MAX_PACKET_SIZE];
+    extern const char* buddyGetDisplayName();
+    const char* myCallSign = buddyGetDisplayName();
+    static char beacon[MAX_PACKET_SIZE];
     
     if (gps_status == GPS_LOC) {
         int batt = getBatteryPercentage();
-        snprintf(beacon, sizeof(beacon), "B%s~GP%.6f,%.6f~BT%d", 
-                 bleGetDeviceIdShort(),
-                 gps_latitude, gps_longitude,
-                 batt);
+        if (myCallSign[0] != '\0') {
+            snprintf(beacon, sizeof(beacon), "B%s~CN%s~GP%.6f,%.6f~BT%d", bleGetDeviceIdShort(), myCallSign, gps_latitude, gps_longitude, batt);
+        } else {
+            snprintf(beacon, sizeof(beacon), "B%s~GP%.6f,%.6f~BT%d", bleGetDeviceIdShort(), gps_latitude, gps_longitude, batt);
+        }
     } else {
         int batt = getBatteryPercentage();
-        snprintf(beacon, sizeof(beacon), "B%s~BT%d", 
-                 bleGetDeviceIdShort(),
-                 batt);
+        if (myCallSign[0] != '\0') {
+            snprintf(beacon, sizeof(beacon), "B%s~CN%s~BT%d", bleGetDeviceIdShort(), myCallSign, batt);
+        } else {
+            snprintf(beacon, sizeof(beacon), "B%s~BT%d", bleGetDeviceIdShort(), batt);
+        }
     }
     sendPacket((uint8_t*)beacon, strlen(beacon));
 }

@@ -135,6 +135,7 @@ const char* bleGetDeviceIdShort();
 #define MAX_ROSTER_PEERS 8
 struct PeerEntry {
     String  deviceId;     // Last 8 hex chars of MAC
+    char    callSign[17]; // Call sign from ~CN field (up to 16 chars + null)
     double  lat;          // From ~GP field
     double  lon;          // From ~GP field
     uint8_t battery;      // From ~BT field
@@ -147,6 +148,14 @@ extern int     peerRosterCount;
 extern bool    inBeaconMode;
 void beaconAddOrUpdate(const Packet& packet);
 void beaconDisplayRoster(uint8_t line);
+
+// Waypoint broadcast state
+#define WP_BROADCAST_INTERVAL_MS 3000   // Send waypoint every 3s during broadcast
+#define WP_BROADCAST_DURATION_MS 60000  // Broadcast for 1 minute total
+extern bool wpBroadcastActive;
+extern uint32_t wpBroadcastStartMs;
+
+void sendWaypointPacket(double lat, double lon, float alt, const char* label);
 
 // Probe-based frequency hopping discovery
 #define PROBE_FREQUENCY       startFreq   // Fixed known channel: 863.0 MHz

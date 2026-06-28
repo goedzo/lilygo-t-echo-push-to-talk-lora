@@ -149,6 +149,13 @@ function switchMode(aMode) {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
 		app.startTxtStatusPolling(targetDeviceName);
+	} else if (aMode === 'WP') {
+		inputSection.style.display = 'none';
+		pttSection.style.display = 'none';
+		document.getElementById('mapSection').style.display = 'block';
+		app.stopPttStatusPolling();
+		app.stopTxtStatusPolling();
+		app.renderWaypointMap();
 	} else {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
@@ -465,6 +472,24 @@ var app = {
 
     initialize: function() {
         this.bindEvents();
+        this.initDisplayName();
+        
+        // Alias save button
+        var aliasSetBtn = document.getElementById('aliasSetBtn');
+        if (aliasSetBtn) {
+            aliasSetBtn.addEventListener('click', function() {
+                app.saveDisplayName();
+            });
+        }
+        
+        // Buddy list refresh button
+        var buddyRefreshBtn = document.getElementById('buddyRefreshBtn');
+        if (buddyRefreshBtn) {
+            buddyRefreshBtn.addEventListener('click', function() {
+                app.syncBuddyList();
+            });
+        }
+        
         const sendButton = document.getElementById('sendForm');
         sendButton.addEventListener('submit', function(e) {
             e.preventDefault();
@@ -867,6 +892,75 @@ var app = {
 			return;
 		}
 
+        // Handle buddy list response from device
+		if (lineMatch && textMatch) {
+			var data = textMatch[1] || '';
+			if (data.match(/^OK\{BUDDY:/)) {
+				// Parse buddy CSV or count
+				var match2 = data.match(/OK\{BUDDY:(.*)\}/);
+				if (match2) {
+					var csvData = match2[1];
+					app.buddyListReceived = true;
+					
+					if (csvData.length > 0 && csvData.indexOf(',') >= 0) {
+						// Parse CSV: "CNname1|DIid1,CNname2|DIid2,..."
+						var entries = csvData.split(',');
+						app.buddyList = [];
+						for (var i = 0; i < entries.length; i++) {
+							var entry = entries[i].trim();
+							if (!entry) continue;
+							var cnMatch = entry.match(/^CN(.*)\|DI([A-F0-9]+)$/);
+							if (cnMatch) {
+								app.buddyList.push({ call_sign: cnMatch[1], device_id: cnMatch[2] });
+							}
+						}
+					} else if (data.match(/OK\{BUDDY:(\d+)\}/)) {
+						// It was a count format "OK{BUDDY:5}" — import from SENDTXT action on device
+						app.buddyList = [{ call_sign: '[DEVICE]', device_id: '' }];
+					}
+					
+					logMessage('Contacts synced: ' + app.buddyList.length + ' entries');
+					app.updateBuddyListUI();
+				}
+				return;
+			}
+			
+			// Handle SETNAME ACK
+			if (data.match(/^OK\{NAME:/)) {
+				var nameMatch = data.match(/OK\{NAME:(.*?)\}/);
+				if (nameMatch) {
+					logMessage('Alias set: ' + nameMatch[1]);
+					showToast('Alias saved');
+				}
+				return;
+			}
+		}
+
+		// Handle Waypoint received from device
+		if (lineMatch && lineMatch[1] === 'WP') {
+			var dataMarker = message.indexOf('|DATA:');
+			if (dataMarker !== -1) {
+				var wpRaw = message.slice(dataMarker + 6);
+				
+				// Parse: "label lat,lon alt:Xm from sender" or "Waypoint lat,lon alt:Xm from sender"
+				var wpData = app.parseWaypointData(wpRaw);
+				if (wpData) {
+					app.waypoints.push({
+						id: shortId + '_' + Date.now(),
+						lat: wpData.lat,
+						lon: wpData.lon,
+						alt: wpData.alt,
+						label: wpData.label,
+						sender: wpData.sender || shortId,
+						receivedAt: formatTimestamp()
+					});
+					app.renderWaypointMap();
+					showToast('WP from ' + shortId);
+				}
+			}
+			return;
+		}
+
 		if (lineMatch && textMatch) {
 			var lineNumber = parseInt(lineMatch[1], 10);
 			var text = textMatch ? textMatch[1] : '';
@@ -942,6 +1036,134 @@ var app = {
     },
     stopTxtStatusPolling: function() {
         if (app.txtPollTimer) { clearInterval(app.txtPollTimer); app.txtPollTimer = null; }
+    },
+
+    // === Buddy List / Call Sign ===
+    displayName: '',
+    buddyList: [],  // [{call_sign, device_id}] from peer beacons
+    buddyListReceived: false,
+
+    initDisplayName: function() {
+        var saved = localStorage.getItem('ptt_buddy_name');
+        if (saved) {
+            app.displayName = saved;
+            document.getElementById('myAliasInput').value = saved;
+        } else {
+            // Default to last 4 of MAC
+            var mac = device ? device.name.replace(/^LilygoT-Echo-/, '').substr(-4) : '';
+            if (mac) {
+                app.displayName = mac.toUpperCase();
+                document.getElementById('myAliasInput').value = mac;
+            }
+        }
+    },
+
+    saveDisplayName: function() {
+        var name = document.getElementById('myAliasInput').value.trim();
+        if (!name || name.length > 16) {
+            showToast('Alias must be 1-16 characters');
+            return;
+        }
+        app.displayName = name;
+        localStorage.setItem('ptt_buddy_name', name);
+        
+        // Send to device over BLE
+        var target = app.getActiveDeviceId();
+        if (target) {
+            ble.write(
+                app.connectedDevices[target].peripheralId,
+                app.serviceUUID,
+                app.characteristicUUID,
+                app.stringToBytes('SETNAME:' + name),
+                function() {},
+                function(err) { logMessage('Alias set error: ' + err); }
+            );
+        }
+        
+        showToast('Alias saved: ' + name);
+    },
+
+    syncBuddyList: function() {
+        var target = app.getActiveDeviceId();
+        if (!target || !app.connectedDevices[target]) return;
+        
+        // Request buddy list from device
+        ble.write(
+            app.connectedDevices[target].peripheralId,
+            app.serviceUUID,
+            app.characteristicUUID,
+            app.stringToBytes('GETBUDDY'),
+            function() {},
+            function(err) { logMessage('Buddy sync error: ' + err); }
+        );
+        
+        showToast('Syncing contacts...');
+    },
+
+    updateBuddyListUI: function() {
+        var section = document.getElementById('buddySection');
+        var container = document.getElementById('buddyContainer');
+        if (!section || !container) return;
+        
+        // Merge peer beacons with buddy list — use display names where available
+        var contacts = [];
+        
+        // Add known buddy list entries from device
+        for (var i = 0; i < app.buddyList.length; i++) {
+            var b = app.buddyList[i];
+            if (!b.call_sign) continue;
+            // Check if already in contacts by device_id
+            var found = false;
+            for (var j = 0; j < contacts.length; j++) {
+                if (contacts[j].device_id === b.device_id) { found = true; break; }
+            }
+            if (!found) contacts.push(b);
+        }
+        
+        // Add peers from connected devices as potential contacts
+        for (var name in app.connectedDevices) {
+            var dev = app.connectedDevices[name];
+            if (!dev) continue;
+            var shortId = app.getShortDeviceId(name);
+            // Check if already in contacts
+            var found = false;
+            for (var i2 = 0; i2 < contacts.length; i2++) {
+                if (contacts[i2].device_id === shortId) { found = true; break; }
+            }
+            if (!found) {
+                contacts.push({ call_sign: shortId, device_id: shortId });
+            }
+        }
+        
+        // Add local display name entry
+        if (app.displayName) {
+            var selfFound = false;
+            for (var i3 = 0; i3 < contacts.length; i3++) {
+                if (contacts[i3].call_sign === app.displayName) { selfFound = true; break; }
+            }
+            if (!selfFound) contacts.push({ call_sign: '[ME]', device_id: '' });
+        }
+        
+        section.style.display = 'block';
+        
+        var html = '';
+        for (var k = 0; k < contacts.length; k++) {
+            var c = contacts[k];
+            var isSelf = (c.call_sign === app.displayName) || (c.device_id === '');
+            var cls = isSelf ? 'buddy-contact self' : 'buddy-contact';
+            html += '<div class="' + cls + '">';
+            html += '<span class="buddy-name">' + escapeHtml(c.call_sign) + '</span>';
+            if (c.device_id && !isSelf) {
+                html += '<span class="buddy-id">[' + c.device_id + ']</span>';
+            }
+            html += '</div>';
+        }
+        
+        if (contacts.length === 0) {
+            html = '<div class="buddy-empty">No contacts yet. Send a beacon to discover peers.</div>';
+        }
+        
+        container.innerHTML = html;
     },
 
     // === PTT Methods ===

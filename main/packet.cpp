@@ -16,8 +16,9 @@ Packet::Packet()
       channel('\0'),   // Initialize channel to null character
       packetCounter(0),// Initialize packetCounter to 0
       testCounter(0),// Initialize packetCounter to 0
-      gpsData(""),     // Add gpsData as an empty string if you store it
-      sendDateTime("") // Add sendDateTime as an empty string
+       gpsData(""),           // Add gpsData as an empty string if you store it
+      sendDateTime(""),      // Add sendDateTime as an empty string
+      beacon_callSign("")   // Initialize call sign to empty
 {}
 
 Packet::~Packet() {
@@ -336,6 +337,16 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
                     strncpy(battStr, (char*)(buffer + fieldStart), fieldLength);
                     battStr[fieldLength] = '\0';
                     beacon_battery = (uint8_t)atoi(battStr);
+                }
+            } else if (strcmp(fieldType, "CN") == 0) {
+                // Beacon call sign from buddy list
+                if (type == "BEACON") {
+                    char cnStr[fieldLength + 1];
+                    strncpy(cnStr, (char*)(buffer + fieldStart), fieldLength);
+                    cnStr[fieldLength] = '\0';
+                    memset(beacon_callSign, 0, sizeof(beacon_callSign));
+                    strncpy(beacon_callSign, cnStr, 16);
+                    beacon_callSign[16] = '\0';
                 }
             } else {
                 // Unknown field type
