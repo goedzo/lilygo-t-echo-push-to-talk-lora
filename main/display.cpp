@@ -7,795 +7,294 @@
 #include "lora.h"
 #include "ble.h"
 
-
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
 #include <GxIO/GxIO.h>
-#include <GxDEPG0150BN/GxDEPG0150BN.h>  // 1.54" b/w 
+#include <GxDEPG0150BN/GxDEPG0150BN.h>
 #include "epd/GxEPD2_150_BN.h"
-#include <GxEPD2_BW.h>  // For black and white displays
+#include <GxEPD2_BW.h>
 
 #include <Fonts/Org_01.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include "display.h"
 
-int disp_top_margin = 12;   // The blank margin on top
-int disp_bottom_margin =3;
+int disp_top_margin = 12;
+int disp_bottom_margin = 3;
 int disp_right_margin = 2;
-int disp_font_height = 16;  // The height of a line in pixels
+int disp_font_height = 16;
 int disp_icon_height = 16;
 int disp_icon_width = 16;
-int disp_window_offset = 11; // The correction for display->updateWindow to print the updated line.
-int disp_height = 200;      // The height of the display
-int disp_width = 200;       // The width of the display
+int disp_window_offset = 11;
+int disp_height = 200;
+int disp_width = 200;
 
-
-// Display buffer for each line (Top line, middle, bottom, and errors)
-char disp_buf[20][80] = {
-    "",  // Top line with channel and bitrate
-    "",  // Middle line
-    "",  // Bottom line for errors
-    ""   // 4th line for non-PTT messages
-};
-
-int displayLines=sizeof(disp_buf) / sizeof(disp_buf[0]);
-
-
-// Define the 16x16 pixel icon for "TXT" mode
+// ── Icon bitmap data (unchanged) ──
 const uint16_t txt_icon[16] = {
-    // Your bitmap data for TXT mode
-    0b1111111111111111,
-    0b1000000000000001,
-    0b1011111111111101,
-    0b1000111111110001,
-    0b1000001111000001,
-    0b1000000000000001,
-    0b1000000000000001,
-    0b1000000000000001,
-    0b1000000000000001,
-    0b1000000000000001,
-    0b1000000000000001,
-    0b1000000000000001,
-    0b1000000000000001,
-    0b1000000000000001,
-    0b1111111111111111,
-    0b0000000000000000
+    0b1111111111111111, 0b1000000000000001, 0b1011111111111101, 0b1000111111110001,
+    0b1000001111000001, 0b1000000000000001, 0b1000000000000001, 0b1000000000000001,
+    0b1000000000000001, 0b1000000000000001, 0b1000000000000001, 0b1000000000000001,
+    0b1000000000000001, 0b1000000000000001, 0b1111111111111111, 0b0000000000000000
 };
 
-// Define the 16x16 pixel icon for "PTT" mode
 const uint16_t ptt_icon[16] = {
-    // Your bitmap data for PTT mode
-    0b0000001111000000,
-    0b0000011111100000,
-    0b0000111111110000,
-    0b0000110000110000,
-    0b0000110000110000,
-    0b0000110000110000,
-    0b0011111111111100,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0011111111111100,
-    0b0000000000000000
+    0b0000001111000000, 0b0000011111100000, 0b0000111111110000, 0b0000110000110000,
+    0b0000110000110000, 0b0000110000110000, 0b0011111111111100, 0b0111111111111110,
+    0b0111111111111110, 0b0111111111111110, 0b0111111111111110, 0b0111111111111110,
+    0b0111111111111110, 0b0111111111111110, 0b0011111111111100, 0b0000000000000000
 };
 
-// Icon 10: Checkmark
 const uint16_t settings_icon[16] = {
-    0b0000000000000000,
-    0b0000000000000001,
-    0b0000000000000011,
-    0b0000000000000111,
-    0b0000000000001110,
-    0b0000000000011100,
-    0b0000000000111000,
-    0b0000000001110000,
-    0b1000000011100000,
-    0b1100000111000000,
-    0b1110001110000000,
-    0b0111011100000000,
-    0b0011111000000000,
-    0b0001110000000000,
-    0b0000100000000000,
-    0b0000000000000000
+    0b0000000000000000, 0b0000000000000001, 0b0000000000000011, 0b0000000000000111,
+    0b0000000000001110, 0b0000000000011100, 0b0000000000111000, 0b0000000001110000,
+    0b1000000011100000, 0b1100000111000000, 0b1110001110000000, 0b0111011100000000,
+    0b0011111000000000, 0b0001110000000000, 0b0000100000000000, 0b0000000000000000
 };
 
-// Icon 2: Spiral
 const uint16_t test_icon[16] = {
-    0b1111111111111111,
-    0b1000000000000001,
-    0b1011111111111101,
-    0b1010000000000101,
-    0b1010111111110101,
-    0b1010100000000101,
-    0b1010101111110101,
-    0b1010101000000101,
-    0b1010101011111101,
-    0b1010101010000101,
-    0b1010101010110101,
-    0b1010101010100101,
-    0b1010101010101101,
-    0b1010101010101001,
-    0b1010101010101011,
-    0b1111111111111111
+    0b1111111111111111, 0b1000000000000001, 0b1011111111111101, 0b1010000000000101,
+    0b1010111111110101, 0b1010100000000101, 0b1010101111110101, 0b1010101000000101,
+    0b1010101011111101, 0b1010101010000101, 0b1010101010110101, 0b1010101010100101,
+    0b1010101010101101, 0b1010101010101001, 0b1010101010101011, 0b1111111111111111
 };
 
 const uint16_t raw_icon[16] = {
-    0b0000001111000000,
-    0b0000111111110000,
-    0b0001111111111000,
-    0b0011110000111100,
-    0b0011100000011100,
-    0b0011100000011100,
-    0b0011110000111100,
-    0b0001111111111000,
-    0b0000111111110000,
-    0b0000001111000000,
-    0b0000000001000000,
-    0b0000000011000000,
-    0b0000000110000000,
-    0b0000000100000000,
-    0b0000000000000000,
-    0b0000000000000000
+    0b0000001111000000, 0b0000111111110000, 0b0001111111111000, 0b0011110000111100,
+    0b0011100000011100, 0b0011100000011100, 0b0011110000111100, 0b0001111111111000,
+    0b0000111111110000, 0b0000001111000000, 0b0000000001000000, 0b0000000011000000,
+    0b0000000110000000, 0b0000000100000000, 0b0000000000000000, 0b0000000000000000
 };
 
-
 const uint16_t range_icon[16] = {
-    0b0000001111000000,  
-    0b0000110000110000,  
-    0b0001000000001000,  
-    0b0010000000000100,  
-    0b0100000000000010,  
-    0b0100000001100010,  
-    0b1000000111100001,  
-    0b1000111111000001,  
-    0b1000011111000001,  
-    0b1000000110000001,  
-    0b0100000110000010,  
-    0b0100000010000010,  
-    0b0010000000000100,  
-    0b0001000000001000,  
-    0b0000110000110000,  
-    0b0000001111000000   
+    0b0000001111000000, 0b0000110000110000, 0b0001000000001000, 0b0010000000000100,
+    0b0100000000000010, 0b0100000001100010, 0b1000000111100001, 0b1000111111000001,
+    0b1000011111000001, 0b1000000110000001, 0b0100000110000010, 0b0100000010000010,
+    0b0010000000000100, 0b0001000000001000, 0b0000110000110000, 0b0000001111000000
 };
 
 const uint16_t pong_icon[16] = {
-    0b0000001111100000,  
-    0b0000011111110000,  
-    0b0000111110011000,  
-    0b0001111110001100,  
-    0b0001111111001100,  
-    0b0001111111111100,  
-    0b0000111111111000,  
-    0b0000111111111000,  
-    0b0000010101010000,  
-    0b0000001000100000,  
-    0b0000000101000000,  
-    0b0000000101000000,  
-    0b0000000101000000,  
-    0b0000000101000000,  
-    0b0000000101000000,  
-    0b0000000111000000   
+    0b0000001111100000, 0b0000011111110000, 0b0000111110011000, 0b0001111110001100,
+    0b0001111111001100, 0b0001111111111100, 0b0000111111111000, 0b0000111111111000,
+    0b0000010101010000, 0b0000001000100000, 0b0000000101000000, 0b0000000101000000,
+    0b0000000101000000, 0b0000000101000000, 0b0000000101000000, 0b0000000111000000
 };
 
-// Beacon mode icon — radio waves radiating from center
 const uint16_t beacon_icon[16] = {
-    0b0000000000000000,  
-    0b0000011001100000,  
-    0b0000111111110000,  
-    0b0001100000011000,  
-    0b0001100110011000,  
-    0b0001100000011000,  
-    0b0001100110011000,  
-    0b0001111111111000,  
-    0b0001100110011000,  
-    0b0001100000011000,  
-    0b0001100110011000,  
-    0b0001100000011000,  
-    0b0000111111110000,  
-    0b0000011001100000,  
-    0b0000000000000000,  
-    0b0000000000000000   
+    0b0000000000000000, 0b0000011001100000, 0b0000111111110000, 0b0001100000011000,
+    0b0001100110011000, 0b0001100000011000, 0b0001100110011000, 0b0001111111111000,
+    0b0001100110011000, 0b0001100000011000, 0b0001100110011000, 0b0001100000011000,
+    0b0000111111110000, 0b0000011001100000, 0b0000000000000000, 0b0000000000000000
 };
 
-// Black Icon
 const uint16_t black_icon[16] = {
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
-    0b1111111111111111,
+    0b1111111111111111, 0b1111111111111111, 0b1111111111111111, 0b1111111111111111,
+    0b1111111111111111, 0b1111111111111111, 0b1111111111111111, 0b1111111111111111,
+    0b1111111111111111, 0b1111111111111111, 0b1111111111111111, 0b1111111111111111,
+    0b1111111111111111, 0b1111111111111111, 0b1111111111111111, 0b1111111111111111
 };
 
-
-
-// Icon 46: Battery 100% Full (6 lines of vertical stripes)
 const uint16_t bat100_icon[16] = {
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b1000000000000011,
-    0b1010101010101011,
-    0b1010101010101011,
-    0b1010101010101011,
-    0b1000000000000011,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0111111111111110,
+    0b0111111111111110, 0b1000000000000011, 0b1010101010101011, 0b1010101010101011,
+    0b1010101010101011, 0b1000000000000011, 0b0111111111111110, 0b0111111111111110,
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0000000000000000
 };
 
-// Icon 47: Battery 80% Full (5 lines of vertical stripes)
 const uint16_t bat80_icon[16] = {
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b1000000000000011,
-    0b1000101010101011,
-    0b1000101010101011,
-    0b1000101010101011,
-    0b1000000000000011,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0111111111111110,
+    0b0111111111111110, 0b1000000000000011, 0b1000101010101011, 0b1000101010101011,
+    0b1000101010101011, 0b1000000000000011, 0b0111111111111110, 0b0111111111111110,
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0000000000000000
 };
 
-// Icon 48: Battery 60% Full (4 lines of vertical stripes)
 const uint16_t bat60_icon[16] = {
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b1000000000000011,
-    0b1000001010101011,
-    0b1000001010101011,
-    0b1000001010101011,
-    0b1000000000000011,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0111111111111110,
+    0b0111111111111110, 0b1000000000000011, 0b1000001010101011, 0b1000001010101011,
+    0b1000001010101011, 0b1000000000000011, 0b0111111111111110, 0b0111111111111110,
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0000000000000000
 };
 
-// Icon 49: Battery 40% Full (3 lines of vertical stripes)
 const uint16_t bat40_icon[16] = {
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b1000000000000011,
-    0b1000000010101011,
-    0b1000000010101011,
-    0b1000000010101011,
-    0b1000000000000011,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0111111111111110,
+    0b0111111111111110, 0b1000000000000011, 0b1000000010101011, 0b1000000010101011,
+    0b1000000010101011, 0b1000000000000011, 0b0111111111111110, 0b0111111111111110,
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0000000000000000
 };
 
-// Icon 50: Battery 20% Full (2 lines of vertical stripes)
 const uint16_t bat20_icon[16] = {
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b1000000000000011,
-    0b1000000000101011,
-    0b1000000000101011,
-    0b1000000000101011,
-    0b1000000000000011,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0111111111111110,
+    0b0111111111111110, 0b1000000000000011, 0b1000000000101011, 0b1000000000101011,
+    0b1000000000101011, 0b1000000000000011, 0b0111111111111110, 0b0111111111111110,
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0000000000000000
 };
 
-
-// Icon 50: Battery 10% Full (1 lines of vertical stripes)
 const uint16_t bat10_icon[16] = {
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b1000000000000011,
-    0b1000000000001011,
-    0b1000000000001011,
-    0b1000000000001011,
-    0b1000000000000011,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0111111111111110,
+    0b0111111111111110, 0b1000000000000011, 0b1000000000001011, 0b1000000000001011,
+    0b1000000000001011, 0b1000000000000011, 0b0111111111111110, 0b0111111111111110,
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0000000000000000
 };
 
-// Icon 51: Battery Empty (0 lines, just the frame)
 const uint16_t bat0_icon[16] = {
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b1000000000000011,
-    0b1000000000000011,
-    0b1000000000000011,
-    0b1000000000000011,
-    0b1000000000000011,
-    0b0111111111111110,
-    0b0111111111111110,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000,
-    0b0000000000000000
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0111111111111110,
+    0b0111111111111110, 0b1000000000000011, 0b1000000000000011, 0b1000000000000011,
+    0b1000000000000011, 0b1000000000000011, 0b0111111111111110, 0b0111111111111110,
+    0b0000000000000000, 0b0000000000000000, 0b0000000000000000, 0b0000000000000000
 };
 
-// Icon when powered off
 const uint16_t off_icon[16] = {
-    0b0000000110000000,
-    0b0000000110000000,
-    0b0001000110001000,
-    0b0011000110001100,
-    0b0110000110000110,
-    0b1100000110000011,
-    0b1100000110000011,
-    0b1100000000000011,
-    0b1100000000000011,
-    0b1100000000000011,
-    0b1100000000000011,
-    0b0110000000000110,
-    0b0011000000001100,
-    0b0001100000011000,
-    0b0000011111100000,
-    0b0000000000000000
+    0b0000000110000000, 0b0000000110000000, 0b0001000110001000, 0b0011000110001100,
+    0b0110000110000110, 0b1100000110000011, 0b1100000110000011, 0b1100000000000011,
+    0b1100000000000011, 0b1100000000000011, 0b1100000000000011, 0b0110000000000110,
+    0b0011000000001100, 0b0001100000011000, 0b0000011111100000, 0b0000000000000000
 };
-
 
 const uint16_t gpsok_icon[16] = {
-    0b0000000000000000,
-    0b0000000011111000,
-    0b0000000000001100,
-    0b0011000111000110,
-    0b0010100001110010,
-    0b0010010000011011,
-    0b0010001110001001,
-    0b0010000101001000,
-    0b0010000011000000,
-    0b0010000001000000,
-    0b0001000000100000,
-    0b0001100000010000,
-    0b0001110000001000,
-    0b0011001111111000,
-    0b0010000010000000,
-    0b0111111110000000
+    0b0000000000000000, 0b0000000011111000, 0b0000000000001100, 0b0011000111000110,
+    0b0010100001110010, 0b0010010000011011, 0b0010001110001001, 0b0010000101001000,
+    0b0010000011000000, 0b0010000001000000, 0b0001000000100000, 0b0001100000010000,
+    0b0001110000001000, 0b0011001111111000, 0b0010000010000000, 0b0111111110000000
 };
 
 const uint16_t gpsnofix_icon[16] = {
-    0b0000000001100011,
-    0b0000000000110110,
-    0b0000000000011100,
-    0b0011000000011100,
-    0b0000100000110110,
-    0b0010010001100011,
-    0b0000001010000000,
-    0b0010000101000000,
-    0b0000000010000000,
-    0b0010000001000000,
-    0b0001000000100000,
-    0b0000000000010000,
-    0b0001010000001000,
-    0b0010001101010000,
-    0b0010000010000000,
-    0b0101010110000000
+    0b0000000001100011, 0b0000000000110110, 0b0000000000011100, 0b0011000000011100,
+    0b0000100000110110, 0b0010010001100011, 0b0000001010000000, 0b0010000101000000,
+    0b0000000010000000, 0b0010000001000000, 0b0001000000100000, 0b0000000000010000,
+    0b0001010000001000, 0b0010001101010000, 0b0010000010000000, 0b0101010110000000
 };
 
-
-// E-Paper display initialization
 SPIClass        *dispPort  = nullptr;
 GxIO_Class      *io        = nullptr;
 GxEPD_Class     *display_v1   = nullptr;
 GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>* display = nullptr;
 
-
-
-
 void printline(const char* msg) {
-    //Serial.println(msg);
-    //Serial.println("\n");
     display->print(msg);
 }
 
 void setupDisplay() {
     SerialMon.println("[Display] starting e-paper init...");
 
-    // Set backlight pin first so we can verify board is alive
     pinMode(ePaper_Backlight, OUTPUT);
     digitalWrite(ePaper_Backlight, HIGH);
     enableBacklight(true);
     SerialMon.println("[Display] backlight ON");
 
-    // Create SPI class for the display — do NOT call begin() yet, GxEPD2 will do it
     dispPort = new SPIClass(
-        /*SPIPORT*/NRF_SPIM2,
-        /*MISO*/ ePaper_Miso,
-        /*SCLK*/ePaper_Sclk,
-        /*MOSI*/ePaper_Mosi);
+        NRF_SPIM2, ePaper_Miso, ePaper_Sclk, ePaper_Mosi);
 
-    // Create SPI settings
-    SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);  // 4 MHz speed, MSB first, SPI mode 0
+    SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);
 
-    // Create the display class using GxEPD2_150_BN with default HIGH busy level (SSD1681)
     GxEPD2_150_BN epd(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
     display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(epd);
 
     SerialMon.println("[Display] calling init with reset_duration=300...");
-    // The 6-param init calls selectSPI() then epd2.init().
-    // IMPORTANT: GxEPD2's _reset() sets RST LOW for _reset_duration ms, then HIGH.
-    // But SSD1681 needs ~200ms AFTER going HIGH before BUSY responds (per GxIO_SPI::reset()).
-    // We use reset_duration=300 so that after deasserting RST, we wait 300ms total.
-    // This matches the T-Echo factory behavior where GxEPD v1's IO.reset() waits 200ms post-RST.
     display->init(0, true, 300, false, *dispPort, spiSettings);
     SerialMon.println("[Display] init() returned OK");
 
-    // Critical: after RST goes HIGH, SSD1681 needs additional time before accepting commands.
-    // GxEPD2 doesn't add this — it assumes the controller is ready when reset_duration elapses.
-    // But on T-Echo's RC circuit, the pull-up takes extra time to charge past the logic threshold.
-    // Adding explicit delay per LilyGO factory firmware and GxIO_SPI::reset() pattern.
     delay(200);
     SerialMon.println("[Display] post-reset delay done");
 
     display->setRotation(3);
     SerialMon.println("[Display] rotation set, clearing screen...");
-    
-    // clearScreen() writes 0xFF buffers then calls refresh(false) which is a full update
+
     display->clearScreen();
     SerialMon.println("[Display] clearScreen returned OK");
-    
+
     display->setFullWindow();
     display->fillScreen(GxEPD_WHITE);
     display->setTextColor(GxEPD_BLACK);
     display->setFont(&FreeMonoBold9pt7b);
-    
-    // Draw text using page mode for reliability
+
     display->firstPage();
     do {
         display->fillScreen(GxEPD_WHITE);
         display->setCursor(10, 40);
         display->print("T-Echo Ready!");
     } while (display->nextPage());
-    
-    // Explicit full refresh — not partial
+
     SerialMon.println("[Display] doing full refresh...");
-    display->refresh(false);  // false = full update
+    display->refresh(false);
     SerialMon.println("[Display] COMPLETE - e-paper should be updating now");
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {
     for (int i = 0; i < size; i++) {
         uint16_t val = originalIcon[i];
-        uint8_t highByte = (val >> 8) & 0xFF;  // Extract the high byte (first 8 bits)
-        uint8_t lowByte = val & 0xFF;          // Extract the low byte (last 8 bits)
-        
-        // Swap the high and low bytes and store in the swapped icon array
+        uint8_t highByte = (val >> 8) & 0xFF;
+        uint8_t lowByte = val & 0xFF;
         swappedIcon[i] = (lowByte << 8) | highByte;
     }
 }
 
-
-
-void drawIcon(const uint16_t* icon_data,int x, int y,int height, int width, uint16_t bg_color, uint16_t icon_color) {
-    //Clear the icon first
+void drawIcon(const uint16_t* icon_data, int x, int y, int height, int width, uint16_t bg_color, uint16_t icon_color) {
     display->fillRect(x, y, height, width, bg_color);
-    uint16_t swappedIcon[height]; // Create a temporary buffer for the swapped icon
-    //This is a default icon in when no icon is set
-    swapIconBytes(icon_data, swappedIcon, width);  // Swap the bytes of the black icon
+    uint16_t swappedIcon[height];
+    swapIconBytes(icon_data, swappedIcon, width);
     display->drawBitmap(x, y, (const uint8_t *)swappedIcon, height, width, icon_color);
-
 }
 
 void drawModeIcon(const char* mode) {
-    //If we are in settings, override the current icon
-    bool icon_drawn=false;
+    bool icon_drawn = false;
 
-    if(mode=="OFF") {
-        //We are powered down, so make sure to show the OFF_icon
-        drawIcon(off_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    if (mode == "OFF") {
+        drawIcon(off_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
         return;
     }
 
-    if(in_settings_mode) {
-        drawIcon(settings_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-        icon_drawn=true;
-    }
-    else {
+    if (in_settings_mode) {
+        drawIcon(settings_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+        icon_drawn = true;
+    } else {
         if (mode == "PTT") {
-            drawIcon(ptt_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-            icon_drawn=true;
+            drawIcon(ptt_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn = true;
         } else if (mode == "TXT") {
-            drawIcon(txt_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-            icon_drawn=true;
+            drawIcon(txt_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn = true;
         } else if (mode == "RAW") {
-            drawIcon(raw_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-            icon_drawn=true;
+            drawIcon(raw_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn = true;
         } else if (mode == "TST") {
-            drawIcon(test_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-            icon_drawn=true;
+            drawIcon(test_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn = true;
         } else if (mode == "RANGE") {
-            drawIcon(range_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-            icon_drawn=true;
+            drawIcon(range_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn = true;
         } else if (mode == "PONG") {
-            drawIcon(pong_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-            icon_drawn=true;
+            drawIcon(pong_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn = true;
         } else if (mode == "BEACON") {
-            drawIcon(beacon_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-            icon_drawn=true;
-        }
-
-    }
-
-    if(!icon_drawn) {
-      //We are missing an icon for this mode, so make a black icon to show it
-      drawIcon(black_icon,0, disp_top_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-    }
-}
-
-void updDisp(uint8_t line, const char* msg, bool updateScreen) {
-    if (line < displayLines && strcmp(disp_buf[line], msg) != 0) {  
-        strncpy(disp_buf[line], msg, sizeof(disp_buf[line]) - 1);
-        disp_buf[line][sizeof(disp_buf[line]) - 1] = '\0'; 
-
-        //Serial.println(msg);
-
-        drawModeIcon(current_mode);  // Draw the mode icon
-
-        // Clear only the part where the updated line is
-        if (line < 2) {
-            // Make room for the icon if it's in the first two lines
-            display->fillRect(20, disp_top_margin + (line * disp_font_height)-disp_window_offset, disp_width, disp_font_height, GxEPD_WHITE);
-            display->setCursor(20, disp_top_margin + line * disp_font_height);
-        } else {
-            // Normal position for other lines
-            display->fillRect(0, disp_top_margin + (line * disp_font_height)-disp_window_offset, disp_width, disp_font_height, GxEPD_WHITE);
-            display->setCursor(0, disp_top_margin + line * disp_font_height);
-        }
-
-        // Set text color and font
-        display->setTextColor(GxEPD_BLACK);
-        display->setFont(&FreeMonoBold9pt7b);
-
-        // Print the new line
-        printline(disp_buf[line]);
-        //Mark this line for reprinting
-        if(updateScreen) {
-            display->displayWindow(0,0,disp_width,disp_height);
-        }
-
-        // Send the structured data to the phone app
-        char formattedMessage[100];
-        if(msg && msg[0] != '\0') {  // Only send non-empty messages
-            if(line<10) {
-                snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
-            }
-            else {
-                snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
-            }
-            sendNotificationToApp(formattedMessage);
+            drawIcon(beacon_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+            icon_drawn = true;
         }
     }
-    else {
-        // Always make sure we sent it to the phone (only if non-empty)
-        if(msg && msg[0] != '\0') {
-            char formattedMessage[100];
 
-            if(line<10) {
-                snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
-            }
-            else {
-                snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
-            }
-            sendNotificationToApp(formattedMessage);
-        }
+    if (!icon_drawn) {
+        drawIcon(black_icon, 0, disp_top_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
     }
-}
-
-void clearScreen(){
-    for(int i=0;i<displayLines;i++) {
-      updDisp(i,"",false);  // false = do NOT trigger display update or notifications
-    }
-    updDisp(0,"",true);     // single refresh of the cleared screen
-    //clear any error
-    showError("");
-}
-
-
-void printGPSIcon() {
-  if(gps_status==NO_GPS) {
-      //No GPS Module installed, so don't display any icon
-  }
-  else {
-    if(gps_status==GPS_ERROR) {
-        showError("GPS Hardware error");
-    }
-
-    if(gps_status==GPS_INIT || gps_status==GPS_TIME) {
-        //Show the No-Fix GPS Icon
-         drawIcon(gpsnofix_icon,disp_width-(3 * disp_icon_width)-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-    }
-
-    if(gps_status==GPS_LOC) {
-         drawIcon(gpsok_icon,disp_width-(3 * disp_icon_width)-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-    }
-
-    //Show the amount of GPS sattelies in view
-    display->fillRect(disp_width-(2 * disp_icon_width)-1, disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset, 26, disp_font_height, GxEPD_WHITE); //Erase the current satellites, which can be >10
-    display->setCursor(disp_width-(2 * disp_icon_width)-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin);
-
-    // Set text color and font
-    display->setTextColor(GxEPD_BLACK);
-    display->setFont(&FreeMonoBold9pt7b);
-
-    // Print the new line
-    display->print(gps_satellites);
-
-
-  }
-}
-
-void printStatusOnApp() {
-  RTC_Date dateTime = rtc.getDateTime();
-  float batteryPercentage = getBatteryPercentage();
-
-  char displayString[50];
-  snprintf(displayString, sizeof(displayString), "%.2f   %02d:%02d:%02d   GPS:%d     BAT:%.2f", currentFrequency,dateTime.hour, dateTime.minute, dateTime.second,gps_satellites,batteryPercentage);
-
-
-  //Send it also to BLE
-  // Send the structured data to the phone app
-  char formattedMessage[100];
-  snprintf(formattedMessage, sizeof(formattedMessage), "LINE:10|TEXT:%s", displayString);
-  sendNotificationToApp(formattedMessage);
-
-}
-
-
-void printFrequencyIcon(bool updateScreen=false) {
-  //Let's print the current frequency on the left bottom
-  display->fillRect(0, disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset+disp_font_height, 78, disp_font_height, GxEPD_WHITE);
-  display->setCursor(0, disp_height-disp_icon_height-disp_bottom_margin+disp_font_height);
-
-  // Set text color and font
-  display->setTextColor(GxEPD_BLACK);
-  display->setFont(&FreeMonoBold9pt7b);
-
-  char displayString[10];
-  snprintf(displayString, sizeof(displayString), "%.2f", currentFrequency);
-
-  // Print the new line
-  display->print(displayString);
-  if(updateScreen) {
-      display->displayWindow(0,0,disp_width,disp_height);    
-  }
-
-}
-
-void printTimeIcon(bool updateScreen=false) {
-
-  RTC_Date dateTime = rtc.getDateTime();
-  char time_str[9];  // Format: HH:MM:SS
-  snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", dateTime.hour, dateTime.minute, dateTime.second);
-
-  //Let's print the current frequency on the left bottom
-  display->fillRect(5*disp_font_height+3, disp_height-disp_icon_height-(2*disp_bottom_margin)-disp_window_offset+disp_font_height -4, 39, disp_font_height, GxEPD_WHITE);
-  display->setCursor(5*disp_font_height+3, disp_height-disp_icon_height-disp_bottom_margin-4+disp_font_height);
-
-  // Set text color and font
-  display->setTextColor(GxEPD_BLACK);
-  display->setFont(&Org_01);
-
-  // Print the new line
-  display->print(time_str);
-  if(updateScreen) {
-      display->displayWindow(0,0,disp_width,disp_height);    
-  }
-}
-
-
-
-void printStatusIcons(){
-  uint8_t batteryPercentage = getBatteryPercentage();
-  if(batteryPercentage>90) {
-    drawIcon(bat100_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>80) {
-    drawIcon(bat80_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>60) {
-    drawIcon(bat60_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>40) {
-    drawIcon(bat40_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>20) {
-    drawIcon(bat20_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>10) {
-    drawIcon(bat10_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>3) {
-    drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  else if (batteryPercentage>0) {
-    drawIcon(bat0_icon,disp_width-disp_icon_width-disp_right_margin, disp_height-disp_icon_height-disp_bottom_margin,disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
-  }
-  printGPSIcon();
-  printFrequencyIcon();
-  printTimeIcon();
-  printStatusOnApp();
-}
-
-void updModeAndChannelDisplay() {
-    drawModeIcon(current_mode);
-    printStatusIcons();
-    if (!in_settings_mode) {
-        char displayString[20];
-        snprintf(displayString, sizeof(displayString), "Mode: %s", current_mode);
-        // Display the current mode name
-        updDisp(1, displayString,true);
-    }
-    char buf[30];
-    if(current_mode=="PTT") {
-        snprintf(buf, sizeof(buf), "chn:%c %dbps", channels[deviceSettings.channel_idx], getBitrateFromIndex(deviceSettings.bitrate_idx));
-    }
-    else {
-        snprintf(buf, sizeof(buf), "chn:%c spf:%d", channels[deviceSettings.channel_idx], deviceSettings.spreading_factor);
-    }
-
-    updDisp(0, buf,true);
-
-
 }
 
 void showError(const char* error_msg) {
-    // Display error message on bottom line
-    //Sometimes an error has 2 lines, so clear the last line
-    updDisp(10, "",false);
-    updDisp(9, error_msg);
+    SerialMon.print("[Display] Error: ");
+    SerialMon.println(error_msg);
+}
+
+void clearScreen() {
+    display->fillScreen(GxEPD_WHITE);
+    display->refresh(false);
+    showError("");
 }
 
 void enableBacklight(bool en) {
     digitalWrite(ePaper_Backlight, en);
 }
+
+// ── Stub implementations — rendering moved to display_layout ──
+void updDisp(uint8_t line, const char* msg, bool updateScreen) {}
+void updModeAndChannelDisplay() {}
+void printStatusIcons() {}
+void printGPSIcon() {}
+void printFrequencyIcon(bool updateScreen) {}
+void printTimeIcon(bool updateScreen) {}
+void printStatusOnApp() {}
+void sleepDisplay() {}
