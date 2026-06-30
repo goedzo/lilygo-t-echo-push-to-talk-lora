@@ -10,6 +10,7 @@
 #include "packet.h"
 #include "text_inbox.h"
 #include "scan.h"
+#include "screen_sync.h"
 
 using namespace ace_button;
 
@@ -146,8 +147,11 @@ void handleAppModes() {
     //Always allow receiving and sending messages;
     checkLoraPacketComplete(); //If a message was received, it will call handlePacket();
 
-    //Update GPS location
+    // Update GPS location
     loopGPS();
+
+    // Send screen mirror to companion app (throttled to 1/sec)
+    sendScreenSync();
 
     //Let's implement a power off, when the action button is pressed 5 seconds
     if(digitalRead(MODE_PIN) == LOW) {

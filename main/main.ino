@@ -316,11 +316,7 @@ void setup()
 
     checkCrashState();
     
-    // Boot animation replaces the old clearScreen + updModeAndChannelDisplay sequence
-    showBootAnimation(lora_ok, gps_ok);
-    checkCrashState();
-    DB("after showBootAnimation");
-
+    // Boot animation disabled — test layout rendering directly
     clearScreen();
     checkCrashState();
     DB("after clearScreen");

@@ -38,28 +38,24 @@ void initLayoutState() {
 
 // ── Primitive: draw header row (y=12) ──
 void drawHeaderRow(const char* mode_name, const char* channel_sf) {
-    // Mode icon at (0, 12) — reuse existing icon logic
     drawModeIcon(mode_name);
 
-    // Black-filled rect for mode name at x~24 with white text
     int name_x = 24;
-    display->setCursor(name_x + 4, disp_top_margin + 8);
     display->setFont(&FreeMonoBold9pt7b);
 
-    // Draw black box behind mode name text
+    // Black box behind mode name — text centered vertically in the 16px bar
     display->fillRect(name_x, disp_top_margin, 100, 16, GxEPD_BLACK);
-    display->setCursor(name_x + 4, disp_top_margin + 8);
+    display->setCursor(name_x + 4, disp_top_margin + 2);
     display->setTextColor(GxEPD_WHITE);
     display->print(mode_name);
 
     // Channel/SF right-aligned at far-right edge
     int channel_x = disp_width - 90;
     display->fillRect(channel_x, disp_top_margin, 86, 16, GxEPD_BLACK);
-    display->setCursor(channel_x + 4, disp_top_margin + 8);
+    display->setCursor(channel_x + 4, disp_top_margin + 2);
     display->setTextColor(GxEPD_WHITE);
     display->print(channel_sf);
 
-    // Revert to default colors for following draws
     display->setTextColor(GxEPD_BLACK);
 }
 
@@ -126,7 +122,7 @@ void drawBottomStatusbar() {
     char freq_str[12];
     snprintf(freq_str, sizeof(freq_str), "%.2f", currentFrequency);
     display->setFont(&FreeMonoBold9pt7b);
-    display->setCursor(4, sb_y + 10);
+    display->setCursor(4, sb_y + 20);
     display->setTextColor(GxEPD_WHITE);
     display->print(freq_str);
 
@@ -135,11 +131,11 @@ void drawBottomStatusbar() {
     char time_str[9];
     snprintf(time_str, sizeof(time_str), "%02d:%02d", dateTime.hour, dateTime.minute);
     int time_w = strlen(time_str) * 8;
-    display->setCursor((disp_width - time_w) / 2, sb_y + 10);
+    display->setCursor((disp_width - time_w) / 2, sb_y + 20);
     display->print(time_str);
 
     // Sat count (white text, ~155)
-    display->setCursor(152, sb_y + 10);
+    display->setCursor(152, sb_y + 20);
     display->print(gps_satellites);
 
     // Battery icon (white, far-right) — use bat icons via drawIcon
@@ -161,21 +157,23 @@ void drawBottomStatusbar() {
 
 // ── Default layout: header row + bottom status bar ──
 void drawDefaultLayout() {
-    // Clear screen white first (e-ink safe)
-    display->fillScreen(GxEPD_WHITE);
+    display->setFullWindow();
+    display->firstPage();
+    do {
+        display->fillScreen(GxEPD_WHITE);
 
-    char chan_sf[20];
-    if (current_mode == "PTT") {
-        snprintf(chan_sf, sizeof(chan_sf), "chn:%c %dbps", channels[deviceSettings.channel_idx], getBitrateFromIndex(deviceSettings.bitrate_idx));
-    } else {
-        snprintf(chan_sf, sizeof(chan_sf), "chn:%c spf:%d", channels[deviceSettings.channel_idx], deviceSettings.spreading_factor);
-    }
+        char chan_sf[20];
+        if (current_mode == "PTT") {
+            snprintf(chan_sf, sizeof(chan_sf), "chn:%c %dbps", channels[deviceSettings.channel_idx], getBitrateFromIndex(deviceSettings.bitrate_idx));
+        } else {
+            snprintf(chan_sf, sizeof(chan_sf), "chn:%c spf:%d", channels[deviceSettings.channel_idx], deviceSettings.spreading_factor);
+        }
 
-    drawHeaderRow(current_mode, chan_sf);
-    drawBottomStatusbar();
+        drawHeaderRow(current_mode, chan_sf);
+        drawBottomStatusbar();
 
-    // White fill for content area between header and statusbar
-    display->fillRect(0, 32, disp_width, disp_height - 64, GxEPD_WHITE);
+        display->fillRect(0, 32, disp_width, disp_height - 64, GxEPD_WHITE);
+    } while (display->nextPage());
 }
 
 // ── Per-mode: BEACON (placeholder) ──

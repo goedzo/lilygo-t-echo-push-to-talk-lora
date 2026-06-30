@@ -22,8 +22,8 @@
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 <span class="history-badge" id="historyBadge"></span>
             </button>
-            <button class="log-toggle" id="logToggle" title="Toggle log">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            <button class="log-toggle" id="logToggle" title="Show log">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 6 16 6 16 18 8 18 8 6"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
             </button>
         </header>
 
@@ -69,19 +69,25 @@
                 <div class="screen-header">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                     <span>T-Echo Display</span>
+                    <span class="screen-mode-badge" id="screenModeBadge">TXT</span>
                 </div>
-                <div class="screen-body" id="screen">
-                    <div class="screen-line" data-line="0">&nbsp;</div>
-                    <div class="screen-line" data-line="1">&nbsp;</div>
-                    <div class="screen-line" data-line="2">&nbsp;</div>
-                    <div class="screen-line" data-line="3">&nbsp;</div>
-                    <div class="screen-line" data-line="4">&nbsp;</div>
-                    <div class="screen-line" data-line="5">&nbsp;</div>
-                    <div class="screen-line" data-line="6">&nbsp;</div>
-                    <div class="screen-line" data-line="7">&nbsp;</div>
-                    <div class="screen-line" data-line="8">&nbsp;</div>
-                    <div class="screen-line" data-line="9">&nbsp;</div>
-                    <div class="screen-line" data-line="10">&nbsp;</div>
+                <div class="screen-body" id="screenMirror">
+                    <!-- Header row with mode icon -->
+                    <div class="screen-row header-row">
+                        <span class="screen-icon" id="screenModeIcon"></span>
+                        <span class="screen-mode-name" id="screenModeName">TXT</span>
+                        <span class="screen-chan-sf" id="screenChanSf">chn:A spf:7</span>
+                    </div>
+                    <!-- Dynamic content rows (populated by JS) -->
+                    <div class="screen-content-area" id="screenContentArea"></div>
+                    <!-- Status bar -->
+                    <div class="screen-row status-bar">
+                        <span class="screen-freq" id="screenFreq">433.50</span>
+                        <span class="screen-time" id="screenTime">14:32</span>
+                        <span class="screen-gps-icon" id="screenGpsIcon"></span>
+                        <span class="screen-sats" id="screenSats">8</span>
+                        <span class="screen-bat-icon" id="screenBatIcon"></span>
+                    </div>
                 </div>
             </section>
 
@@ -172,11 +178,11 @@
         </main>
 
         <!-- Collapsible Console Log -->
-        <aside class="log-panel" id="logPanel">
+        <aside class="log-panel open" id="logPanel">
             <div class="log-header">
                 <span>Log</span>
-                <button class="log-close" id="logClose" title="Close log">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <button class="log-copy-btn" id="logCopyBtn" title="Copy log to clipboard">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 </button>
             </div>
             <div class="log-body" id="console"></div>

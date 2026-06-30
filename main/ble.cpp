@@ -139,8 +139,7 @@ void setupBLE() {
 
     bleCharacteristic.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
     bleCharacteristic.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    bleCharacteristic.setMaxLen(100);
-    bleCharacteristic.setFixedLen(100);
+    bleCharacteristic.setMaxLen(253);
     bleCharacteristic.setWriteCallback(onCharacteristicWritten);
     
     while (Serial.available()) Serial.read();
@@ -173,8 +172,6 @@ void handleBLE() {
 
 void onConnect(uint16_t conn_handle) {
     Serial.println("Phone connected!");
-    //We need to wait until it is initialized before we send the screen contents.
-    delay(1000);
     //Refresh screen to show it in app
     updModeAndChannelDisplay();
 

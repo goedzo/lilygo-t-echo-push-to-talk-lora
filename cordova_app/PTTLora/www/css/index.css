@@ -91,7 +91,8 @@ body {
 }
 
 .log-toggle,
-.mode-action-btn {
+.mode-action-btn,
+.log-open-btn {
     background: none;
     border: none;
     color: #6B8299;
@@ -103,9 +104,30 @@ body {
 }
 
 .log-toggle:hover,
-.mode-action-btn:hover {
+.mode-action-btn:hover,
+.log-open-btn:hover {
     color: #E8ECF1;
     background: rgba(255,255,255,0.06);
+}
+
+/* === Log copy button === */
+.log-copy-btn {
+    background: none;
+    border: none;
+    color: #3D5A73;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+}
+
+.log-copy-btn:hover {
+    color: #E8ECF1;
+    background: rgba(255,255,255,0.06);
+}
+
+.log-copy-btn.copied {
+    color: #4ADE80;
 }
 
 .history-badge {
@@ -256,7 +278,112 @@ body {
     box-shadow: 0 0 12px rgba(26, 111, 212, 0.35);
 }
 
-/* === Screen Section === */
+/* === Screen Mirror Layout === */
+.screen-mode-badge {
+    margin-left: auto;
+    font-size: 12px;
+    color: #4ADE80;
+    background: rgba(74, 222, 128, 0.1);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.header-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 4px;
+    background: #0D1520;
+    border-bottom: 1px solid #1E3040;
+    margin-bottom: 4px;
+}
+
+.screen-icon svg {
+    flex-shrink: 0;
+}
+
+.screen-mode-name {
+    font-family: 'Courier New', 'Roboto Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: #FFFFFF;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.screen-chan-sf {
+    margin-left: auto;
+    font-family: 'Courier New', 'Roboto Mono', monospace;
+    font-size: 12px;
+    color: #7A9BB5;
+}
+
+.screen-content-area {
+    padding: 4px 0;
+}
+
+.screen-row {
+    font-family: 'Courier New', 'Roboto Mono', monospace;
+    font-size: 15px;
+    line-height: 1.8;
+    color: #C8DCE8;
+    padding: 2px 4px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 27px;
+}
+
+.screen-row.blank {
+    color: transparent;
+}
+
+.screen-tx {
+    color: #EF4444;
+    font-weight: 700;
+    text-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.screen-rx {
+    color: #F5A623;
+    font-weight: 700;
+    text-shadow: 0 0 8px rgba(245, 166, 35, 0.4);
+}
+
+.status-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 4px 4px 4px;
+    background: #0D1520;
+    border-top: 1px solid #1E3040;
+    margin-top: 4px;
+}
+
+.screen-freq, .screen-time {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #7A9BB5;
+    flex-shrink: 0;
+}
+
+.screen-time {
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.screen-gps-icon svg, .screen-sats, .screen-bat-icon svg {
+    flex-shrink: 0;
+}
+
+.screen-sats {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #7A9BB5;
+}
+
+/* === End Screen Mirror === */
+
 .screen-section {
     background: #0D1520;
     border: 1px solid #1E3040;
@@ -667,15 +794,21 @@ body {
 
 /* === Log Panel (collapsible) === */
 .log-panel {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease;
+    height: 0;
+    overflow-y: hidden;
     border-top: 1px solid #1E3040;
     background: #0D1520;
+    transition: height 0.3s ease;
 }
 
 .log-panel.open {
-    max-height: 260px;
+    height: 250px;
+    overflow-y: auto;
+}
+
+.log-panel .log-header,
+.log-panel .log-body {
+    display: block;
 }
 
 .log-header {
@@ -694,7 +827,7 @@ body {
 .log-body {
     padding: 8px 14px;
     overflow-y: auto;
-    height: 200px;
+    max-height: 200px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: #1E3040 transparent;
@@ -711,11 +844,18 @@ body {
 
 .log-body p {
     font-family: 'Courier New', 'Roboto Mono', monospace;
-    font-size: 11px;
+    font-size: 14px;
     color: #5A7A96;
     line-height: 1.7;
     margin: 0;
     word-break: break-all;
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: default;
+}
+
+.log-body p:hover {
+    background: rgba(255,255,255,0.04);
 }
 
 /* === Empty state hint === */

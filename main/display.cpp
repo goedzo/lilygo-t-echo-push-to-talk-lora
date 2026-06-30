@@ -291,10 +291,20 @@ void enableBacklight(bool en) {
 
 // ── Stub implementations — rendering moved to display_layout ──
 void updDisp(uint8_t line, const char* msg, bool updateScreen) {}
-void updModeAndChannelDisplay() {}
 void printStatusIcons() {}
 void printGPSIcon() {}
 void printFrequencyIcon(bool updateScreen) {}
 void printTimeIcon(bool updateScreen) {}
 void printStatusOnApp() {}
 void sleepDisplay() {}
+
+// ── Replaces old line-by-line rendering with layout system ──
+#include "display_layout.h"
+
+void updModeAndChannelDisplay() {
+    display->setFullWindow();
+    display->firstPage();
+    do {
+        drawDefaultLayout();
+    } while (display->nextPage());
+}

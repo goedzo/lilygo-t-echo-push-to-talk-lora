@@ -1,11 +1,15 @@
-document.addEventListener('deviceready', onDeviceReady, false);
+document.addEventListener('deviceready', function() {
+    app.onDeviceReady();
+}, false);
 
-function onDeviceReady() {
-    logMessage('Cordova is ready.');
-    updateDeviceStatus('Device ready, scanning for BLE devices...');
-    setStatusIndicator('scanning');
-    app.initialize();
-}
+// Capture unhandled JavaScript errors and console exceptions
+window.onerror = function(message, source, line, col, error) {
+    logMessage('[JS ERROR] ' + message + (source ? ' at ' + source : '') + ':' + line);
+    return false;
+};
+window.addEventListener('unhandledrejection', function(e) {
+    logMessage('[JS UNHANDLED REJECTION] ' + (e.reason ? String(e.reason) : 'unknown'));
+});
 
 // Add message to console
 function logMessage(message) {
@@ -15,6 +19,60 @@ function logMessage(message) {
     newMessage.textContent = message;
     consoleDiv.appendChild(newMessage);
     consoleDiv.scrollTop = consoleDiv.scrollHeight;
+}
+
+// Show toast notification
+function showToast(msg) {
+    var el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add('visible');
+    clearTimeout(el._timer);
+    el._timer = setTimeout(function() {
+        el.classList.remove('visible');
+    }, 2000);
+}
+
+// Copy log to clipboard
+function copyLogToClipboard() {
+    var consoleDiv = document.getElementById('console');
+    if (!consoleDiv) return;
+    
+    var lines = consoleDiv.querySelectorAll('p');
+    var text = '';
+    for (var i = 0; i < lines.length; i++) {
+        text += lines[i].textContent + '\n';
+    }
+    
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+            showToast('Log copied to clipboard');
+            var btn = document.getElementById('logCopyBtn');
+            if (btn) { btn.classList.add('copied'); setTimeout(function(){ btn.classList.remove('copied'); }, 1500); }
+        }).catch(function() {
+            fallbackCopy(text);
+        });
+    } else {
+        fallbackCopy(text);
+    }
+}
+
+function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        showToast('Log copied to clipboard');
+        var btn = document.getElementById('logCopyBtn');
+        if (btn) { btn.classList.add('copied'); setTimeout(function(){ btn.classList.remove('copied'); }, 1500); }
+    } catch(e) {
+        showToast('Failed to copy log');
+    }
+    document.body.removeChild(ta);
 }
 
 // Function to update the device status
@@ -340,8 +398,32 @@ function updateCharCounter(len) {
 }
 
 // Log panel toggle helpers
-function openLogPanel() { document.getElementById('logPanel').classList.add('open'); }
-function closeLogPanel() { document.getElementById('logPanel').classList.remove('open'); }
+var logIcons = {
+    open: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 6 16 6 16 18 8 18 8 6"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/></svg>',
+    close: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>'
+};
+
+function openLogPanel() { document.getElementById('logPanel').classList.add('open'); updateLogButton(); }
+function closeLogPanel() { document.getElementById('logPanel').classList.remove('open'); updateLogButton(); }
+
+function updateLogButton() {
+    var panel = document.getElementById('logPanel');
+    var btn = document.getElementById('logToggle');
+    if (!panel || !btn) return;
+    var isOpen = panel.classList.contains('open');
+    btn.innerHTML = isOpen ? logIcons.close : logIcons.open;
+    btn.title = isOpen ? 'Hide log' : 'Show log';
+}
+
+function toggleLogPanel() {
+    var panel = document.getElementById('logPanel');
+    if (!panel) return;
+    if (panel.classList.contains('open')) {
+        closeLogPanel();
+    } else {
+        openLogPanel();
+    }
+}
 
 var app = {
     // Multi-device: map of device name -> { peripheralId, status, notificationBuffer, txtLoraAlive, txtBleAlive }
@@ -351,7 +433,7 @@ var app = {
     reconnectDelay: 3000,
     
     serviceUUID: "1235",
-    characteristicUUID: "ABCE",
+    characteristicUUID: "abce",
     
     // TXT mode state (mirrors PTT's pttLoraAlive pattern)
     txtLoraAlive: false,
@@ -382,7 +464,7 @@ var app = {
     // Helpers
     getShortDeviceId: function(deviceName) {
         if (!deviceName) return '';
-        var m = deviceName.match(/LilygoT-Echo-([A-F0-9]{8})$/);
+        var m = deviceName.match(/LilygoT-Echo-([A-F0-9]{8})$/i);
         return m ? m[1] : deviceName;
     },
     
@@ -502,13 +584,20 @@ var app = {
 				switchMode(mode);
 			});
 		});
-        // Log panel toggles
-        document.getElementById('logToggle').addEventListener('click', function() {
-            openLogPanel();
-        });
-        document.getElementById('logClose').addEventListener('click', function() {
-            closeLogPanel();
-        });
+        // Log panel toggle
+        var logToggleBtn = document.getElementById('logToggle');
+        if (logToggleBtn) {
+            logToggleBtn.onclick = function(e) { e.preventDefault(); e.stopPropagation(); toggleLogPanel(); return false; };
+        }
+        
+        // Log copy button
+        var logCopyBtn = document.getElementById('logCopyBtn');
+        if (logCopyBtn) {
+            logCopyBtn.onclick = function(e) { e.preventDefault(); e.stopPropagation(); copyLogToClipboard(); return false; };
+        }
+        
+        // Initialize log button icon to match current panel state
+        updateLogButton();
         
         // PTT button - hold to talk with mic capture + Opus encode
         var pttBtn = document.getElementById('pttButton');
@@ -516,14 +605,14 @@ var app = {
             pttBtn.addEventListener('touchstart', function(e) {
                 e.preventDefault();
                 if (!app.isAnyDeviceConnected() || !app.pttLoraAlive) return;
-                app.p ttIsPressing = true;
+                app.pttIsPressing = true;
                 startPttCapture();
             });
             pttBtn.addEventListener('touchend', function(e) {
                 e.preventDefault();
-                if (app.p ttIsPressing) {
+                if (app.pttIsPressing) {
                     stopPttCapture();
-                    app.p ttIsPressing = false;
+                    app.pttIsPressing = false;
                 }
             });
         }
@@ -542,41 +631,50 @@ var app = {
     },
 
     bindEvents: function() {
-        document.addEventListener('deviceready', this.onDeviceReady.bind(this), false);
+        // All other event listeners are bound here via app.initialize()
     },
     onDeviceReady: function() {
-        this.scanForDevice();
+        logMessage('Cordova is ready.');
+        updateDeviceStatus('Device ready, scanning for BLE devices...');
+        setStatusIndicator('scanning');
+        this.initialize();
+        logMessage('Before scanForDevice timeout');
+        var self = this;
+        setTimeout(function() { 
+            logMessage('Scan timeout fired, calling scanForDevice');
+            self.scanForDevice(); 
+        }, 500);
     },
     scanForDevice: function() {
-		var connectedCount = 0;
-		for (var k in this.connectedDevices) {
-			if (this.connectedDevices[k]) connectedCount++;
-		}
-		
+        logMessage('scanForDevice called');
+        var connectedCount = 0;
+        for (var k in this.connectedDevices) {
+            if (this.connectedDevices[k]) connectedCount++;
+        }
+        
         if (connectedCount > 0) {
+            logMessage('Already have ' + connectedCount + ' connected device(s), skipping scan');
             return;
         }
-		else {
-			setTimeout(function() {
-				app.scanForDevice();
-			}, app.reconnectDelay);
-		}
 
         logMessage("Scanning for BLE devices...");
-        ble.scan([], 10, function(device) {
+        var serviceUUIDs = ["1235"];
+        ble.startScan(serviceUUIDs, function(device) {
+            logMessage("Device discovered: " + device.name + " (id=" + device.id + ")");
             if (device.name && app.isValidDeviceName(device.name)) {
                 // Check if already connected to this device
                 if (app.connectedDevices[device.name]) {
                     return;
                 }
-                logMessage("Device found: " + device.name);
+                logMessage("Matching device found: " + device.name);
                 updateDeviceStatus("Device found, connecting...");
                 setStatusIndicator('scanning');
+                // Connect immediately without stopScan — the plugin needs the scan handle alive
                 app.connectToDevice(device.id, device.name);
             }
         }, function(error) {
-            logMessage("Error scanning: " + error);
-            updateDeviceStatus("Error scanning for devices.");
+            logMessage("BLE scan error: " + error);
+            updateDeviceStatus("Scan error, retrying...");
             setStatusIndicator('disconnected');
             setTimeout(function() {
                 logMessage("Re-attempting to scan...");
@@ -585,7 +683,7 @@ var app = {
         });
     },
     isValidDeviceName: function(deviceName) {
-        const pattern = /^LilygoT-Echo-[A-F0-9]{8}$/;
+        const pattern = /^LilygoT-Echo-[A-F0-9]{8}$/i;
         return pattern.test(deviceName);
     },
     connectToDevice: function(deviceId, deviceName) {
@@ -594,8 +692,8 @@ var app = {
 			return;
 		}
 		
-		app.connectedDevices[deviceName] = {
-            peripheralId: null,
+        app.connectedDevices[deviceName] = {
+            peripheralId: deviceId,
             status: 'connecting',
             notificationBuffer: '',
             txtLoraAlive: false,
@@ -607,45 +705,42 @@ var app = {
         };
 
         logMessage("Attempting to connect to " + deviceName + "...");
-        ble.connect(deviceId, function(peripheral) {
-            if (peripheral && peripheral.id) {
-                logMessage("Connected to " + peripheral.name + " (" + deviceName + ")");
-                updateDeviceStatus("Connected: " + deviceName);
-                setStatusIndicator('connected');
+        ble.connect(deviceId, function(peripheralId) {
+            logMessage("Connected to " + deviceName);
+            updateDeviceStatus("Connected: " + deviceName);
+            setStatusIndicator('connected');
 
-                app.connectedDevices[deviceName].peripheralId = peripheral.id;
-                app.connectedDevices[deviceName].status = 'connected';
+            app.connectedDevices[deviceName].status = 'connected';
 
-                // Auto-select first device as target if none chosen yet
-                if (!app.targetDeviceName) {
-                    app.targetDeviceName = deviceName;
-                    logMessage("Selected " + deviceName + " as active device.");
-                }
-
-                app.updateMultiDeviceStatus();
-                app.readWriteBLE(deviceName, peripheral.id);
-                app.startNotification(deviceName, peripheral.id);
-            } else {
-                logMessage("Connected, but peripheral.id is not available for " + deviceName);
-				delete app.connectedDevices[deviceName];
-                app.updateMultiDeviceStatus();
+            // Auto-select first device as target if none chosen yet
+            if (!app.targetDeviceName) {
+                app.targetDeviceName = deviceName;
+                logMessage("Selected " + deviceName + " as active device.");
             }
+
+            app.updateMultiDeviceStatus();
+            setTimeout(function() {
+                app.readWriteBLE(deviceName, deviceId);
+            }, 300);
+            // Increased delay for GATT service discovery before enabling notifications
+            setTimeout(function() {
+                app.startNotification(deviceName, deviceId);
+            }, 2000);
         }, function(error) {
-            logMessage("Error connecting to " + deviceName + ": " + error);
+            var errMsg = typeof error === 'string' ? error : (error.message || error.code != null ? 'code=' + error.code : '') + (error.resultCode != null ? ', resultCode=' + error.resultCode : '') + (error.targetDeviceName && typeof error.targetDeviceName !== 'function' ? ', target=' + error.targetDeviceName : '') || Object.keys(error).length ? JSON.stringify(error) : 'unknown BLE error';
+            logMessage("Error connecting to " + deviceName + ": " + errMsg);
             updateDeviceStatus("Error connecting to " + deviceName);
             setStatusIndicator('disconnected');
 			delete app.connectedDevices[deviceName];
             app.updateMultiDeviceStatus();
+            // Restart scan to find and reconnect to the device
+            setTimeout(function() {
+                logMessage("Re-attempting to scan after connection failure...");
+                app.scanForDevice();
+            }, app.reconnectDelay);
         });
     },
     readWriteBLE: function(deviceName, deviceId) {
-        ble.read(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
-            var byteArray = new Uint8Array(data);
-            var receivedValue = app.bytesToString(byteArray);
-        }, function(error) {
-            logMessage("Error reading from " + deviceName + ": " + error);
-        });
-
         ble.isConnected(deviceId, function(connected) {
             if (!connected) {
                 logMessage(deviceName + " disconnected.");
@@ -724,7 +819,7 @@ var app = {
         });
     },
 
-	startNotification: function(deviceName, deviceId) {
+    startNotification: function(deviceName, deviceId) {
 		logMessage("Starting notifications from " + deviceName + "...");
 
 		ble.startNotification(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
@@ -763,7 +858,10 @@ var app = {
 				endMarkerIndex = app.connectedDevices[deviceName].notificationBuffer.indexOf("~~");
 			}
 		}, function(error) {
-			logMessage("Error receiving notification from " + deviceName + ": " + error);
+			logMessage("Error receiving notification from " + deviceName + ": " + error + ", retrying in 1s...");
+			setTimeout(function() {
+				app.startNotification(deviceName, deviceId);
+			}, 1000);
 		});
 	},
     
@@ -961,13 +1059,28 @@ var app = {
 			return;
 		}
 
+		// Handle Screen Mirror (LINE:S)
+		if (lineMatch && lineMatch[1] === 'S') {
+			var syncData = message.slice(lineMatch[0].length);
+			logMessage('SCREEN:MIRROR data=' + JSON.stringify(syncData).substring(0, 200));
+			var fields = app.parseScreenMirrorFields(syncData);
+			logMessage('SCREEN:parsed fields=' + JSON.stringify(fields).substring(0, 300));
+			app.renderScreenMirror(syncData);
+			return;
+		}
+
 		if (lineMatch && textMatch) {
 			var lineNumber = parseInt(lineMatch[1], 10);
 			var text = textMatch ? textMatch[1] : '';
 			
 			if(lineNumber<11) {
-				document.getElementById('line' + lineNumber).textContent = text;
-				document.getElementById('screen').classList.remove('empty-hint');
+				// Fallback: update legacy line-based screen display for older firmware
+				var oldScreen = document.getElementById('screen');
+				if (oldScreen) {
+					var lineEl = document.getElementById('line' + lineNumber);
+					if (lineEl) lineEl.textContent = text;
+					oldScreen.classList.remove('empty-hint');
+				}
 			}
 			
 			// Add received TXT messages to history (from any device, but only line 4 = content lines)
@@ -1024,8 +1137,10 @@ var app = {
         app.txtPollTimer = setInterval(function() {
             var target = deviceName || app.targetDeviceName;
             if (!target || !app.connectedDevices[target]) return;
+            var pid = app.connectedDevices[target].peripheralId;
+            if (!pid) return;
             ble.write(
-                app.connectedDevices[target].peripheralId,
+                pid,
                 app.serviceUUID,
                 app.characteristicUUID,
                 app.stringToBytes("GETSTATUS"),
@@ -1050,7 +1165,8 @@ var app = {
             document.getElementById('myAliasInput').value = saved;
         } else {
             // Default to last 4 of MAC
-            var mac = device ? device.name.replace(/^LilygoT-Echo-/, '').substr(-4) : '';
+            var names = Object.keys(app.connectedDevices);
+            var mac = names.length ? names[0].replace(/^LilygoT-Echo-/i, '').substr(-4) : '';
             if (mac) {
                 app.displayName = mac.toUpperCase();
                 document.getElementById('myAliasInput').value = mac;
@@ -1172,8 +1288,10 @@ var app = {
         app.pttPollTimer = setInterval(function() {
             var target = app.getActiveDeviceId();
             if (!target || !app.connectedDevices[target]) return;
+            var pid = app.connectedDevices[target].peripheralId;
+            if (!pid) return;
             ble.write(
-                app.connectedDevices[target].peripheralId,
+                pid,
                 app.serviceUUID,
                 app.characteristicUUID,
                 app.stringToBytes("GETSTATUS"),
@@ -1186,8 +1304,8 @@ var app = {
         if (app.pttPollTimer) { clearInterval(app.pttPollTimer); app.pttPollTimer = null; }
     },
     updatePttButtonState: function(bleAlive, loraAlive) {
-        app.p ttBleAlive = bleAlive;
-        app.p ttLoraAlive = loraAlive;
+        app.pttBleAlive = bleAlive;
+        app.pttLoraAlive = loraAlive;
         
         var pttBtn = document.getElementById('pttButton');
         var pttLabel = document.getElementById('pttLabel');
@@ -1218,7 +1336,7 @@ var app = {
             pttBtn.disabled = true;
             pttBtn.className = '';
             pttLabel.textContent = 'No one on channel';
-        } else if (!app.p ttIsCapturing) {
+        } else if (!app.pttIsCapturing) {
             pttBtn.disabled = false;
             pttBtn.className = 'active';
             pttLabel.textContent = 'HOLD TO TALK';
@@ -1229,14 +1347,14 @@ var app = {
         var pttLabel = document.getElementById('pttLabel');
         
         if (isActive) {
-            app.p ttIsCapturing = true;
+            app.pttIsCapturing = true;
             pttBtn.className = 'transmitting';
             pttLabel.textContent = 'TRANSMITTING...';
         } else {
-            app.p ttIsCapturing = false;
+            app.pttIsCapturing = false;
             pttLabel.textContent = 'SENT';
             setTimeout(function() {
-                if (app.p ttLoraAlive && app.p ttBleAlive) {
+                if (app.pttLoraAlive && app.pttBleAlive) {
                     pttBtn.className = 'active';
                     pttLabel.textContent = 'HOLD TO TALK';
                 }
@@ -1246,7 +1364,7 @@ var app = {
     
     // Start mic capture + init Opus encoder
     startPttCapture: function() {
-        if (app.p ttIsCapturing) return;
+        if (app.pttIsCapturing) return;
         
         app.updatePttTransmitState(true);
         app.pttStartMs = Date.now();
@@ -1289,7 +1407,7 @@ var app = {
             // Capture PCM via ScriptProcessorNode audioprocess event (getFloat32Data doesn't exist)
             var opusInterval;
             app.analyserNode.onaudioprocess = function(e) {
-                if (!app.p ttIsCapturing) return;
+                if (!app.pttIsCapturing) return;
                 
                 var inputData = e.inputBuffer.getChannelData(0);
                 var bufferSize = 160; // 20ms @ 8kHz mono int16
@@ -1315,7 +1433,7 @@ var app = {
                     });
                     
                     opusResult.then(function(opusBytes) {
-                        if (opusBytes && app.p ttIsCapturing) {
+                        if (opusBytes && app.pttIsCapturing) {
                             app.sendOpusFrame(opusBytes);
                         }
                     });
@@ -1327,7 +1445,7 @@ var app = {
     },
     
     stopPttCapture: function() {
-        if (app.p ttIsCapturing) {
+        if (app.pttIsCapturing) {
             // Stop capture event handler
             if (app.analyserNode) {
                 app.analyserNode.onaudioprocess = null;
@@ -1387,5 +1505,268 @@ var app = {
                 resolve(result[0]); // decoded PCM bytes (played by native plugin)
             }, reject, 'OpusEncoder', 'playPCM', [opusBytes]);
         });
+    },
+
+    // === Screen Mirror Rendering ===
+
+    _screenMirrorData: {},
+
+    parseScreenMirrorFields: function(data) {
+        var fields = {};
+        // Split on '|' to get sections: H:key,val C:key,val... S:key T:key G:key B:key I:key
+        var parts = data.split('|');
+        for (var p = 0; p < parts.length; p++) {
+            var colonIdx = parts[p].indexOf(':');
+            if (colonIdx === -1) continue;
+            var sectionKey = parts[p][0]; // H, C, S, T, G, B, I
+            var keyVal = parts[p].slice(colonIdx + 1);
+            var entries = keyVal.split(',');
+            for (var e = 0; e < entries.length; e++) {
+                var entry = entries[e];
+                if (!entry) continue;
+                
+                // Content section (C:) uses both ':' and '=' as separators in firmware.
+                // Split on the first occurrence of either to get key/value.
+                // Values may contain colons (time: 14:32) so we only split the first one.
+                var sepIdx = entry.indexOf('=');
+                var colonPos = entry.indexOf(':');
+                
+                if (sepIdx === -1 && colonPos === -1) continue;
+                
+                // Use whichever comes first, but handle edge cases:
+                // Status bar entries like "B:90%" use the section-key colon already consumed.
+                // Content fields like "range_role:Sender" or "r0_n=CNName" use = or : as KV separator.
+                if (sectionKey === 'C') {
+                    // Content fields: firmware sends both key:value and key=value.
+                    // If there's a '=', split on first '='. Otherwise split on first ':'.
+                    var kvSep = -1;
+                    if (sepIdx !== -1) {
+                        kvSep = sepIdx;
+                    } else if (colonPos !== -1) {
+                        kvSep = colonPos;
+                    }
+                    if (kvSep === -1) continue;
+                    fields[entry.slice(0, kvSep)] = entry.slice(kvSep + 1);
+                } else {
+                    // Non-content sections: key is already split by section key.
+                    // These entries use '=' as separator consistently in firmware.
+                    if (sepIdx === -1) continue;
+                    var k = entry.slice(0, sepIdx);
+                    var v = entry.slice(sepIdx + 1);
+                    fields[sectionKey.toLowerCase() + ':' + k] = v;
+                }
+            }
+        }
+        return fields;
+    },
+
+    renderScreenMirror: function(syncData) {
+        if (!syncData) return;
+        
+        var fields = this.parseScreenMirrorFields(syncData);
+        this._screenMirrorData = fields;
+
+        var modeBadge = document.getElementById('screenModeBadge');
+        var modeNameEl = document.getElementById('screenModeName');
+        var chanSfEl = document.getElementById('screenChanSf');
+        var contentArea = document.getElementById('screenContentArea');
+
+        if (!contentArea) return;
+
+        // Update header
+        var mode = fields.h || 'TXT';
+        if (modeBadge) modeBadge.textContent = mode;
+        if (modeNameEl) modeNameEl.textContent = mode;
+        if (chanSfEl) chanSfEl.textContent = fields['h:chansf'] || 'chn:A spf:7';
+
+        // Update status bar
+        var freqEl = document.getElementById('screenFreq');
+        var timeEl = document.getElementById('screenTime');
+        var satsEl = document.getElementById('screenSats');
+        var batEl = document.getElementById('screenBatIcon');
+        var gpsEl = document.getElementById('screenGpsIcon');
+
+        if (freqEl) freqEl.textContent = fields['s:f'] || '---';
+        if (timeEl) timeEl.textContent = fields['t:t'] || '--:--';
+        if (satsEl) satsEl.textContent = fields['g:g'] || '0';
+
+        // Battery icon (7 states: 0=empty through 6=full)
+        var batIdx = parseInt(fields['i:batt']) || 6;
+        if (batEl) {
+            batEl.innerHTML = this._getBatIconSVG(batIdx);
+        }
+
+        // GPS icon
+        var gpsState = fields['i:gpst'] || 'ok';
+        if (gpsEl) {
+            if (gpsState === 'no%') {
+                gpsEl.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F5A623" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+            } else {
+                gpsEl.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+            }
+        }
+        var modeIconEl = document.getElementById('screenModeIcon');
+        if (modeIconEl) {
+            modeIconEl.innerHTML = this._getModeIconSVG(mode);
+        }
+
+        // Render content rows based on mode
+        var html = '';
+        var c = fields;
+
+        switch (mode) {
+        case 'BEACON':
+            var peerName = c['peer_name'] || '---';
+            var peerDist = c['peer_dist'];
+            if (peerDist && peerDist !== '-1') {
+                html += this._screenRow(peerName);
+                html += this._screenRow(peerDist + (peerDist.indexOf('km') === -1 ? ' m' : ''));
+            } else {
+                html += this._screenRow('No peer loc');
+                html += this._screenRow('???');
+            }
+            var rosterCount = c['roster_count'] || 0;
+            html += this._screenRow(rosterCount + ' peers');
+            for (var r = 0; r < 8; r++) {
+                var rn = c['r' + r + '_n'] || '';
+                var rd = c['r' + r + '_d'] || '';
+                var rb = c['r' + r + '_b'] || '';
+                if (rn) {
+                    html += this._screenRow(rn + ' ' + rd + ' ' + rb);
+                } else {
+                    html += '<div class="screen-row blank">&nbsp;</div>';
+                }
+            }
+            break;
+
+        case 'RANGE':
+            var role = c['range_role'] || '---';
+            html += this._screenRow('Role: ' + role);
+            if (c['curr_lat']) {
+                html += this._screenRow(c['curr_lat'] + ', ' + c['curr_lon']);
+            }
+            html += this._screenRow('Rng:' + (c['range_last_count'] || '---'));
+            html += this._screenRow('Stable: ' + c['range_stable_dist'] + ' m');
+            html += this._screenRow('PLoss: ' + c['range_total_loss'] + '/' + c['range_consecutive_ok']);
+            break;
+
+        case 'PTT':
+            var pttState = c['ptt_state'] || 'Idle';
+            if (pttState === 'TX') {
+                html += this._screenRow('<span class="screen-tx">TX ---</span>');
+            } else if (pttState === 'RX') {
+                html += this._screenRow('<span class="screen-rx">RX ---</span>');
+            } else {
+                html += this._screenRow('PTT Idle');
+            }
+            break;
+
+        case 'TXT':
+            var msgCount = parseInt(c['txt_inbox_count']) || 0;
+            if (!c['txt_show_inbox'] && c['txt_latest_msg']) {
+                html += this._screenRow(msgCount + ' msg(s)');
+                html += this._screenRow('---');
+                // Truncate long message for screen width
+                var maxLineLen = 42;
+                var msg = c['txt_latest_msg'];
+                if (msg.length > maxLineLen) msg = msg.slice(0, maxLineLen - 3) + '...';
+                html += this._screenRow(msg);
+            } else if (c['txt_show_inbox'] === '1') {
+                var scrollPage = parseInt(c['txt_scroll_page']) || 0;
+                html += this._screenRow('Inbox: P ' + (scrollPage + 1) + '/' + Math.ceil(Math.max(msgCount, 1) / 16));
+                for (var rp = 0; rp < 8; rp++) {
+                    // App would need to know the inbox content — just show page info
+                    html += this._screenRow('...');
+                }
+            } else {
+                html += this._screenRow('No messages yet');
+                html += this._screenRow('Wait for TXT mode');
+            }
+            break;
+
+        case 'TST':
+            html += this._screenRow('Sent: ' + (c['tst_sent'] || '---'));
+            html += this._screenRow('Recv: ' + (c['tst_recv'] || '---'));
+            break;
+
+        case 'PONG':
+            var pongState = parseInt(c['pong_state']) || 0;
+            var stateText = ['Idle', 'Sending', 'Receive'][pongState] || '???';
+            html += this._screenRow('State: ' + stateText);
+            html += this._screenRow('RTT: ' + (c['pong_rtt_ms'] || '---') + ' ms');
+            break;
+
+        case 'SCAN':
+            var freq = c['scan_freq'] || '--- MHz';
+            var progress = c['scan_progress'] || '-%';
+            html += this._screenRow('Freq: ' + freq);
+            html += this._screenRow('Progress: ' + progress);
+            // Scan results rows
+            for (var sr = 0; sr < 10; sr++) {
+                var sf = c['s' + sr + '_f'] || '';
+                var rs = c['s' + sr + '_r'] || '';
+                if (sf && sf !== '---mh') {
+                    html += this._screenRow(sf.replace('mh',' MHz') + ' R' + rs.replace('dB',''));
+                } else {
+                    html += '<div class="screen-row blank">&nbsp;</div>';
+                }
+            }
+            break;
+
+        case 'RAW':
+            html += this._screenRow('Rcv Cnt: ' + (c['raw_count'] || '---'));
+            html += this._screenRow('SNR: ' + c['raw_last_snr'] + ' dB');
+            html += this._screenRow('RSSI: ' + c['raw_last_rssi'] + ' dBm');
+            break;
+
+        case 'WP':
+            var wpLabel = c['wp_label'] || '---';
+            html += this._screenRow(wpLabel);
+            html += this._screenRow(c['wp_lat'] + ', ' + c['wp_lon']);
+            html += this._screenRow('Alt: ' + c['wp_alt'] + ' m');
+            if (c['wp_broadcasting'] === '1') {
+                html += this._screenRow('Broadcasting: ' + c['wp_bcast_rem'] + 's');
+            }
+            break;
+
+        default:
+            html += this._screenRow('Mode: ' + mode);
+            break;
+        }
+
+        contentArea.innerHTML = html;
+    },
+
+    _screenRow: function(text) {
+        return '<div class="screen-row">' + (text || '&nbsp;') + '</div>';
+    },
+
+    _getBatIconSVG: function(level) {
+        // 7 battery levels as inline SVG
+        var fill = Math.max(1, level); // filled bars
+        var totalBars = 5;
+        var bars = '';
+        for (var i = 0; i < totalBars; i++) {
+            var color = i < fill ? '#4ADE80' : '#3D5A73';
+            bars += '<rect x="' + (16 + i * 5) + '" y="2" width="3" height="12" rx="0.5" fill="' + color + '"/>';
+        }
+        return '<svg width="18" height="16" viewBox="0 0 32 16">' + bars +
+               '<rect x="14" y="0" width="4" height="2" rx="0.5" fill="#3D5A73"/>' +
+               '</svg>';
+    },
+
+    _getModeIconSVG: function(mode) {
+        var icons = {
+            'BEACON': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4m-9.5-9.5l3 3m8 8l3 3M5.6 5.6l2.8 2.8m7.2 7.2l2.8 2.8"/></svg>',
+            'RAW': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
+            'TXT': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+            'RANGE': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20m-4-4l4 4-4 4"/></svg>',
+            'TST': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+            'PONG': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>',
+            'SCAN': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+            'PTT': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 15v1a3 3 0 003 3h8a3 3 0 003-3v-1"/></svg>',
+            'WP': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+        };
+        return icons[mode] || icons['TXT'];
     }
 };
