@@ -187,14 +187,12 @@ void setupSettings() {
 void toggleSettingsMode() {
     in_settings_mode = !in_settings_mode;
     if (in_settings_mode) {
-        clearScreen();
-        updDisp(1, "Entered Settings",true);
+        updModeAndChannelDisplay();
         displayCurrentSetting();
     } else {
         if (radio) {
             setupLoRa();
         }
-        clearScreen();
         updModeAndChannelDisplay();
     }
 }

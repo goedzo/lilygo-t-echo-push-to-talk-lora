@@ -528,29 +528,6 @@ var app = {
             badge.className = 'status-badge connected';
         }
     },
-    
-    renderDeviceSelector: function() {
-        var section = document.getElementById('deviceSection');
-        var strip = document.getElementById('deviceStrip');
-        if (!section || !strip) return;
-        
-        var keys = Object.keys(this.connectedDevices);
-        if (keys.length === 0) {
-            section.style.display = 'none';
-            return;
-        }
-        
-        section.style.display = 'block';
-        var html = '';
-        for (var i = 0; i < keys.length; i++) {
-            var name = keys[i];
-            var shortId = this.getShortDeviceId(name);
-            var isActive = (name === this.targetDeviceName) ? ' active' : '';
-            html += '<button class="devicePill' + isActive + '" data-device="' + name + '" onclick="app.selectDevice(\'' + name.replace(/'/g, "\\'") + '\')">' +
-                    '<span class="device-dot"></span><span>' + shortId + '</span></button>';
-        }
-        strip.innerHTML = html;
-    },
 
     initialize: function() {
         this.bindEvents();
@@ -719,13 +696,13 @@ var app = {
             }
 
             app.updateMultiDeviceStatus();
+            // Wait for GATT service discovery to fully complete before touching the characteristic
             setTimeout(function() {
-                app.readWriteBLE(deviceName, deviceId);
-            }, 300);
-            // Increased delay for GATT service discovery before enabling notifications
-            setTimeout(function() {
-                app.startNotification(deviceName, deviceId);
-            }, 2000);
+                logMessage("Waiting 1s for BLE stack stability before enabling notifications...");
+                setTimeout(function() {
+                    app.startNotification(deviceName, deviceId);
+                }, 1000);
+            }, 1500);
         }, function(error) {
             var errMsg = typeof error === 'string' ? error : (error.message || error.code != null ? 'code=' + error.code : '') + (error.resultCode != null ? ', resultCode=' + error.resultCode : '') + (error.targetDeviceName && typeof error.targetDeviceName !== 'function' ? ', target=' + error.targetDeviceName : '') || Object.keys(error).length ? JSON.stringify(error) : 'unknown BLE error';
             logMessage("Error connecting to " + deviceName + ": " + errMsg);
@@ -819,8 +796,10 @@ var app = {
         });
     },
 
-    startNotification: function(deviceName, deviceId) {
+	startNotification: function(deviceName, deviceId) {
 		logMessage("Starting notifications from " + deviceName + "...");
+
+		var self = this;
 
 		ble.startNotification(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
 			var byteArray = new Uint8Array(data);
@@ -863,6 +842,27 @@ var app = {
 				app.startNotification(deviceName, deviceId);
 			}, 1000);
 		});
+
+		// Poll for screen data via GETSCREEN write (in case notifications don't work on this device)
+		var screenPollCount = 0;
+		function pollScreen() {
+			if (!self.connectedDevices[deviceName]) return;
+			screenPollCount++;
+			ble.write(
+				deviceId, app.serviceUUID, app.characteristicUUID,
+				self.stringToBytes("GETSCREEN"),
+				function() {
+					logMessage("GETSCREEN#" + screenPollCount + " sent to " + deviceName);
+					// Keep polling every 5s as a fallback in case push notifications never arrive
+					if (screenPollCount < 30) setTimeout(pollScreen, 5000);
+				},
+				function(err) {
+					logMessage("GETSCREEN write failed (" + err + ")");
+				}
+			);
+		}
+		// Start polling after a delay to give the BLE stack time to settle
+		setTimeout(pollScreen, 2000);
 	},
     
     processCompleteMessage: function(deviceName, message) {

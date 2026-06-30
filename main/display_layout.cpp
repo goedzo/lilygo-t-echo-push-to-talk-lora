@@ -45,14 +45,14 @@ void drawHeaderRow(const char* mode_name, const char* channel_sf) {
 
     // Black box behind mode name — text centered vertically in the 16px bar
     display->fillRect(name_x, disp_top_margin, 100, 16, GxEPD_BLACK);
-    display->setCursor(name_x + 4, disp_top_margin + 2);
+    display->setCursor(name_x + 4, disp_top_margin + 11);
     display->setTextColor(GxEPD_WHITE);
     display->print(mode_name);
 
     // Channel/SF right-aligned at far-right edge
     int channel_x = disp_width - 90;
     display->fillRect(channel_x, disp_top_margin, 86, 16, GxEPD_BLACK);
-    display->setCursor(channel_x + 4, disp_top_margin + 2);
+    display->setCursor(channel_x + 4, disp_top_margin + 11);
     display->setTextColor(GxEPD_WHITE);
     display->print(channel_sf);
 
@@ -160,6 +160,9 @@ void drawDefaultLayout() {
     display->setFullWindow();
     display->firstPage();
     do {
+        // Fill entire screen with white only once within the page loop.
+        // GxEPD2 firstPage()/nextPage() internally handles the partial/full refresh
+        // cycle, so we must NOT call display->refresh() ourselves here.
         display->fillScreen(GxEPD_WHITE);
 
         char chan_sf[20];

@@ -119,8 +119,8 @@ void updMode() {
     }
 
 
-    // Update the mode and channel display
-    clearScreen();
+    // Update the mode and channel display (clearScreen is now a no-op;
+    // rendering is handled as a single refresh in updModeAndChannelDisplay)
     updModeAndChannelDisplay();
     if(current_mode=="RANGE") {
         //Make sure we reset the count
@@ -215,7 +215,6 @@ void handleAppModes() {
                 range_last_count=0;
                 range_total_pckt_loss=0;
                 range_consecutive_ok=0;
-                clearScreen();
                 updModeAndChannelDisplay();
                 printRangeStatus();
             }  

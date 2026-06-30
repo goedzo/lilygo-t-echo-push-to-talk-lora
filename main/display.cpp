@@ -280,9 +280,9 @@ void showError(const char* error_msg) {
 }
 
 void clearScreen() {
-    display->fillScreen(GxEPD_WHITE);
-    display->refresh(false);
-    showError("");
+    // No-op: rendering is now done via firstPage()/nextPage() in layout functions.
+    // Calling refresh here causes unwanted e-paper flashes when switching modes.
+    // Clearing is now integrated into drawDefaultLayout() and per-mode layouts.
 }
 
 void enableBacklight(bool en) {
@@ -307,4 +307,6 @@ void updModeAndChannelDisplay() {
     do {
         drawDefaultLayout();
     } while (display->nextPage());
+    // No explicit refresh call — GxEPD2 firstPage()/nextPage() handles it internally.
+    // This prevents the triple-flash that occurred when clearing + rendering separately.
 }

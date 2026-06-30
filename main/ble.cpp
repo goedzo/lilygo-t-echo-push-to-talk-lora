@@ -21,7 +21,7 @@ const char* bleGetDeviceIdShort();
 // Notification queue — defer BLE notify calls to loop() to avoid hard faults
 #define NOTIF_QUEUE_SIZE 8
 #define BIN_NOTIF_QUEUE_SIZE 4
-static char notif_queue[NOTIF_QUEUE_SIZE][102];
+static char notif_queue[NOTIF_QUEUE_SIZE][256];
 static uint8_t notif_queue_len[NOTIF_QUEUE_SIZE];
 static uint8_t notif_head = 0;
 static uint8_t notif_tail = 0;
@@ -172,10 +172,7 @@ void handleBLE() {
 
 void onConnect(uint16_t conn_handle) {
     Serial.println("Phone connected!");
-    //Refresh screen to show it in app
     updModeAndChannelDisplay();
-
-
 }
 
 void onDisconnect(uint16_t conn_handle, uint8_t reason) {
@@ -242,6 +239,12 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
                     sendNotificationToApp("OK{BUDDY:}");
                 }
             }
+            else if (action == "GETSCREEN") {
+                // Trigger an immediate screen sync to the app
+                extern void sendScreenSync();
+                sendScreenSync();
+                sendNotificationToApp("OK{SCREEN:refreshed}");
+            }
             else if (action == "GETSTATUS") {
                 // Return connection status: BLE link + LoRa peer liveness
                 // If we're in the write callback, BLE is connected by definition.
@@ -263,6 +266,13 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
                 
                 char resp[32];
                 snprintf(resp, sizeof(resp), "OK{BLE:1}{LORA:%d}", loraAlive ? 1 : 0);
+                sendNotificationToApp(resp);
+            } else if (receivedValue == "GETSCREEN") {
+                // Handle bare GETSCREEN without colon delimiter (app polling)
+                extern void sendScreenSync();
+                sendScreenSync();
+                static char resp[24];
+                snprintf(resp, sizeof(resp), "OK{SCREEN:refreshed}");
                 sendNotificationToApp(resp);
             } else {
                 Serial.println("Invalid format. Missing ':' delimiter.");

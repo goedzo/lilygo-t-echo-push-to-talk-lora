@@ -26,7 +26,7 @@ arduino-cli core install adafruit:nrf52@1.7.0
 arduino-cli lib install "RadioLib GxEPD2 AceButton TinyGPSPlus"
 ```
 
-Verified: **~29% flash, ~16% RAM** (release build including crash_debug + text inbox + waypoints).
+Verified: **~29% flash, ~16-17% RAM** (release build including crash_debug + text inbox + waypoints).
 
 **Prerequisites**: Arduino CLI at `D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe` or in PATH. Adafruit nRF52 core 1.7.0 via `core update-index`.
 
@@ -48,7 +48,8 @@ The project has a stale `platformio.ini` reference but **PlatformIO cannot build
 | `main/main.ino` | setup/loop, board init, mode switch entry points |
 | `main/app_modes.cpp/.h` | Core mode logic (9 modes), AceButton handling, waypoint save/broadcast state |
 | `main/lora.cpp/.h` | SX1262 radio config with RadioLib, non-blocking TX/RX queues |
-| `main/display.cpp/.h` | E-paper rendering (GxEPD2 for GxDEPG0150BN) |
+| `main/display.cpp/.h` | E-paper rendering (GxEPD2 for GxDEPG0150BN, firstPage()/nextPage() model) |
+| `main/display_layout.cpp/.h` | Layout primitives: top bar (y=12, 16px, black bg/white text, cursor y=top_margin+11), body (y=32-168, white bg/black text), bottom status bar (y=168, 32px). No separate refresh() call — GxEPD2 handles it internally. |
 | `main/settings.cpp/.h` | DeviceSettings struct persisted to RTC via PCF8563 |
 | `main/ble.cpp/.h` | BLE GATT service for companion app (`"1235"` / `"ABCE"`) |
 | `main/battery.cpp/.h` | Battery monitoring |
