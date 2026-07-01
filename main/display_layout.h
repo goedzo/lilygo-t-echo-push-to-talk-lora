@@ -34,8 +34,11 @@ struct LayoutState {
     double beacon_distance;
     int range_distance_m;
     bool range_sender;
-    bool ptt_sending;
-    bool ptt_receiving;
+    bool ptt_tx_active;       // true during transmission (audio being relayed to LoRa)
+    bool ptt_rx_active;       // true during reception (audio being forwarded to BLE)
+    bool ptt_sending;         // legacy alias — kept for backward compat
+    bool ptt_receiving;       // legacy alias — kept for backward compat
+    unsigned long ptt_state_changed_ms;  // timestamp of last state transition
     int pong_state;           // 0=idle, 1=sending, 2=receive
     int pong_rtt_ms;
     int scan_progress_pct;

@@ -47,6 +47,16 @@ arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/
 - **DFU upload**: double-click reset button to enter DFU mode first.
 - nRF5-SDK overwrites the Adafruit bootloader — do not mix toolchains without restoring bootloader.
 
+### Screen layout (fixed Y positions)
+
+- Top bar: y=`disp_top_margin` (12px), 16px tall, black background with white text. Text cursor: `y = disp_top_margin + 11` (baseline offset for FreeMonoBold9pt7b — centers text in the 16px bar).
+- Body area: y=32 to y=168, white background with black text.
+- Bottom status bar: y=`disp_height - 32` (168px), 32px tall, black background with white text. Text cursor Y offset: `+20` below the bar top.
+
+### Rendering model
+
+Rendering uses `firstPage()/nextPage()` page-loop pattern — `fillScreen()` + all draw calls happen inside the do-while loop. No separate `refresh()` call; GxEPD2 handles it internally. `clearScreen()` is a no-op to prevent unwanted e-paper flashes when switching modes.
+
 ## Work Guidance
 
 ### Mode logic (`app_modes`)

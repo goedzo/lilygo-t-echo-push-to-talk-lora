@@ -46,7 +46,7 @@ Stories 3-8 are independent of each other — implement in any order after S1+S2
 - [ ] Dynamic updates (beacon distance, PTT state) flicker-free at <1s with partial refresh
 - [ ] Bottom status bar always shows frequency, time (HH:MM), sat count, battery icon
 - [ ] Header row in every mode: [icon] black-box MODE_NAME right-aligned chn:X spf:N
-- [ ] WP mode present in `modes[]` array and functional
+- [ ] WP mode present in `modes[]` array and functional | **Done** |
 - [ ] Flash usage ~30-32% of 768KB (verified via build output)
 
 ## Story Index

@@ -62,6 +62,11 @@ extern unsigned long beacon_last_distance_update;
 extern uint8_t  txtInboxScrollPage;
 extern uint8_t  txtInboxMsgCount;
 extern bool     txtShowInbox;       // true = showing inbox, false = showing single latest
+
+// TST test message counters
+extern int test_message_counter;
+extern int rcv_test_message_counter;
+
 void txtModeInboxDisplay();
 void txtModeToggleInboxView();
 void txtModeClearInbox();
