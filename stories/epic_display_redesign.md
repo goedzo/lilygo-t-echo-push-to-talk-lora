@@ -60,7 +60,7 @@ Stories 3-8 are independent of each other — implement in any order after S1+S2
 | S5 | PTT Big Card TX/RX block | `display_layout.cpp` add_ptt() |
 | S6 | TXT single + inbox card | `display_layout.cpp` add_txt(), `text_inbox.cpp` updates |
 | S7 | TST Dashboard grid | `display_layout.cpp` add_tst() |
-| S8 | PONG, SCAN, RAW, WP layouts | `display_layout.cpp` add_pong(), add_scan(), add_raw(), add_wp() |
+| S8 | PONG, SCAN, RAW, WP layouts | `display_layout.cpp` add_pong(), add_scan(), add_raw(), add_wp() | **Done** |
 | S9 | WP mode integration | `app_modes.h/.cpp`, `display_layout.cpp` |
 
 ## Risks

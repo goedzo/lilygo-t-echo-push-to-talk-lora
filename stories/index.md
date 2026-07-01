@@ -11,7 +11,7 @@
 | S5 | PTT Big Card TX/RX block | `display_layout.cpp` add_ptt() | ~0.5KB | Not started |
 | S6 | TXT single + inbox card | `display_layout.cpp` add_txt(), `text_inbox.cpp` updates | ~1KB | Not started |
 | S7 | TST Dashboard grid | `display_layout.cpp` add_tst() | ~0.5KB | Not started |
-| S8 | PONG, SCAN, RAW, WP layouts | `display_layout.cpp` 4 new functions | ~2KB | Not started |
+| S8 | PONG, SCAN, RAW, WP layouts | `display_layout.cpp` 4 new functions | ~2KB | **Done** |
 | S9 | WP mode integration | `app_modes.h/.cpp`, `display_layout.cpp` | ~1KB | Not started |
 
 **Total estimated flash addition: ~8-10KB (from ~29% → ~31-32%)**
