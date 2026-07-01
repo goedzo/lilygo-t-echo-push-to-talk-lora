@@ -18,8 +18,11 @@ void initLayoutState() {
     layout_state.beacon_distance = 0;
     layout_state.range_distance_m = 0;
     layout_state.range_sender = false;
+    layout_state.ptt_tx_active = false;
+    layout_state.ptt_rx_active = false;
     layout_state.ptt_sending = false;
     layout_state.ptt_receiving = false;
+    layout_state.ptt_state_changed_ms = 0;
     layout_state.pong_state = 0;
     layout_state.pong_rtt_ms = 0;
     layout_state.scan_progress_pct = 0;
@@ -211,23 +214,85 @@ void drawRangeLayout() {
     drawBottomStatusbar();
 }
 
-// ── Per-mode: PTT (placeholder) ──
+// ── Per-mode: PTT Big Card TX/RX state block ──
 void drawPttLayout() {
-    display->fillScreen(GxEPD_WHITE);
-
-    char chan_sf[20];
-    snprintf(chan_sf, sizeof(chan_sf), "chn:%c %dbps", channels[deviceSettings.channel_idx], getBitrateFromIndex(deviceSettings.bitrate_idx));
-    drawHeaderRow("PTT", chan_sf);
-
-    display->fillRect(12, 50, disp_width - 24, 60, GxEPD_WHITE);
-    if (layout_state.ptt_sending) {
-        drawSecondaryRow("TX ---", 65);
-    } else if (layout_state.ptt_receiving) {
-        drawSecondaryRow("RX ---", 65);
+    // ── Determine PTT state ──
+    char state_text[24];
+    uint16_t bg_color, text_color;
+    
+    if (layout_state.ptt_tx_active) {
+        snprintf(state_text, sizeof(state_text), "SENDING");
+        bg_color = GxEPD_BLACK;
+        text_color = GxEPD_WHITE;
+    } else if (layout_state.ptt_rx_active) {
+        snprintf(state_text, sizeof(state_text), "RECEIVING");
+        bg_color = GxEPD_WHITE;
+        text_color = GxEPD_BLACK;
     } else {
-        drawSecondaryRow("PTT Idle", 65);
+        snprintf(state_text, sizeof(state_text), "STANDBY  ");
+        bg_color = GxEPD_WHITE;
+        text_color = GxEPD_BLACK;
     }
 
+    // ── State block at y=48 — bordered rect (176x82 pixels) ──
+    int blk_x = 12, blk_y = 48, blk_w = 176, blk_h = 82;
+
+    // Fill background first (critical for e-ink inversion safety)
+    display->fillRect(blk_x, blk_y, blk_w, blk_h, bg_color);
+
+    // Draw border on top of filled area
+    display->drawRect(blk_x, blk_y, blk_w, blk_h, GxEPD_BLACK);
+
+    // ── State text centered in block ──
+    int title_line = blk_y + 22;     // first text row (state label)
+    int activity_line = blk_y + 48;  // second text row (activity dots)
+
+    display->setFont(&FreeMonoBold12pt7b);
+    display->setCursor(blk_x + 6, title_line + 10);
+    display->setTextColor(text_color);
+    display->print(state_text);
+
+    // Activity indicator dots below state text (3 circles as ●●●)
+    if (layout_state.ptt_tx_active) {
+        const uint16_t dot_y = blk_y + 58;
+        for (int i = 0; i < 3; i++) {
+            int dx = blk_x + 24 + (i * 22);
+            display->fillCircle(dx, dot_y, 6, text_color);
+        }
+    } else if (layout_state.ptt_rx_active) {
+        // Audio level bars for receiving state
+        const uint16_t bar_base_y = blk_y + 58;
+        int bar_w = 4;
+        int bar_x = blk_x + 12;
+        uint16_t bar_color = (bg_color == GxEPD_WHITE) ? GxEPD_BLACK : GxEPD_WHITE;
+        
+        const int heights[] = {8, 14, 10, 16, 12, 6, 14, 10};
+        for (int i = 0; i < 8; i++) {
+            display->fillRect(bar_x + (i * (bar_w + 3)), bar_base_y - heights[i], bar_w, heights[i], bar_color);
+        }
+    }
+
+    // ── Channel / bitrate info below state block ──
+    display->setFont(&FreeMonoBold9pt7b);
+    display->setCursor(12, blk_y + blk_h + 20);
+    display->setTextColor(GxEPD_BLACK);
+    
+    char chan_detail[32];
+    snprintf(chan_detail, sizeof(chan_detail), "chn:%c %dbps", 
+             channels[deviceSettings.channel_idx], 
+             getBitrateFromIndex(deviceSettings.bitrate_idx));
+    display->print(chan_detail);
+
+    // ── Signal metrics on next row ──
+    display->setCursor(12, blk_y + blk_h + 36);
+    
+    char sig_buf[50];
+    float rssi_val = (radio != nullptr) ? radio->getRSSI() : -127.0f;
+    float snr_val = (radio != nullptr) ? radio->getSNR() : 0.0f;
+    snprintf(sig_buf, sizeof(sig_buf), "SNR:%.1fdB RSSI:%.0fdBm", snr_val, rssi_val);
+    display->print(sig_buf);
+
+    // ── Draw bottom status bar ──
     drawBottomStatusbar();
 }
 
