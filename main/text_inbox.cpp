@@ -205,3 +205,19 @@ void inboxDisplayPage(uint8_t page_start, uint8_t* scroll_cursor, bool needs_ref
         *scroll_cursor = count > (uint8_t)lines_per_page ? page_start : 0;
     }
 }
+
+// Helper for layout module — gets message payload into caller buffer
+uint8_t inboxGetMessage(uint8_t index, char* out_buf, size_t buf_len) {
+    if (!g_inited || !inbox_base) return 0;
+    
+    uint8_t ml = 0;
+    bool truncated = false;
+    uint8_t sender[4] = {0};
+    const char* payload = inboxGet(index, ml, truncated, sender);
+    if (!payload) return 0;
+    
+    size_t copy_len = (ml < buf_len - 1) ? ml : buf_len - 1;
+    memcpy(out_buf, payload, copy_len);
+    out_buf[copy_len] = '\0';
+    return ml;
+}

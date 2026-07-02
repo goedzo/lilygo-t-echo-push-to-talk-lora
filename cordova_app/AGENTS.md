@@ -35,6 +35,7 @@ Takes care of the Android companion app: `cordova_app/PTTLora/`. A Cordova-based
 - Android-only target (cordova-android 13)
 - BLE communication with the T-Echo uses custom GATT service UUIDs (`"1235"` / `"ABCE"`)
 - LoRa message relay between phone and device
+- All firmware text notifications arrive wrapped as `LINE:NOTIF|DATA:{payload}~~` — the app strips the prefix before regex matching. Payloads use `~~` terminators for multi-message framing on a single notification.
 
 ## Verification
 

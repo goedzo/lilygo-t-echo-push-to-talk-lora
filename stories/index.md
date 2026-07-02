@@ -8,7 +8,7 @@
 | S2 | Frame engine + e-ink safe rendering | `display_layout.h/.cpp`, all callers | ~1KB | Not started |
 | S3 | BEACON Split Rows layout | `display_layout.cpp` add_beacon() | ~0.5KB | Not started |
 | S4 | RANGE Big Card layout | `display_layout.cpp` add_range() | ~0.5KB | Not started |
-| S5 | PTT Big Card TX/RX block | `display_layout.cpp` add_ptt() | ~0.5KB | Not started |
+| S5 | PTT Big Card TX/RX block | `display_layout.cpp` add_ptt() | ~0.5KB | **Done** |
 | S6 | TXT single + inbox card | `display_layout.cpp` add_txt(), `text_inbox.cpp` updates | ~1KB | Not started |
 | S7 | TST Dashboard grid | `display_layout.cpp` add_tst() | ~0.5KB | Not started |
 | S8 | PONG, SCAN, RAW, WP layouts | `display_layout.cpp` 4 new functions | ~2KB | **Done** |

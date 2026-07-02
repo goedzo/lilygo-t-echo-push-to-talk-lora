@@ -51,4 +51,7 @@ void inboxClear();
 void inboxShowLatest(uint8_t start_line);
 void inboxDisplayPage(uint8_t page_start, uint8_t* scroll_cursor, bool needs_refresh);
 
+// Helper for layout module — gets message payload into caller buffer
+uint8_t inboxGetMessage(uint8_t index, char* out_buf, size_t buf_len);
+
 #endif // TEXT_INBOX_H

@@ -53,9 +53,16 @@ arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/
 - Body area: y=32 to y=168, white background with black text.
 - Bottom status bar: y=`disp_height - 32` (168px), 32px tall, black background with white text. Text cursor Y offset: `+20` below the bar top.
 
-### Rendering model
+### Rendering model — partial updates with mode-switch full refresh
 
-Rendering uses `firstPage()/nextPage()` page-loop pattern — `fillScreen()` + all draw calls happen inside the do-while loop. No separate `refresh()` call; GxEPD2 handles it internally. `clearScreen()` is a no-op to prevent unwanted e-paper flashes when switching modes.
+Rendering uses `firstPage()/nextPage()` page-loop pattern inside a shared `renderPageLoop()` helper. 
+
+- **Mode switch**: `forceFullRefresh()` sets a flag → next `drawXxxLayout()` call uses `setFullWindow()` + `refresh(false)` (~2.5s). This clears ghosting artifacts from the previous layout.
+- **Normal updates**: All subsequent draws use `setPartialWindow(0, 12, 200, 184)` + `refresh(true)` (~0.8s) — only updates the header/body/statusbar region without full panel refresh.
+- The flag is consumed atomically by `pendingFullRefresh()` — returns true once then resets to false.
+- Every layout function (`drawDefaultLayout`, `drawBeaconLayout`, etc.) calls `pendingFullRefresh()` at entry and passes the result to `renderPageLoop()`.
+
+`clearScreen()` is a no-op. `updModeAndChannelDisplay()` just calls `drawDefaultLayout()` — it does not do its own refresh.
 
 ## Work Guidance
 
@@ -86,7 +93,7 @@ Every beacon packet includes an optional `~CN{call_sign}` field (up to 16 ASCII 
 
 | Button | Action | Effect |
 |---|---|---|
-| MODE (P1.10) — Single click | Cycle to next mode | Wraps around through all 9 |
+| MODE (P1.9) — Single click | Cycle to next mode | Wraps around through all 9 |
 | MODE — Double click | Next spreading factor | Reinitializes LoRa with new SF |
 | MODE — Long press | Enter/exit settings mode | Cycles device settings |
 | TOUCH (P0.11) — Hold >5s | Power off | Shuts down peripherals → System OFF via softdevice or NRF_POWER |
@@ -102,6 +109,10 @@ Audio is **phone-only** — the T-Echo has no onboard mic/speaker. The device's 
 ### BLE (`ble`)
 
 GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-XXXXXXXX`. GATT service UUID: `"1235"`, characteristic UUID: `"ABCE"` (simple string identifiers, not 128-bit standard UUIDs). Sends mode commands (`switchMode()`) and text messages (`"SENDTXT:{message}"`).
+
+### BLE notification transport
+
+All text notifications from firmware are wrapped with a `LINE:NOTIF|DATA:` prefix and `~~` terminators before being queued. The characteristic max length is 253 bytes; the notification string buffer must fit this full payload. **Bug fix (2026-07-02):** `notifStr` was only 130 bytes, truncating screen sync payloads up to 200 bytes + prefix (~220 chars total). Fixed by using a static buffer of `16 + 200 + 2 + 4 = 222` bytes.
 
 ## Crash Debug Infrastructure (`crash_debug.h`)
 

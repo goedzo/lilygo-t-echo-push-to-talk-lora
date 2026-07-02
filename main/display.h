@@ -41,7 +41,9 @@ void printStatusIcons();
 void printGPSIcon();
 void printFrequencyIcon(bool updateScreen = false);
 void printTimeIcon(bool updateScreen = false);
-void printStatusOnApp();
+void enablePartialUpdates(bool en);
+void forceFullRefresh();
+bool pendingFullRefresh();
 void sleepDisplay();
 
 #endif

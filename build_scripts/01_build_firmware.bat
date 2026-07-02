@@ -3,6 +3,7 @@ REM ============================================
 REM   T-Echo Firmware - Build with Arduino CLI
 REM   No PlatformIO — uses arduino-cli from Arduino IDE installation
 REM ============================================
+cd V:\Bmad\Project_ptt_lora\
 setlocal EnableDelayedExpansion
 
 set "ARDUINO_CLI=D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
@@ -111,3 +112,4 @@ echo.
 echo To upload to T-Echo:
 echo   1. Run: .\02_upload_firmware.bat [COM port]
 echo.
+cd V:\Bmad\Project_ptt_lora\build_scripts

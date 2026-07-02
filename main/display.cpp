@@ -298,15 +298,26 @@ void printTimeIcon(bool updateScreen) {}
 void printStatusOnApp() {}
 void sleepDisplay() {}
 
+// ── Partial/full refresh control ──
+static bool s_need_full_refresh = true;  // default: start with full refresh
+
+// Call when mode switches — next draw will use full refresh, then revert to partial
+void forceFullRefresh() {
+    s_need_full_refresh = true;
+}
+
+// Called by layout functions — returns true if this render should be full, then resets flag
+bool pendingFullRefresh() {
+    if (s_need_full_refresh) {
+        s_need_full_refresh = false;
+        return true;
+    }
+    return false;
+}
+
 // ── Replaces old line-by-line rendering with layout system ──
 #include "display_layout.h"
 
 void updModeAndChannelDisplay() {
-    display->setFullWindow();
-    display->firstPage();
-    do {
-        drawDefaultLayout();
-    } while (display->nextPage());
-    // No explicit refresh call — GxEPD2 firstPage()/nextPage() handles it internally.
-    // This prevents the triple-flash that occurred when clearing + rendering separately.
+    drawDefaultLayout();
 }

@@ -18,4 +18,7 @@ void stopScanFrequencies();
 void handleFrequencyScan();
 void printTopChannels();
 
+// Scan module state (used by display layout)
+extern bool scanning;
+
 #endif // SCAN_H

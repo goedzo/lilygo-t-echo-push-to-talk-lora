@@ -49,7 +49,7 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 - **Microcontroller**: LilyGO T-Echo with nRF52840
 - **LoRa Module**: SX1262
 - **E-Paper Display**: GxDEPG0150BN 1.54" e-paper (not stock GxEPD2)
-- **Buttons**: MODE on P1.10, TOUCH on P0.11
+- **Buttons**: MODE on P1.9, TOUCH on P0.11
 - **Audio**: External codec hardware required for PTT (T-Echo has no onboard mic/speaker); PCM1270 via I2S recommended
 - **Battery**: For mobile operation with battery status monitoring
 
@@ -128,7 +128,7 @@ Verified build output: **~30% flash, ~8% RAM** (release build with crash_debug).
 
 | Button | Action | Effect |
 |---|---|---|
-| MODE (P1.10) — Single click | Cycle to next mode | Wraps around through all 7 |
+| MODE (P1.9) — Single click | Cycle to next mode | Wraps around through all 7 |
 | MODE — Double click | Next spreading factor | Reinitializes LoRa with new SF |
 | MODE — Long press | Enter/exit settings mode | Cycles device settings |
 | TOUCH (P0.11) — Hold >5s | Power off | Shuts down peripherals → System OFF via softdevice or NRF_POWER |

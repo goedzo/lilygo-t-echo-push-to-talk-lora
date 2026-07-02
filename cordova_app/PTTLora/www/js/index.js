@@ -878,6 +878,22 @@ var app = {
 		var statusMatch = message.match(statusRegex);
 		var opusMatch = message.match(opusRegex);
 
+        // Handle LINE:NOTIF|DATA: wrapped messages (all BLE notifications are wrapped)
+        var wrappedData = '';
+        var notifPrefix = 'LINE:NOTIF|DATA:';
+        if (lineMatch && lineMatch[1] === 'NOTIF') {
+            var dataIdx = message.indexOf('|DATA:');
+            if (dataIdx !== -1) {
+                wrappedData = message.slice(dataIdx + 6);
+                // Re-parse regex against the unwrapped payload
+                lineMatch = wrappedData.match(lineRegex);
+                textMatch = wrappedData.match(textRegex);
+                statusMatch = wrappedData.match(statusRegex);
+            } else {
+                return;
+            }
+        }
+
         // Update this device's BLE/LoRa liveness state
         if (this.connectedDevices[deviceName]) {
             if (statusMatch) {

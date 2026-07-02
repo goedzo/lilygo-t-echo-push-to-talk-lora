@@ -66,6 +66,14 @@ extern bool     txtShowInbox;       // true = showing inbox, false = showing sin
 // TST test message counters
 extern int test_message_counter;
 extern int rcv_test_message_counter;
+extern int pckt_count;
+
+// Range test state
+extern bool range_role_sender;
+extern double range_stable_dist;
+extern double range_max_dist;
+extern int range_total_pckt_loss;
+extern int range_consecutive_ok;
 
 void txtModeInboxDisplay();
 void txtModeToggleInboxView();

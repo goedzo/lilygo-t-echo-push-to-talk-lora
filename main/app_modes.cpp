@@ -11,6 +11,10 @@
 #include "text_inbox.h"
 #include "scan.h"
 #include "screen_sync.h"
+#include "display_layout.h"  // For per-mode drawXxxLayout() wiring
+
+// Extern for partial/full refresh control
+extern void forceFullRefresh();
 
 using namespace ace_button;
 
@@ -71,10 +75,25 @@ int range_total_pckt_loss=0;
 
 // Button objects
 // Define the pin numbers
-#define MODE_PIN _PINNUM(1,10)  // Button 1 connected to P1.10
+#define MODE_PIN _PINNUM(1,10)  // Button 2 connected to P1.10
 #define TOUCH_PIN _PINNUM(0,11)  // Button 2 connected to P0.11 (Touch-capable pin)
 AceButton modeButton(MODE_PIN);
 AceButton touchButton(TOUCH_PIN);
+
+// Custom ButtonConfig that reads MODE_PIN via direct GPIO register to avoid
+// softdevice GPIOTE interference on nRF52 P1 port pins (digitalRead returns stale HIGH)
+class ButtonConfigModePin : public ace_button::ButtonConfig {
+  public:
+    int readButton(uint8_t pin) override {
+      if (pin == MODE_PIN) {
+        // Use nrf_gpio_pin_read — handles P0/P1 transparently and bypasses softdevice GPIOTE lock
+        return nrf_gpio_pin_read(MODE_PIN) ? HIGH : LOW;
+      }
+      return ButtonConfig::readButton(pin);
+    }
+};
+
+ButtonConfigModePin g_modeButtonConfig;  // Custom config with direct GPIO read for MODE_PIN
 
 // Variables for debouncing the touch button
 unsigned long lastTouchPressTime = 0; // Timestamp of the last button press
@@ -119,8 +138,10 @@ void updMode() {
     }
 
 
-    // Update the mode and channel display (clearScreen is now a no-op;
-    // rendering is handled as a single refresh in updModeAndChannelDisplay)
+    // Force full refresh on mode switch — clears ghosting from previous layout
+    forceFullRefresh();
+
+    // Update the mode and channel display — drawDefaultLayout() handles full refresh on mode switch
     updModeAndChannelDisplay();
     if(current_mode=="RANGE") {
         //Make sure we reset the count
@@ -182,6 +203,17 @@ void handleAppModes() {
 
             //Non blocking send
             sendTestMessage();
+            
+            // Update TST layout state and render (every loop to keep display current)
+            layout_state.tst_sent = test_message_counter;
+            layout_state.tst_rcvd = pckt_count;
+            
+            // Only redraw every 2 seconds or when counters change — prevents e-paper flash damage
+            static uint32_t last_tst_draw = 0;
+            if (millis() - last_tst_draw > 2000) {
+                drawTstLayout();
+                last_tst_draw = millis();
+            }
         } 
         else if (current_mode == "TXT") {
             // Show latest message or inbox scroll view
@@ -201,11 +233,19 @@ void handleAppModes() {
         }
         else if (current_mode == "PONG") {
             if (debouncedTouchPress()) {
-              //We start on the buttonpress
-              updDisp(4, "Started pingpong",true);
-              Serial.println(F("[SX1262] Sending another packet ... "));
-              updDisp(5, "Ping!",true);
+              // Start pingpong — update state and render
+              layout_state.pong_state = 1;  // sending
+              drawPongLayout();
               sendPacket("Ping!");
+            }
+            
+            // Render current PONG state — only when state changed or every 3s
+            static uint32_t last_pong_draw = 0;
+            static int8_t last_pong_state = -1;
+            if (millis() - last_pong_draw > 3000 || layout_state.pong_state != last_pong_state) {
+                drawPongLayout();
+                last_pong_draw = millis();
+                last_pong_state = layout_state.pong_state;
             }
         }
         else if (current_mode == "RANGE") {
@@ -235,6 +275,19 @@ void handleAppModes() {
 
             // Handle the SCAN mode
             handleFrequencyScan();  // Call the non-blocking scan function
+            
+            // Render current scan state after processing — only when progress changes
+            static uint32_t last_scan_draw = 0;
+            static int16_t last_scan_progress = -1;
+            {
+                float freq_range = endFreq - startFreq;
+                int16_t cur_progress = (scanning) ? (int16_t)((currentFrequency - startFreq) / freq_range * 100) : 0;
+                if (millis() - last_scan_draw > 1000 || cur_progress != last_scan_progress) {
+                    drawScanLayout();
+                    last_scan_draw = millis();
+                    last_scan_progress = cur_progress;
+                }
+            }
         }
         
         else if (current_mode == "BEACON") {
@@ -258,69 +311,15 @@ void handleAppModes() {
                 beacon_display_dist = bestDist;
                 beacon_display_name = bestName;
                 beacon_last_distance_update = now;
-                
-                char distBuf[32];
-                if (bestDist < 1000) {
-                    snprintf(distBuf, sizeof(distBuf), "D:%.0fm", bestDist);
-                } else {
-                    snprintf(distBuf, sizeof(distBuf), "D:%.1fkm", bestDist / 1000.0);
-                }
-                
-                // Show name and big distance in center lines
-                updDisp(2, beacon_display_name.c_str(), true);
-                updDisp(4, distBuf, true);
-            } else {
-                updDisp(2, "No peer loc", true);
-                updDisp(4, "???", true);
             }
             
-            // Roster count on line 1
-            char buf[30];
-            snprintf(buf, sizeof(buf), "%d peers", peerRosterCount);
-            updDisp(1, buf, false);
-            
-            // List roster entries starting at line 6
-            int displayLine = 6;
-            int maxLines = (disp_height + disp_top_margin) / disp_font_height;
-            for (int i = 0; i < peerRosterCount && (displayLine + 1) < maxLines; i++) {
-                float dist = peerRoster[i].distanceM;
-                const char* displayName = peerRoster[i].callSign[0] != '\0' ? peerRoster[i].callSign : peerRoster[i].deviceId.c_str();
-                
-                int batt = peerRoster[i].battery;
-                
-                // Clear the line first
-                updDisp(displayLine, "", false);
-                
-                char lineBuf[40];
-                snprintf(lineBuf, sizeof(lineBuf), "%s", displayName);
-                
-                if (dist > 0 && dist < 1000) {
-                    char dBuf[20];
-                    snprintf(dBuf, sizeof(dBuf), " %.0fm", dist);
-                    strncat(lineBuf, dBuf, sizeof(lineBuf) - strlen(lineBuf) - 1);
-                } else if (dist >= 1000) {
-                    char dBuf[20];
-                    snprintf(dBuf, sizeof(dBuf), " %.1fkm", dist / 1000.0);
-                    strncat(lineBuf, dBuf, sizeof(lineBuf) - strlen(lineBuf) - 1);
-                } else if (gps_status != GPS_LOC) {
-                    strncat(lineBuf, " ???m", sizeof(lineBuf) - strlen(lineBuf) - 1);
-                }
-                
-                if (batt > 0) {
-                    char bBuf[12];
-                    snprintf(bBuf, sizeof(bBuf), " %d%%", batt);
-                    strncat(lineBuf, bBuf, sizeof(lineBuf) - strlen(lineBuf) - 1);
-                } else {
-                    strncat(lineBuf, " -%", sizeof(lineBuf) - strlen(lineBuf) - 1);
-                }
-                
-                updDisp(displayLine, lineBuf, true);
-                displayLine++;
-            }
-            
-            // Clear remaining roster lines
-            for (int i = displayLine; i < 18; i++) {
-                updDisp(i, "", false);
+            // Render BEACON layout via frame engine — only when peer data changes or every 3s
+            static uint32_t last_beacon_draw = 0;
+            static double last_beacon_dist = -999;
+            if (millis() - last_beacon_draw > 3000 || beacon_display_dist != last_beacon_dist) {
+                drawBeaconLayout();
+                last_beacon_draw = millis();
+                last_beacon_dist = beacon_display_dist;
             }
         }    
     }
@@ -334,27 +333,11 @@ void handlePacket(Packet packet) {
     }
     if (packet.type == "NULL") {
       // Handle unknown packet type and show the raw message
-      updDisp(3, "Unknwn pcket tpe", true);
-
-      char display_msg[30];
-      snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
-      updDisp(5, display_msg,false);
-      snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
-      updDisp(6, display_msg,false);
-
-
-      char rawMessage[packet.rawLength * 4 + 1];  // Enough space for each byte as either ASCII or hex
-      uint16_t index = 0;
-      for (uint16_t i = 0; i < packet.rawLength; i++) {
-          if (isprint(packet.raw[i])) {
-              rawMessage[index++] = packet.raw[i];  // Copy printable characters directly
-          } else {
-              sprintf(rawMessage + index, "\\x%02X", packet.raw[i]);  // Convert non-printable byte to hex
-              index += 4;  // Move index forward by 4 (for \xNN)
-          }
+      if (current_mode == "RAW") {
+          strncpy(layout_state.raw_hex_line1, packet.content.c_str(), sizeof(layout_state.raw_hex_line1) - 1);
+          layout_state.raw_hex_line1[sizeof(layout_state.raw_hex_line1) - 1] = '\0';
+          drawRawLayout();
       }
-      rawMessage[index] = '\0';  // Null-terminate the string
-      updDisp(7, rawMessage, true);  // Display the raw message in hexadecimal
     } 
     else {
       // Parse the packet using the current channel configuration
@@ -377,63 +360,30 @@ void handlePacket(Packet packet) {
           
           // Update distance display immediately
           if (bestDist >= 0) {
-              char distBuf[32];
-              if (bestDist < 1000) {
-                  snprintf(distBuf, sizeof(distBuf), "D:%.0fm", bestDist);
-              } else {
-                  snprintf(distBuf, sizeof(distBuf), "D:%.1fkm", bestDist / 1000.0);
-              }
-              updDisp(1, "Peers:", false);
-              updDisp(2, bestName.c_str(), true);
-              updDisp(4, distBuf, true);
-              
-              // Show roster entries starting at line 6
-              int displayLine = 6;
-              int maxLines = (disp_height + disp_top_margin) / disp_font_height;
-              for (int j = 0; j < peerRosterCount && (displayLine + 1) < maxLines; j++) {
-                  float d2 = peerRoster[j].distanceM;
-                  const char* dn2 = peerRoster[j].callSign[0] != '\0' ? peerRoster[j].callSign : peerRoster[j].deviceId.c_str();
-                  int batt = peerRoster[j].battery;
-                  updDisp(displayLine, "", false);
-                  char lb[40];
-                  snprintf(lb, sizeof(lb), "%s", dn2);
-                  if (d2 > 0 && d2 < 1000) { char db[20]; snprintf(db, sizeof(db), " %.0fm", d2); strncat(lb, db, sizeof(lb) - strlen(lb) - 1); }
-                  else if (d2 >= 1000) { char db[20]; snprintf(db, sizeof(db), " %.1fkm", d2 / 1000.0); strncat(lb, db, sizeof(lb) - strlen(lb) - 1); }
-                  else if (gps_status != GPS_LOC) { strncat(lb, " ???m", sizeof(lb) - strlen(lb) - 1); }
-                  if (batt > 0) { char bb[12]; snprintf(bb, sizeof(bb), " %d%%", batt); strncat(lb, bb, sizeof(lb) - strlen(lb) - 1); }
-                  else { strncat(lb, " -%", sizeof(lb) - strlen(lb) - 1); }
-                  updDisp(displayLine, lb, true);
-                  displayLine++;
-              }
-              for (int j = displayLine; j < 18; j++) { updDisp(j, "", false); }
-          } else {
-              updDisp(1, "Peers:", false);
-              updDisp(2, "No peer loc", true);
-              updDisp(4, "???", true);
-              for (int j = 6; j < 18; j++) { updDisp(j, "", false); }
+              beacon_display_dist = bestDist;
+              beacon_display_name = bestName;
           }
           
-          char buf[30];
-          snprintf(buf, sizeof(buf), "%d peers", peerRosterCount);
-          updDisp(5, buf, true);
+          // Render updated BEACON layout via frame engine
+          drawBeaconLayout();
       }
       else if (current_mode == "RAW" || current_mode == "TST") {
           //Cool of period to allow receiving of messages because of switching from sent to receive takes time
           sendTestMessageTimer = millis();
 
           pckt_count++;
-          char buf[50];
-
-          char display_msg[30];
-          snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
-          updDisp(4, display_msg,false);
-          snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
-          updDisp(5, display_msg,false);
-
-          snprintf(buf, sizeof(buf), "Rcv Cnt: %d", pckt_count);
-          updDisp(6, buf, false);
-          updDisp(7, packet.content.c_str(), true);
-          updModeAndChannelDisplay();
+          
+          if (current_mode == "RAW") {
+              // Set raw layout state for drawRawLayout()
+              strncpy(layout_state.raw_hex_line1, packet.content.c_str(), sizeof(layout_state.raw_hex_line1) - 1);
+              layout_state.raw_hex_line1[sizeof(layout_state.raw_hex_line1) - 1] = '\0';
+              drawRawLayout();
+          } else {
+              // TST mode — update test counters for drawTstLayout()
+              layout_state.tst_sent = test_message_counter;
+              layout_state.tst_rcvd = pckt_count;
+              drawTstLayout();
+          }
       } 
       else if (current_mode == "PTT" && packet.type == "PTT") {
           // Received PTT audio via LoRa — forward Opus bytes to connected phone via BLE
@@ -460,6 +410,11 @@ void handlePacket(Packet packet) {
                       frame[2] = opusLen & 0xFF;
                       frame[3] = (opusLen >> 8) & 0xFF;
                       memcpy(frame + 4, p + off, opusLen);
+                      
+                      // Mark PTT RX state for drawPttLayout()
+                      setPttRxActive(true);
+                      drawPttLayout();
+                      
                       sendBinaryNotification(frame, 4 + opusLen);
                   }
               }
@@ -471,28 +426,9 @@ void handlePacket(Packet packet) {
               extern const char* bleGetDeviceIdShort();
               inboxStore(bleGetDeviceIdShort(), 8, (const uint8_t*)packet.content.c_str(), packet.content.length());
               
-              updDisp(4, packet.content.c_str(), true);
-              // Display GPS coordinates and timestamp below the message text
-              if (packet.gpsData.length() > 0) {
-                  char gps_display[32];
-                  snprintf(gps_display, sizeof(gps_display), "GPS: %s", packet.gpsData.c_str());
-                  updDisp(5, gps_display, false);
-              } else {
-                  updDisp(5, "No GPS data", false);
-              }
-              if (packet.sendDateTime.length() > 0) {
-                  char dt_display[32];
-                  snprintf(dt_display, sizeof(dt_display), "%s-%s-%s %s:%s:%s",
-                           packet.sendDateTime.substring(0,4).c_str(),
-                           packet.sendDateTime.substring(4,6).c_str(),
-                           packet.sendDateTime.substring(6,8).c_str(),
-                           packet.sendDateTime.substring(8,10).c_str(),
-                           packet.sendDateTime.substring(10,12).c_str(),
-                           packet.sendDateTime.substring(12,14).c_str());
-                  updDisp(6, dt_display, false);
-              }
+              // Render TXT single message view via frame engine
+              drawTxtSingleLayout();
           }
-          updModeAndChannelDisplay();
       }
       else if (current_mode == "TXT" && packet.type == "TXT_MULTI") {
           if(packet.channel == channels[deviceSettings.channel_idx]) {
@@ -514,8 +450,6 @@ void handlePacket(Packet packet) {
                       txt_reassemble_recv_count = 0;
                       txt_reassemble_buf[0] = '\0';
                       txt_reassemble_timer = millis();
-                      updDisp(2, "Multi:", true);
-                      updDisp(3, "Receiving", true);
                   }
 
                   // Append chunk data to buffer (memcpy for safety with null bytes)
@@ -524,74 +458,49 @@ void handlePacket(Packet packet) {
                       memcpy(txt_reassemble_buf + currentLen, chunkData, chunkLen + 1);
                       txt_reassemble_recv_count++;
 
-                      char status[32];
-                      snprintf(status, sizeof(status), "%d/%d", txt_reassemble_recv_count, (int)txt_reassemble_expected);
-                      updDisp(4, status, true);
-
                       if (txt_reassemble_recv_count == txt_reassemble_expected) {
                           // All chunks received — store full message in inbox and display
                           extern const char* bleGetDeviceIdShort();
                           inboxStore(bleGetDeviceIdShort(), 8, (const uint8_t*)txt_reassemble_buf, strlen(txt_reassemble_buf));
                           
-                          updDisp(5, txt_reassemble_buf, true);
-                          updDisp(6, "Full", true);
                           txtShowInbox = false;
                           txtInboxScrollPage = 0;
                       }
-                  } else {
-                      updDisp(3, "Overflow", true);
                   }
               }
           }
-          updModeAndChannelDisplay();
       }
       else if (current_mode == "PONG" && packet.type == "PING") {
           //We pong this message
-            updDisp(5, "       pong",false);
+          
+          // Print RSSI (Received Signal Strength Indicator)
+          Serial.print(F("[SX1262] RSSI:\t\t"));
+          Serial.print(radio->getRSSI());
+          Serial.println(F(" dBm"));
 
-            // Print RSSI (Received Signal Strength Indicator)
-            Serial.print(F("[SX1262] RSSI:\t\t"));
-            Serial.print(radio->getRSSI());
-            Serial.println(F(" dBm"));
+          // Print SNR (Signal-to-Noise Ratio)
+          Serial.print(F("[SX1262] SNR:\t\t"));
+          Serial.print(radio->getSNR());
+          Serial.println(F(" dB"));
 
-            // Print SNR (Signal-to-Noise Ratio)
-            Serial.print(F("[SX1262] SNR:\t\t"));
-            Serial.print(radio->getSNR());
-            Serial.println(F(" dB"));
+          layout_state.pong_state = 2;  // received
+          layout_state.pong_rtt_ms = 0;  // Set to actual RTT when available
+          
+          drawPongLayout();
 
-            char display_msg[30];
-            snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
-            updDisp(6, display_msg,false);
-            snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
-            updDisp(7, display_msg,true);          
-
-            // Send another packet
-            Serial.print(F("[SX1262] Sending another packet ... "));
-            //Don't flood, just wait 3 seconds
-            updDisp(5, "Ping!  3",true);
-            delay(1000);
-            updDisp(5, "Ping!  2",true);
-            delay(1000);
-            updDisp(5, "Ping!  1",true);
-            delay(1000);
-            updDisp(5, "Ping!",true);
-            sendPacket("Ping!");
-            updModeAndChannelDisplay();
-
+          // Send another packet
+          Serial.print(F("[SX1262] Sending another packet ... "));
+          //Don't flood, just wait 3 seconds
+          delay(1000);
+          layout_state.pong_state = 1;  // sending again
+          drawPongLayout();
+          sendPacket("Ping!");
       } 
       else if (current_mode == "RANGE" && packet.type == "RANGE") {
           if(packet.channel== channels[deviceSettings.channel_idx]) {
               //Let's work on the range
               if (packet.isRangeMessage()){
-                  updDisp(3, packet.content.c_str(),true); //test message and counter
-
                   char display_msg[30];
-
-                  snprintf(display_msg, sizeof(display_msg), "SNR: %.1f dB", radio->getSNR() );
-                  updDisp(8, display_msg,false);
-                  snprintf(display_msg, sizeof(display_msg), "RSSI: %.1f dBm", radio->getRSSI() );
-                  updDisp(9, display_msg,true);          
-
 
                   if(range_last_count==0) {
                       //We just initialized, so reset the counter to what it now is
@@ -609,7 +518,6 @@ void handlePacket(Packet packet) {
 
                       if(pckt_missed<0) {
                           //Sender got reset so no miss
-                          updDisp(6, "Sender was reset",false);
                       }
                       else {
                           range_total_pckt_loss+=pckt_missed;
@@ -621,36 +529,19 @@ void handlePacket(Packet packet) {
 
                   if(gps_status!=GPS_LOC) {
                       snprintf(display_msg, sizeof(display_msg), "No GPS Fx(%.0f)", gps_hdop );
-                      updDisp(4, display_msg,false);
-                      //Remove Wait for pckg
-                      updDisp(6, "",false);
                   }
                   else {
                       if(range_home_lat==0 && range_home_long==0) {
                         //Let's set our homebase
                         range_home_lat=gps_latitude;
                         range_home_long=gps_longitude;
-                        updDisp(4, "Home Location OK",true);
                       }
                       else {
                         snprintf(display_msg, sizeof(display_msg), "%.6f, %.6f", gps_latitude,gps_longitude );
-                        updDisp(4, display_msg,false);
                       }
 
                       //Let's calculate the range
                       double distance = TinyGPSPlus::distanceBetween(range_home_lat, range_home_long, gps_latitude, gps_longitude);
-
-                      Serial.print(F("Checking distance: "));
-                      Serial.print(distance,6);
-                      Serial.print(F(" - "));
-                      Serial.print(range_home_lat,7);
-                      Serial.print(F(" "));
-                      Serial.print(range_home_long,7);
-                      Serial.print(F(" / "));
-                      Serial.print(gps_latitude,7);
-                      Serial.print(F(" "));
-                      Serial.print(gps_longitude,7);
-                      Serial.println(F(" #"));
 
                       if(distance>0) {
                           if(range_max_dist < distance) {
@@ -661,20 +552,12 @@ void handlePacket(Packet packet) {
                               range_stable_dist=distance;
                           }
                       }
-
-                      snprintf(display_msg, sizeof(display_msg), "Rng:%.1f/%.1fm", distance,range_max_dist);
-                      updDisp(5, display_msg,false); 
-
                   }
 
-
-                  //Let's print the info
-                  snprintf(display_msg, sizeof(display_msg), "Stable: %.1fm", range_stable_dist);
-                  updDisp(6, display_msg,false); //test message and counter
-
-                  snprintf(display_msg, sizeof(display_msg), "PLoss: %d/%d ok", range_total_pckt_loss,range_consecutive_ok);
-                  updDisp(7, display_msg,true); //test message and counter
-                  updModeAndChannelDisplay();
+                  // Update range layout state and render
+                  layout_state.range_distance_m = (int)range_stable_dist;
+                  layout_state.range_sender = range_role_sender;
+                  drawRangeLayout();
 
               }
               else {
@@ -687,22 +570,9 @@ void handlePacket(Packet packet) {
 
 
 void printRangeStatus() {
-    if(range_role_sender) {
-        updDisp(2, "Role: Sender",true);
-    }
-    else {
-        updDisp(2, "Role: Receiver",false);
-        if(gps_status==NO_GPS) {
-            showError("No GPS Installed!");
-        }
-        else if (gps_status==GPS_LOC) {
-            //Location ok!
-            updDisp(4, "",true);
-        } else {
-            updDisp(4, " #Wait on GPS Fix",true);
-        }
-        updDisp(6, "Wait for pckg",true);
-    }
+    // Update range layout state and render
+    layout_state.range_sender = range_role_sender;
+    drawRangeLayout();
 }
 
 // Function to handle debouncing for the touch button
@@ -725,16 +595,25 @@ bool debouncedTouchPress() {
 }
 
 void setupAppModes() {
+    // Re-ensure MODE_PIN is INPUT_PULLUP — may have been changed by Bluefruit or LoRa init
+    pinMode(MODE_PIN, INPUT_PULLUP);
+    pinMode(TOUCH_PIN, INPUT_PULLUP);
+
+    // Verify pull-up is working: should read HIGH (unpressed) at boot
+    SerialMon.print("[BTN] Boot check MODE_PIN= ");
+    SerialMon.println(digitalRead(MODE_PIN) ? "HIGH (OK)" : "LOW (button stuck?)");
+
+    // Use standard ButtonConfig for touch button
     ButtonConfig* config = ButtonConfig::getSystemButtonConfig();
-    config->setEventHandler(handleEvent);
-    config->setFeature(ButtonConfig::kFeatureLongPress);
-    config->setFeature(ButtonConfig::kFeatureDoubleClick);
-    config->setFeature(ButtonConfig::kFeatureSuppressAfterClick);
-    config->setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
+    g_modeButtonConfig.setEventHandler(handleEvent);
+    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureLongPress);
+    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureDoubleClick);
+    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureSuppressAfterClick);
+    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
 
-    config->setClickDelay(125);  
+    g_modeButtonConfig.setClickDelay(125);  
 
-    modeButton.init(MODE_PIN);
+    modeButton.setButtonConfig(&g_modeButtonConfig);
     touchButton.init(TOUCH_PIN);
     
     while (Serial.available()) Serial.read();
@@ -743,22 +622,8 @@ void setupAppModes() {
 }
 
 void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState) {
-    //Serial.println("Button pressed");
-    //Serial.println(eventType);
-    //Serial.println(button->getPin());
-
     if (button->getPin() == MODE_PIN) {
-        if (eventType == AceButton::kEventReleased) {
-            if(ignore_next_button_press) {
-                ignore_next_button_press=false;
-                return;
-            }
-            /** This version uses a Released event instead of a Clicked,
-            * while suppressing the Released after a DoubleClicked, and we ignore the
-            * Clicked event that we can't suppress. The disadvantage of this version is
-            * that if a user accidentally makes a normal Clicked event (a rapid
-            * Pressed/Released), nothing happens. Depending on the application,
-            * this may or may not be the desirable result.          */
+        if (eventType == AceButton::kEventPressed) {
             if (in_settings_mode) {
                 // Cycle through different settings when in settings mode
                 cycleSettings();
@@ -856,7 +721,6 @@ void sendRangeMessage() {
 
       char display_msg[30];
       snprintf(display_msg, sizeof(display_msg), "Sent: %s", test_msg);
-      updDisp(4, display_msg,true);
 
       sendPacket(send_pkt_buf);
       //Give the device some small time to process sending
@@ -864,17 +728,18 @@ void sendRangeMessage() {
 
       if(gps_status!=GPS_LOC) {
           snprintf(display_msg, sizeof(display_msg), "No GPS Fx(%.0f)", gps_hdop );
-          updDisp(3, display_msg,false);
       }
       else {
           snprintf(display_msg, sizeof(display_msg), "%.6f, %.6f", gps_latitude,gps_longitude );
-          updDisp(3, display_msg,false);
       }
 
-      snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
-      updDisp(5, display_msg,true);
-
-      updModeAndChannelDisplay();
+      // Render current mode layout after sending — use per-mode layout instead of generic default
+      if (current_mode == "RANGE") {
+          layout_state.range_sender = range_role_sender;
+          drawRangeLayout();
+      } else {
+          drawDefaultLayout();
+      }
 
 
       //Cool of period to allow receiving of messages because of switching from sent to receive takes time
@@ -907,7 +772,6 @@ void sendTxtMessage(const char* message) {
         }
 
         snprintf(display_msg, sizeof(display_msg), "Sent: %s", message);
-        updDisp(2, display_msg, true);
 
         extern void sendNotificationToApp(const char* msg);
         static char ackBuf[160];
@@ -916,8 +780,9 @@ void sendTxtMessage(const char* message) {
 
         sendPacket(send_pkt_buf);
         delay(100);
-        snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
-        updDisp(3, display_msg, true);
+        
+        // Render TXT single message view via frame engine
+        drawTxtSingleLayout();
     } else {
         // Long message — split into chunks with TXM multi-packet header
         int numChunks = (msgLen + TXT_CHUNK_SIZE - 1) / TXT_CHUNK_SIZE;
@@ -927,9 +792,6 @@ void sendTxtMessage(const char* message) {
         static char ackBuf[256];
         snprintf(ackBuf, sizeof(ackBuf), "LINE:TX|MULTI:%d|%s", numChunks, message);
         sendNotificationToApp(ackBuf);
-
-        updDisp(2, "Sent:", true);
-        updDisp(3, "Chunks:", true);
 
         for (int i = 0; i < numChunks; i++) {
             int offset = i * TXT_CHUNK_SIZE;
@@ -957,7 +819,10 @@ void sendTxtMessage(const char* message) {
             if (i < 5 || i == numChunks - 1) {
                 char chunkDisplay[32];
                 snprintf(chunkDisplay, sizeof(chunkDisplay), "%d/%d", i + 1, numChunks);
-                updDisp(4, chunkDisplay, true);
+                
+                // Update TXT inbox count and render
+                txtInboxMsgCount = inboxCount();
+                drawTxtSingleLayout();
             }
 
             // Brief gap between chunks to avoid radio contention
@@ -966,10 +831,10 @@ void sendTxtMessage(const char* message) {
             }
         }
 
-        snprintf(display_msg, sizeof(display_msg), "TmOnAr: %d", timeOnAir);
-        updDisp(3, display_msg, true);
+        // Final TXT layout render after all chunks sent
+        txtInboxMsgCount = inboxCount();
+        drawTxtSingleLayout();
     }
-    updModeAndChannelDisplay();
 }
 
 void sendTestMessage(bool now) {
@@ -1009,18 +874,16 @@ void turnoffLed(){
 void txtModeInboxDisplay() {
     uint8_t msg_count = inboxCount();
     if (msg_count == 0) {
-        // No messages in inbox
-        updDisp(2, "No messages yet", true);
-        updDisp(3, "Wait for TXT mode", false);
-        updDisp(4, "messages on this", false);
-        updDisp(5, "channel.", false);
+        // No messages in inbox — render empty state
+        layout_state.mode = current_mode;
+        drawTxtSingleLayout();
         return;
     }
 
     txtInboxMsgCount = msg_count;
 
     if (txtShowInbox) {
-        // Show inbox page with scrollable list
+        // Show inbox page with scrollable list — use drawTxtInboxLayout()
         int lines_per_page = 16;  // rows 2-17
         int total_pages = (msg_count + lines_per_page - 1) / lines_per_page;
         
@@ -1028,39 +891,10 @@ void txtModeInboxDisplay() {
             txtInboxScrollPage = total_pages - 1;
         }
 
-        updDisp(1, "Inbox:", true);
-        
-        // Show page header on row 2
-        char page_header[32];
-        snprintf(page_header, sizeof(page_header), "P %d/%d (%d msgs)", 
-                 txtInboxScrollPage + 1, total_pages, msg_count);
-        updDisp(2, page_header, true);
-
-        // Clear the inbox display area
-        for (int i = 3; i < 19; i++) {
-            updDisp(i, "", false);
-        }
-
-        bool refresh = true;
-        inboxDisplayPage(txtInboxScrollPage * lines_per_page, &txtInboxScrollPage, refresh);
+        drawTxtInboxLayout();
     } else {
-        // Show latest message view with count indicator
-        char count_line[32];
-        snprintf(count_line, sizeof(count_line), "%d msg(s)", msg_count);
-        
-        // Row 1: "TXT" mode label + "Inbox" toggle hint
-        updDisp(1, "TXT Inbox", true);
-        
-        // Row 2: message count
-        updDisp(2, count_line, false);
-        
-        // Clear remaining lines
-        for (int i = 3; i < 19; i++) {
-            updDisp(i, "", false);
-        }
-
-        // Show latest message preview at row 3
-        inboxShowLatest(3);
+        // Show latest message view — use drawTxtSingleLayout()
+        drawTxtSingleLayout();
     }
 }
 
@@ -1087,7 +921,9 @@ void txtModeClearInbox() {
     txtInboxScrollPage = 0;
     txtInboxMsgCount = 0;
     txtShowInbox = false;
-    updDisp(2, "Inbox cleared", true);
+    
+    // Render TXT inbox view showing empty state via frame engine
+    drawTxtSingleLayout();
     delay(1000);
     // Refresh to show empty state
     txtModeInboxDisplay();

@@ -6,6 +6,7 @@ set BOARD=adafruit:nrf52:pca10056
 set PORT=%1
 set "BOARDLIST_TMP=%TEMP%\t-echo_boardlist.tmp"
 set "UPLOAD_COM_PORT="
+cd V:\Bmad\Project_ptt_lora\
 
 REM Check for --monitor-only flag
 set MONITOR_ONLY=
@@ -51,7 +52,6 @@ echo.
 echo Uploading firmware via standard USB Serial over COM port.
 echo (If the upload fails to auto-reset, double-click the reset button).
 echo.
-
 if "!MONITOR_ONLY!"=="1" set PORT=
 
 REM If port is already specified, skip auto-detection
@@ -130,3 +130,4 @@ echo --------------------------------------------
 echo.
 echo [DONE] Done -- collected complete boot + 120s serial output above.
 echo.
+cd V:\Bmad\Project_ptt_lora\build_scripts

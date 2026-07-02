@@ -57,7 +57,7 @@ Stories 3-8 are independent of each other — implement in any order after S1+S2
 | S2 | Frame engine + e-ink safe rendering | `display_layout.h/.cpp`, all callers |
 | S3 | BEACON Split Rows | `display_layout.cpp` add_beacon() |
 | S4 | RANGE Big Card | `display_layout.cpp` add_range() |
-| S5 | PTT Big Card TX/RX block | `display_layout.cpp` add_ptt() |
+| S5 | PTT Big Card TX/RX block | `display_layout.cpp` add_ptt() | Done |
 | S6 | TXT single + inbox card | `display_layout.cpp` add_txt(), `text_inbox.cpp` updates |
 | S7 | TST Dashboard grid | `display_layout.cpp` add_tst() |
 | S8 | PONG, SCAN, RAW, WP layouts | `display_layout.cpp` add_pong(), add_scan(), add_raw(), add_wp() | **Done** |

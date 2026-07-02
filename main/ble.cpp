@@ -3,6 +3,7 @@
 #include "display.h"
 #include "app_modes.h"
 #include "buddy_list.h"
+#include "display_layout.h"
 
 // Create BLE service and characteristic
 BLEService bleService("1235");
@@ -294,6 +295,10 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
             memcpy(opusPktBuf + pktLen, (char*)(data + 4), opusLen);
             pktLen += opusLen;
             
+            // Mark PTT TX state for drawPttLayout()
+            setPttTxActive(true);
+            drawPttLayout();
+            
             sendPacket((uint8_t*)opusPktBuf, (uint16_t)pktLen, 0);
         }
 
@@ -324,13 +329,14 @@ void sendNotificationToApp(const char* message) {
     buffer[msgLen + 2] = '\0';
 
     // Build notification string for queue: "LINE:XX|TEXT:buf"
-    char notifStr[130];
+    // Must fit PREFIX + SYNC_MAX_PAYLOAD(200) + ~~(2) + NUL. Max possible packet = 253 chars (BLE char max).
+    #define NOTIF_STR_MAX_LEN (16 + 200 + 2 + 4)
+    static char notifStr[NOTIF_STR_MAX_LEN];
     snprintf(notifStr, sizeof(notifStr), "LINE:NOTIF|DATA:%.*s", (int)(msgLen + 2), buffer);
     
     if (!enqueue(notifStr)) {
-        // Queue full — try to drain first
-        drainQueue();
-        enqueue(notifStr);
+        // Queue full — drop notification rather than deadlocking the BLE stack.
+        // Drain will happen next iteration of loop() via handleBLE().
     }
 }
 

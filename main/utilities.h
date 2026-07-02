@@ -72,7 +72,7 @@
 
 
 
-#define UserButton_Pin      _PINNUM(1,10)
+#define UserButton_Pin      _PINNUM(1,10)  // LilyGO T-Echo Button2 (bottom red button)
 
 #if defined(VERSION_1)
 #define Power_Enable_Pin    _PINNUM(0,12)
