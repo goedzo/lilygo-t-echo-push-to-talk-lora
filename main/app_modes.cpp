@@ -1,5 +1,4 @@
-﻿#include <AceButton.h>
-#include <TinyGPS++.h>
+﻿#include <TinyGPS++.h>
 #include "utilities.h"
 
 #include "gps.h"
@@ -76,26 +75,16 @@ int range_total_pckt_loss=0;
 // Button objects
 // Define the pin numbers
 #define MODE_PIN _PINNUM(1,10)  // Button 2 connected to P1.10
-#define TOUCH_PIN _PINNUM(0,11)  // Touch-capable pin (P0.11)
-AceButton modeButton(MODE_PIN);
-AceButton touchButton(TOUCH_PIN);
+#define TOUCH_PIN _PINNUM(0,11)  // Button 2 connected to P0.11 (Touch-capable pin)
 
-// Custom ButtonConfig that reads MODE_PIN via direct GPIO register to avoid
-// softdevice GPIOTE interference on nRF52 P1 port pins (digitalRead returns stale HIGH)
-class ButtonConfigModePin : public ace_button::ButtonConfig {
-  public:
-    int readButton(uint8_t pin) override {
-      if (pin == MODE_PIN) {
-        // Use nrf_gpio_pin_read - handles P0/P1 transparently and bypasses softdevice GPIOTE lock
-        return nrf_gpio_pin_read(MODE_PIN) ? HIGH : LOW;
-      }
-      return ButtonConfig::readButton(pin);
-    }
-};
+// MODE_PIN state machine variables (replaces AceButton entirely)
+enum { BTN_STATE_IDLE = 0, BTN_STATE_PRESSING, BTN_STATE_SETTINGS, BTN_STATE_POWER } btnState = BTN_STATE_IDLE;
+unsigned long btnPressTime = 0;       // When button was first pressed
+static bool debounceActive = false;
+static unsigned long debounceStart = 0;
+#define BUTTON_DEBOUNCE_MS 50
 
-ButtonConfigModePin g_modeButtonConfig;  // Custom config with direct GPIO read for MODE_PIN
-
-
+// Variables for debouncing the touch button
 unsigned long lastTouchPressTime = 0; // Timestamp of the last button press
 unsigned long touchDebounceDelay = 50;     // Debounce time in milliseconds
 bool touchButtonPressed = false;      // Flag to track the debounced state
@@ -177,19 +166,10 @@ void updMode() {
 
 // The main loop that is the logic for all app modes
 void handleAppModes() {
-    modeButton.check();
-    touchButton.check();
+    // MODE_PIN state machine — use digitalRead which works reliably on P1.10 pull-up wiring
+    bool pinPressed = (digitalRead(MODE_PIN) == LOW);
 
-    // Handle MODE_PIN via state machine — pure nrf_gpio_pin_read, no AceButton
-    bool pinPressed = !readModePin();  // readModePin() returns true=unpressed
-
-    static unsigned long lastDebugMs = 0;
-    if (millis() - lastDebugMs > 5000) {
-        lastDebugMs = millis();
-        sendSerialToAppLn("[BTN] STATE=" + String(btnState) + " RAW=0");
-    }
-
-    if (pinPressed) {
+    if (!pinPressed) {
         // Debounce: ignore any signal within the first BUTTON_DEBOUNCE_MS after state change
         if (!debounceActive || (millis() - debounceStart < BUTTON_DEBOUNCE_MS)) {
             debounceActive = true;
@@ -197,8 +177,6 @@ void handleAppModes() {
         } else if (debounceActive && (millis() - debounceStart >= BUTTON_DEBOUNCE_MS)) {
             // Debounce passed — actual button press detected
             debounceActive = false;
-
-            sendSerialToAppLn("[BTN] PRESS btnState=" + String(btnState) + " -> PRESSING");
 
             switch (btnState) {
                 case BTN_STATE_IDLE:
@@ -218,8 +196,6 @@ void handleAppModes() {
         if (btnState == BTN_STATE_PRESSING) {
             unsigned long holdDuration = millis() - btnPressTime;
 
-            sendSerialToAppLn("[BTN] RELEASE dur=" + String(holdDuration) + "ms");
-
             // Short press (<500ms) — cycle mode or toggle inbox view
             if (holdDuration < 500) {
                 if (in_settings_mode) {
@@ -228,20 +204,10 @@ void handleAppModes() {
                     txtModeToggleInboxView();
                 } else {
                     updMode();
-                    sendSerialToAppLn("[BTN] CYCLE mode=" + String(current_mode));
                 }
-            } else {
-                // Press was long enough to reach settings/power thresholds but released before they fired
-                // Just cycle mode as fallback
-                updMode();
-                sendSerialToAppLn("[BTN] LONG CLICK cycle mode=" + String(current_mode));
             }
 
             btnState = BTN_STATE_IDLE;
-        } else if (btnState == BTN_STATE_SETTINGS) {
-            // Released after settings toggle — go back to idle
-            btnState = BTN_STATE_IDLE;
-            sendSerialToAppLn("[BTN] SETTINGS release");
         }
 
         // Release after settings/power-off toggle — go back to idle
@@ -257,11 +223,11 @@ void handleAppModes() {
         unsigned long holdDuration = millis() - btnPressTime;
 
         if (holdDuration >= 500 && holdDuration < 10000) {
-            sendSerialToAppLn("[BTN] LONG PRESS " + String(holdDuration) + "ms -> SETTINGS");
-            btnState = BTN_STATE_SETTINGS;
-            toggleSettingsMode();
+            if (btnState == BTN_STATE_PRESSING) {
+                btnState = BTN_STATE_SETTINGS;
+                toggleSettingsMode();
+            }
         } else if (holdDuration >= 10000 && !in_settings_mode) {
-            sendSerialToAppLn("[BTN] POWER OFF");
             btnState = BTN_STATE_POWER;
             powerOff();
         }
@@ -702,23 +668,11 @@ void setupAppModes() {
     pinMode(TOUCH_PIN, INPUT_PULLUP);
 
     // Verify pull-up is working: should read HIGH (unpressed) at boot
-    sendSerialToAppLn("[BTN] Boot check MODE_PIN=" + String(digitalRead(MODE_PIN) ? "HIGH" : "LOW"));
+    SerialMon.print("[BTN] Boot check MODE_PIN= ");
+    SerialMon.println(nrf_gpio_pin_read(MODE_PIN) ? "HIGH (OK)" : "LOW (button stuck?)");
 
-    // Use standard ButtonConfig for touch button
-    ButtonConfig* config = ButtonConfig::getSystemButtonConfig();
-    g_modeButtonConfig.setEventHandler(handleEvent);
-    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureLongPress);
-    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureDoubleClick);
-    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureSuppressAfterClick);
-    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
-
-    g_modeButtonConfig.setClickDelay(125);  
-
-    modeButton.setButtonConfig(&g_modeButtonConfig);
-    touchButton.init(TOUCH_PIN);
-    
-    while (Serial.available()) Serial.read();
-
+    btnState = BTN_STATE_IDLE;
+    btnPressTime = 0;
     actionButtonTimer=millis();
 }
 void powerOff() {
@@ -1002,5 +956,3 @@ void txtModeClearInbox() {
     // Refresh to show empty state
     txtModeInboxDisplay();
 }
-
-
