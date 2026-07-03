@@ -32,6 +32,8 @@ void initLayoutState() {
     layout_state.pong_rtt_ms = 0;
     layout_state.scan_progress_pct = 0;
     memset(layout_state.scan_current_freq, 0, sizeof(layout_state.scan_current_freq));
+    layout_state.scan_channel_count = 0;
+    memset(layout_state.scan_channels, 0, sizeof(layout_state.scan_channels));
     memset(layout_state.raw_hex_line1, 0, sizeof(layout_state.raw_hex_line1));
     memset(layout_state.raw_ascii_line, 0, sizeof(layout_state.raw_ascii_line));
     layout_state.tst_sent = 0;
@@ -658,6 +660,15 @@ void drawPongLayout() {
 void drawScanLayout() {
     bool full = pendingFullRefresh();
 
+    // Sync scan state into layout_state for this render pass
+    LayoutState& S = layout_state;
+    S.scan_progress_pct = scanning ? (int)((currentFrequency - startFreq) / (endFreq - startFreq) * 100) : 0;
+    if (scanning) {
+        snprintf(S.scan_current_freq, sizeof(S.scan_current_freq), "%.2f", currentFrequency);
+    } else {
+        snprintf(S.scan_current_freq, sizeof(S.scan_current_freq), "---");
+    }
+
     auto drawContent = []() {
         display->fillScreen(GxEPD_WHITE);
 
@@ -665,35 +676,79 @@ void drawScanLayout() {
         snprintf(chan_sf, sizeof(chan_sf), "chn:%c spf:%d", channels[deviceSettings.channel_idx], deviceSettings.spreading_factor);
         drawHeaderRow("SCAN", chan_sf);
 
-        display->fillRect(12, 32, disp_width - 24, 80, GxEPD_WHITE);
-
-        int row = 36;
-        char buf[40];
-
-        // Current frequency
-        float currentFreq = scanning ? currentFrequency : defaultFrequency;
-        snprintf(buf, sizeof(buf), "F:%.2fMHz", currentFreq);
-        display->setCursor(16, row + 10);
+        // ── Current frequency (rows 2-3) ──
+        display->fillRect(12, 32, disp_width - 24, 18, GxEPD_WHITE);
         display->setFont(&FreeMonoBold9pt7b);
+        display->setCursor(16, 32 + 12);
         display->setTextColor(GxEPD_BLACK);
-        display->print(buf);
 
-        row += 20;
+        char freqBuf[20];
+        if (strlen(layout_state.scan_current_freq) > 0 && layout_state.scan_current_freq[0] != '-') {
+            snprintf(freqBuf, sizeof(freqBuf), "F:%.2fMHz", currentFrequency);
+        } else {
+            snprintf(freqBuf, sizeof(freqBuf), "F:---.--MHz");
+        }
+        display->print(freqBuf);
 
-        // Progress bar
-        float freq_range = endFreq - startFreq;
-        int progress = scanning ? (int)((currentFrequency - startFreq) / freq_range * 100) : 0;
-        if (progress > 0) {
-            snprintf(buf, sizeof(buf), "%d%%", progress);
-            display->setCursor(16, row + 10);
-            display->print(buf);
+        // ── Progress bar (rows 4-5) ──
+        int row = 52;
+        if (layout_state.scan_progress_pct > 0) {
+            drawSecondaryRow("Progress", row);
+            row += 14;
 
-            int bar_w = progress * (disp_width - 40) / 100;
-            if (bar_w > 0) {
-                display->fillRect(12, row + 16, bar_w + 1, 6, GxEPD_BLACK);
+            // Bar background
+            display->fillRect(16, row + 4, disp_width - 32, 8, GxEPD_BLACK);
+
+            // Filled portion
+            int bar_w = layout_state.scan_progress_pct * (disp_width - 40) / 100;
+            if (bar_w > 0 && bar_w <= (disp_width - 40)) {
+                display->fillRect(16, row + 4, bar_w, 8, GxEPD_WHITE);
             }
+
+            char pctBuf[10];
+            snprintf(pctBuf, sizeof(pctBuf), "%d%%", layout_state.scan_progress_pct);
+            display->setCursor(16 + (disp_width - 32) / 2 - strlen(pctBuf) * 4, row + 10);
+            display->print(pctBuf);
         } else {
             drawSecondaryRow("Progress: ---%", row);
+        }
+
+        // ── Top channels list (rows 6+) ──
+        int listStartY = row + 24;
+        int channelCount = layout_state.scan_channel_count;
+        const LayoutState::ScanChannel* channels_data = layout_state.scan_channels;
+
+        // Header for the list
+        display->fillRect(12, listStartY, disp_width - 24, 14, GxEPD_BLACK);
+        display->setFont(&FreeMonoBold9pt7b);
+        display->setCursor(16, listStartY + 10);
+        display->setTextColor(GxEPD_WHITE);
+        display->print("Top Channels");
+
+        int rowIdx = 0;
+        int itemY = listStartY + 16;
+        int maxItems = (disp_height - itemY - 32) / 12;  // leave room for status bar
+        if (maxItems > 10) maxItems = 10;
+
+        for (uint8_t i = 0; i < channelCount && rowIdx < maxItems; i++) {
+            const auto& ch = channels_data[i];
+
+            // Clear row background
+            display->fillRect(12, itemY + (rowIdx * 12), disp_width - 24, 12, GxEPD_WHITE);
+
+            char lineBuf[40];
+            snprintf(lineBuf, sizeof(lineBuf), "%.2f Q%d %.0fdBm", ch.frequency, ch.quality, ch.rssi);
+
+            display->setCursor(16, itemY + (rowIdx * 12) + 9);
+            display->setTextColor(GxEPD_BLACK);
+            display->print(lineBuf);
+
+            rowIdx++;
+        }
+
+        // Clear remaining rows
+        for (int i = rowIdx; i < maxItems; i++) {
+            display->fillRect(12, itemY + (i * 12), disp_width - 24, 12, GxEPD_WHITE);
         }
 
         drawBottomStatusbar();

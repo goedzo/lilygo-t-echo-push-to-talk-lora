@@ -54,7 +54,7 @@ void sendScreenSync() {
         snprintf(chan_sf, sizeof(chan_sf), "chn:%c spf:%d", channels[deviceSettings.channel_idx], deviceSettings.spreading_factor);
     }
 
-    off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "LINE:S|H:%s|C:", chan_sf);
+    off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "LINE:S|M:%s|H:%s|C:", current_mode, chan_sf);
 
     // Per-mode content fields (app maps these to screen rows)
     if (strcmp(current_mode, "BEACON") == 0) {

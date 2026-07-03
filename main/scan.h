@@ -21,4 +21,7 @@ void printTopChannels();
 // Scan module state (used by display layout)
 extern bool scanning;
 
+// Sync top channels into layout_state for drawScanLayout()
+void syncTopChannelsToLayout(void);
+
 #endif // SCAN_H

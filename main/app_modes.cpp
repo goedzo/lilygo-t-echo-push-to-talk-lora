@@ -19,7 +19,7 @@ extern void forceFullRefresh();
 using namespace ace_button;
 
 // Define an array of mode names as strings
-const char* modes[] = { "BEACON","RAW","TXT", "RANGE", "TST","PONG","SCAN","PTT"};
+const char* modes[] = { "BEACON","RAW","TXT", "RANGE", "TST","PONG","SCAN","PTT","WP"};
 const int numModes = sizeof(modes) / sizeof(modes[0]);
 int modeIndex = 2;
 const char* current_mode=modes[modeIndex];
@@ -141,13 +141,29 @@ void updMode() {
     // Force full refresh on mode switch — clears ghosting from previous layout
     forceFullRefresh();
 
-    // Update the mode and channel display — drawDefaultLayout() handles full refresh on mode switch
+    // Update the mode and channel display with the correct mode-specific layout
     updModeAndChannelDisplay();
     if(current_mode=="RANGE") {
         //Make sure we reset the count
         range_last_count=0;
 
         printRangeStatus();
+    } else if(current_mode=="BEACON") {
+        drawBeaconLayout();
+    } else if(current_mode=="PTT") {
+        drawPttLayout();
+    } else if(current_mode=="SCAN") {
+        drawScanLayout();
+    } else if(current_mode=="TXT") {
+        drawTxtSingleLayout();
+    } else if(current_mode=="TST") {
+        drawTstLayout();
+    } else if(current_mode=="PONG") {
+        drawPongLayout();
+    } else if(current_mode=="RAW") {
+        drawRawLayout();
+    } else if(current_mode=="WP") {
+        drawWpLayout();
     }
 
     // Handle mode-specific initialization
@@ -645,7 +661,6 @@ void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t butto
         } 
         else if (eventType == AceButton::kEventLongPressed) {
             // Long press enters or exits settings mode
-            ignore_next_button_press=true;
             toggleSettingsMode();
             return;
         } 
@@ -850,6 +865,21 @@ void sendTestMessage(bool now) {
 
         // Update mode and channel display after sending
         sendTestMessageTimer = millis();
+
+        // Restore the correct per-mode layout — sendTxtMessage() renders TXT layout
+        // which would flash on screen while in other modes (e.g., TST)
+        if (current_mode == "TST") {
+            layout_state.tst_sent = test_message_counter;
+            layout_state.tst_rcvd = pckt_count;
+            drawTstLayout();
+        } else if (current_mode == "RAW") {
+            drawRawLayout();
+        } else if (current_mode == "RANGE") {
+            layout_state.range_sender = range_role_sender;
+            drawRangeLayout();
+        } else {
+            drawDefaultLayout();
+        }
     }
 }
 

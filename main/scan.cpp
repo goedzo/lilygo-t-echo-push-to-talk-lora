@@ -1,6 +1,7 @@
 #include "scan.h"
 #include "lora.h"
 #include "display.h"  // To use updDisp for e-ink display
+#include "display_layout.h"  // For layout_state access
 #include <Arduino.h>
 
 #define MAX_TOP_CHANNELS 10
@@ -27,6 +28,7 @@ void initTopChannels() {
     }
     displayLine = 2;  // Reset the display line counter
     printTopChannels();
+    syncTopChannelsToLayout();  // Clear layout state when reinitializing
     //clearScreen();  // Clear the display before starting scan
     updDisp(1, "Scanning...", true);  // Display initial message
 }
@@ -71,6 +73,7 @@ void startScanFrequencies() {
     snrTotal = 0;
     scanning = true;
     initTopChannels();
+    syncTopChannelsToLayout();  // Clear layout state on scan start
     Serial.println(F("Frequency scan started."));
 
     int state = setFrequency(currentFrequency);
@@ -142,6 +145,7 @@ void handleFrequencyScan() {
                 addResultToTopChannels(currentFrequency, avgRSSI, avgSNR);
 
                 printTopChannels();
+                syncTopChannelsToLayout();
 
                 // Display results for current frequency
                 char displayString[30];
@@ -170,7 +174,26 @@ void handleFrequencyScan() {
     }
 }
 
-// Print the top 10 channels on the display
+// Sync top channels into layout_state for drawScanLayout()
+void syncTopChannelsToLayout(void) {
+    auto& S = layout_state;
+    uint8_t count = MAX_TOP_CHANNELS;
+    // Count how many entries have valid RSSI (better than initial -999)
+    for (int i = 0; i < MAX_TOP_CHANNELS; i++) {
+        if (topChannels[i].rssi <= -998) {
+            count = (uint8_t)i;
+            break;
+        }
+    }
+    layout_state.scan_channel_count = count;
+    for (uint8_t i = 0; i < count; i++) {
+        layout_state.scan_channels[i].frequency = topChannels[i].frequency;
+        layout_state.scan_channels[i].quality   = topChannels[i].quality;
+        layout_state.scan_channels[i].rssi       = topChannels[i].rssi;
+    }
+}
+
+// Print the top 10 channels on the display (legacy — kept for debug)
 void printTopChannels() {
     for (int i = 0; i < MAX_TOP_CHANNELS && i < 7; i++) {  // Limit display to 7 entries
         char displayString[30];

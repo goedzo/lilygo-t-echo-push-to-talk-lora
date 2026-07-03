@@ -43,6 +43,14 @@ struct LayoutState {
     int pong_rtt_ms;
     int scan_progress_pct;
     char scan_current_freq[16];
+    // Top 10 scanned channels (synced from scan.cpp)
+    struct ScanChannel {
+        float frequency;
+        int   quality;
+        float rssi;
+    };
+    ScanChannel scan_channels[10];
+    uint8_t   scan_channel_count;
     char raw_hex_line1[40];
     char raw_ascii_line[40];
     int tst_sent;

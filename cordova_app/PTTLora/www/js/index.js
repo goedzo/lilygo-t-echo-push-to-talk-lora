@@ -203,6 +203,7 @@ function switchMode(aMode) {
 		inputSection.style.display = 'none';
 		pttSection.style.display = 'block';
 		app.startPttStatusPolling();
+		app.refreshPttButtonFromState();
 	} else if (aMode === 'TXT') {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
@@ -1082,6 +1083,31 @@ var app = {
 			var fields = app.parseScreenMirrorFields(syncData);
 			logMessage('SCREEN:parsed fields=' + JSON.stringify(fields).substring(0, 300));
 			app.renderScreenMirror(syncData);
+			
+			// BLE liveness update from screen mirror — if the device sends screen data,
+			// BLE is confirmed alive. This serves as fallback when GETSTATUS responses
+			// don't arrive on some Android BLE stacks.
+			var shortId2 = this.getShortDeviceId(deviceName) || deviceName;
+			if (this.connectedDevices[deviceName]) {
+				this.connectedDevices[deviceName].pttBleAlive = true;
+				this.connectedDevices[deviceName].txtBleAlive = true;
+			}
+			
+			var activeScreenDev = app.getActiveDeviceId() || deviceName;
+			if (activeScreenDev === deviceName) {
+				app.pttBleAlive = true;
+				app.txtBleAlive = true;
+				
+				if (app.currentMode === 'PTT') {
+					var bleBadgeP = document.getElementById('bleBadge');
+					var loraBadgeP = document.getElementById('loraBadge');
+					if (bleBadgeP) {
+						bleBadgeP.textContent = '\u2713 Connected';
+						bleBadgeP.className = 'status-badge connected';
+					}
+				}
+			}
+			
 			return;
 		}
 
@@ -1319,6 +1345,28 @@ var app = {
     stopPttStatusPolling: function() {
         if (app.pttPollTimer) { clearInterval(app.pttPollTimer); app.pttPollTimer = null; }
     },
+    
+    // Update PTT button state immediately from known BLE/LoRa liveness
+    refreshPttButtonFromState: function() {
+        var bleAlive = app.pttBleAlive;
+        var loraAlive = app.pttLoraAlive;
+        
+        // If we don't have explicit status yet, use connected devices state as fallback
+        var activeTarget = app.getActiveDeviceId();
+        if (activeTarget && app.connectedDevices[activeTarget]) {
+            var dev = app.connectedDevices[activeTarget];
+            if (!bleAlive) bleAlive = dev.pttBleAlive;
+            if (!loraAlive) loraAlive = dev.pttLoraAlive;
+        }
+        
+        // If still unknown but device is connected, assume BLE is alive
+        if (!bleAlive && activeTarget && app.connectedDevices[activeTarget]) {
+            bleAlive = true;
+        }
+        
+        app.updatePttButtonState(bleAlive, loraAlive);
+    },
+    
     updatePttButtonState: function(bleAlive, loraAlive) {
         app.pttBleAlive = bleAlive;
         app.pttLoraAlive = loraAlive;
@@ -1590,7 +1638,7 @@ var app = {
         if (!contentArea) return;
 
         // Update header
-        var mode = fields.h || 'TXT';
+        var mode = fields.m || 'TXT';
         if (modeBadge) modeBadge.textContent = mode;
         if (modeNameEl) modeNameEl.textContent = mode;
         if (chanSfEl) chanSfEl.textContent = fields['h:chansf'] || 'chn:A spf:7';
@@ -1607,7 +1655,7 @@ var app = {
         if (satsEl) satsEl.textContent = fields['g:g'] || '0';
 
         // Battery icon (7 states: 0=empty through 6=full)
-        var batIdx = parseInt(fields['i:batt']) || 6;
+        var batIdx = parseInt(fields['i:bat']) || 6;
         if (batEl) {
             batEl.innerHTML = this._getBatIconSVG(batIdx);
         }
