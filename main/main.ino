@@ -310,9 +310,11 @@ void setup()
     // ---------- Done ----------
     crash_step = 7;  // All init steps completed successfully
     SerialMon.println("[BOOT] === All init steps complete ===");
+    RELAY_LINE("BOOT: all init done");
     SerialMon.print(F("[BOOT] Total boot time: "));
     SerialMon.print(millis() - bootStart);
     SerialMon.println(F("ms"));
+    RELAY_LINE("BOOT: total=" + String(millis() - bootStart) + "ms");
 
     checkCrashState();
     
@@ -329,6 +331,7 @@ void setup()
     SerialMon.print("[BOOT] ========================================\n");
     SerialMon.print("[BOOT] Boot sequence finished - entering loop()\n");
     SerialMon.print("[BOOT] ========================================\n\n");
+    RELAY_LINE("BOOT: entering loop");
 }
 
 void loop()

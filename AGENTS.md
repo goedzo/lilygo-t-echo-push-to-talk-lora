@@ -5,6 +5,7 @@
 | Directory | What it is |
 |---|---|
 | `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino CLI. 16 source modules (+ crash_debug.h, utilities.h). Audio is phone-only — device relays Opus frames via BLE ↔ LoRa. 9 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT, WP. |
+| `main/` (device) | **LILYGO T-Echo** — FCC ID: 2ASYE-T-ECHO, Model: T-Echo. SoC: nRF52840. Flash: W25Q64 (SPI NOR). 1.54" GxDEPG0150BN e-paper (264×192). NFC antenna. Touch sensor (P0.11). 3x LEDs (Green P1.1, Red P1.3, Blue P0.14). SX1262 LoRa (433/868/915 MHz variants). |
 | `cordova_app/PTTLora/` | Android companion app built with **Cordova** (`cordova-android 13`). BLE plugin only. Build: `02_build_project.bat`. Output APK at `cordova_app/pttlora.apk`. GATT service UUID `"1235"`, char UUID `"ABCE"`. |
 | `lilygo_lora32_keyboard_bridge/main/` | Separate **bridge firmware** for a LilyGO LoRa32 board (ESP32-based) — relays BLE ↔ LoRa. Independent from the main firmware, but uses similar patterns. |
 | `libraries/` | Vendored Arduino libraries. 19 libs on disk (RadioLib, GxEPD2, Codec2, TinyGPSPlus, Adafruit-GFX-Library, etc.). Must be copied to Arduino's `libraries/` directory when building outside this repo. See `libraries/AGENTS.md` for full inventory. |
@@ -16,10 +17,10 @@
 
 ```bash
 # Build
-arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main
+arduino-cli compile -b adafruit:nrf52:pca10056 --build-path .pio/t-echo-build main
 
 # Upload (T-Echo in DFU mode)
-arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin
+arduino-cli upload -b adafruit:nrf52:pca10056 --port auto .pio/t-echo-build/main.bin
 
 # Install dependencies
 arduino-cli core install adafruit:nrf52@1.7.0
@@ -38,7 +39,7 @@ The project has a stale `platformio.ini` reference but **PlatformIO cannot build
 
 - Display is **GxDEPG0150BN** 1.54" e-paper (not GxEPD2 stock). Vendored header: `epd/GxEPD2_150_BN.h`.
 - Pin definitions differ between **VERSION_1** (commented out in `utilities.h`) and the default revision. Active pins: ePaper_Miso=P1.6, LoRa_Dio0=P0.22, GreenLed=P1.1, RedLed=P1.3, BlueLed=P0.14.
-- **DFU upload**: Double-click T-Echo reset button to enter DFU mode, then `arduino-cli upload -b adafruit:nrf52:feather52840 --port auto main.bin`.
+- **DFU upload**: Double-click T-Echo reset button to enter DFU mode, then `arduino-cli upload -b adafruit:nrf52:pca10056 --port auto main.bin`.
 - nRF5-SDK overwrites Adafruit bootloader — do not mix toolchains without restoring bootloader first.
 
 ## Firmware codebase entrypoints

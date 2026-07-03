@@ -130,6 +130,22 @@ body {
     color: #4ADE80;
 }
 
+/* === Log clear button === */
+.log-clear-btn {
+    background: none;
+    border: none;
+    color: #3D5A73;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+}
+
+.log-clear-btn:hover {
+    color: #E8ECF1;
+    background: rgba(255,255,255,0.06);
+}
+
 .history-badge {
     position: absolute;
     top: -2px;

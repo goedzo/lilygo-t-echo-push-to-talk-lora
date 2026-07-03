@@ -67,6 +67,7 @@ void checkBattery() {
     SerialMon.print(" mV (");
     SerialMon.print(vbat_per);
     SerialMon.println("%)");
+    RELAY_LINE("BAT: " + String(vbat_mv) + "mV " + String(vbat_per) + "%");
     
     SerialMon.println("[BAT] <<< checkBattery() DONE");
 }

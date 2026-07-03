@@ -59,10 +59,10 @@ This project implements a Push-to-Talk (PTT) walkie-talkie system using LoRa com
 
 ```bash
 # Build
-arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main
+arduino-cli compile -b adafruit:nrf52:pca10056 --build-path .pio/t-echo-build main
 
 # Upload (T-Echo in DFU mode — double-click reset button first)
-arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin
+arduino-cli upload -b adafruit:nrf52:pca10056 --port auto .pio/t-echo-build/main.bin
 
 # Install dependencies
 arduino-cli core install adafruit:nrf52@1.7.0

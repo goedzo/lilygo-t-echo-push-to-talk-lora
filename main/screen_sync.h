@@ -5,5 +5,7 @@
 #define SYNC_MAX_PAYLOAD 200
 
 void sendScreenSync();
+void sendScreenSyncIfDirty();
+void markScreenDirty();
 
 #endif

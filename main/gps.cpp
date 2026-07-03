@@ -196,6 +196,7 @@ void loopGPS() {
             else {
               gps_status=GPS_TIME;
               SerialMon.println("GPS Location invalid");
+              RELAY_LINE("GPS: location invalid");
             }
 
         }

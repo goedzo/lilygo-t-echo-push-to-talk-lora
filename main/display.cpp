@@ -215,6 +215,7 @@ void setupDisplay() {
     SerialMon.println("[Display] doing full refresh...");
     display->refresh(false);
     SerialMon.println("[Display] COMPLETE - e-paper should be updating now");
+    RELAY_LINE("DISP: init complete");
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {

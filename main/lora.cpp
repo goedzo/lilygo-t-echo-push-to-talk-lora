@@ -895,9 +895,11 @@ bool setupLoRa() {
     if (state != RADIOLIB_ERR_NONE) {
         SerialMon.print(F("[BOOT] LoRa radio->begin(freq) failed, code "));
         SerialMon.println(state);
+        RELAY_LINE("BOOT: LoRa FAIL code=" + String(state));
         return false;
     } else {
         SerialMon.println(F("[BOOT] LoRa radio->begin(freq) OK"));
+        RELAY_LINE("BOOT: LoRa OK");
     }
 
     radio->setDio1Action(setFlag);

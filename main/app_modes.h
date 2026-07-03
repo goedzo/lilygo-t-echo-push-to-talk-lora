@@ -1,7 +1,7 @@
-#ifndef APP_MODES_H
+﻿#ifndef APP_MODES_H
 #define APP_MODES_H
 
-#include <AceButton.h>
+
 #include "packet.h"
 
 // Define an array of mode names as strings
@@ -39,7 +39,7 @@ void startWaypointBroadcast(double lat, double lon, float alt, const char* label
 // Core mode functions
 void setupAppModes();
 void handleAppModes();
-void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState);
+// void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState);  // Stale — replaced by manual state machine
 void sendRangeMessage();
 bool debouncedTouchPress();
 void sendAudio();

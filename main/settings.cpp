@@ -182,6 +182,7 @@ void setupSettings() {
     }
 
     SerialMon.println("[SETTINGS] <<< setupSettings() DONE");
+    RELAY_LINE("SETTINGS: RTC OK");
 }
 
 void toggleSettingsMode() {

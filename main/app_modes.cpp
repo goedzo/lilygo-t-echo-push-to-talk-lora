@@ -1,5 +1,4 @@
-#include <AceButton.h>
-#include <TinyGPS++.h>
+﻿#include <TinyGPS++.h>
 #include "utilities.h"
 
 #include "gps.h"
@@ -16,7 +15,7 @@
 // Extern for partial/full refresh control
 extern void forceFullRefresh();
 
-using namespace ace_button;
+
 
 // Define an array of mode names as strings
 const char* modes[] = { "BEACON","RAW","TXT", "RANGE", "TST","PONG","SCAN","PTT","WP"};
@@ -77,32 +76,21 @@ int range_total_pckt_loss=0;
 // Define the pin numbers
 #define MODE_PIN _PINNUM(1,10)  // Button 2 connected to P1.10
 #define TOUCH_PIN _PINNUM(0,11)  // Button 2 connected to P0.11 (Touch-capable pin)
-AceButton modeButton(MODE_PIN);
-AceButton touchButton(TOUCH_PIN);
 
-// Custom ButtonConfig that reads MODE_PIN via direct GPIO register to avoid
-// softdevice GPIOTE interference on nRF52 P1 port pins (digitalRead returns stale HIGH)
-class ButtonConfigModePin : public ace_button::ButtonConfig {
-  public:
-    int readButton(uint8_t pin) override {
-      if (pin == MODE_PIN) {
-        // Use nrf_gpio_pin_read — handles P0/P1 transparently and bypasses softdevice GPIOTE lock
-        return nrf_gpio_pin_read(MODE_PIN) ? HIGH : LOW;
-      }
-      return ButtonConfig::readButton(pin);
-    }
-};
-
-ButtonConfigModePin g_modeButtonConfig;  // Custom config with direct GPIO read for MODE_PIN
+// MODE_PIN state machine variables (replaces AceButton entirely)
+enum { BTN_STATE_IDLE = 0, BTN_STATE_PRESSING, BTN_STATE_SETTINGS, BTN_STATE_POWER } btnState = BTN_STATE_IDLE;
+unsigned long btnPressTime = 0;       // When button was first pressed
+static bool debounceActive = false;
+static unsigned long debounceStart = 0;
+#define BUTTON_DEBOUNCE_MS 50
 
 // Variables for debouncing the touch button
 unsigned long lastTouchPressTime = 0; // Timestamp of the last button press
-unsigned long debounceDelay = 50;     // Debounce time in milliseconds
+unsigned long touchDebounceDelay = 50;     // Debounce time in milliseconds
 bool touchButtonPressed = false;      // Flag to track the debounced state
 
 
 void switchMode(String receivedMode) {
-    // Find the index of the received mode
     int newModeIndex = -1;
     for (int i = 0; i < numModes; i++) {
         if (receivedMode == modes[i]) {
@@ -178,17 +166,80 @@ void updMode() {
 
 // The main loop that is the logic for all app modes
 void handleAppModes() {
-    modeButton.check();
-    touchButton.check();
+    // Handle MODE_PIN via state machine — pure nrf_gpio_pin_read, no AceButton
+    bool pinRead = (nrf_gpio_pin_read(MODE_PIN) == 0);  // 0 = pressed (pull-up wiring)
 
-    //Always allow receiving and sending messages;
+    if (!pinRead) {
+        // Debounce: ignore any signal within the first BUTTON_DEBOUNCE_MS after state change
+        if (!debounceActive || (millis() - debounceStart < BUTTON_DEBOUNCE_MS)) {
+            debounceActive = true;
+            debounceStart = millis();
+        } else if (debounceActive && (millis() - debounceStart >= BUTTON_DEBOUNCE_MS)) {
+            // Debounce passed — actual button press detected
+            debounceActive = false;
+
+            switch (btnState) {
+                case BTN_STATE_IDLE:
+                    btnState = BTN_STATE_PRESSING;
+                    btnPressTime = millis();
+                    break;
+                case BTN_STATE_POWER:
+                    break;
+                default:
+                    btnState = BTN_STATE_PRESSING;
+                    btnPressTime = millis();
+                    break;
+            }
+        }
+    } else {
+        // Button released
+        if (btnState == BTN_STATE_PRESSING) {
+            unsigned long holdDuration = millis() - btnPressTime;
+
+            // Short press (<500ms) — cycle mode or toggle inbox view
+            if (holdDuration < 500) {
+                if (in_settings_mode) {
+                    cycleSettings();
+                } else if (!strcmp(current_mode, "TXT") && txtInboxMsgCount > 0) {
+                    txtModeToggleInboxView();
+                } else {
+                    updMode();
+                }
+            }
+
+            btnState = BTN_STATE_IDLE;
+        }
+
+        // Release after settings/power-off toggle — go back to idle
+        if (btnState == BTN_STATE_SETTINGS || btnState == BTN_STATE_POWER) {
+            btnState = BTN_STATE_IDLE;
+        }
+
+        debounceActive = false;
+    }
+
+    // Check for long press thresholds while holding
+    if (btnState == BTN_STATE_PRESSING) {
+        unsigned long holdDuration = millis() - btnPressTime;
+
+        if (holdDuration >= 500 && holdDuration < 10000) {
+            if (btnState == BTN_STATE_PRESSING) {
+                btnState = BTN_STATE_SETTINGS;
+                toggleSettingsMode();
+            }
+        } else if (holdDuration >= 10000 && !in_settings_mode) {
+            btnState = BTN_STATE_POWER;
+            powerOff();
+        }
+    }
+
     checkLoraPacketComplete(); //If a message was received, it will call handlePacket();
 
     // Update GPS location
     loopGPS();
 
-    // Send screen mirror to companion app (throttled to 1/sec)
-    sendScreenSync();
+    // Send screen mirror to companion app only when display state actually changed
+    sendScreenSyncIfDirty();
 
     //Let's implement a power off, when the action button is pressed 5 seconds
     if(digitalRead(MODE_PIN) == LOW) {
@@ -603,12 +654,13 @@ bool debouncedTouchPress() {
     }
 
     // If the button is pressed and the debounce delay has passed, return true
-    if (currentState && (currentTime - lastTouchPressTime > debounceDelay)) {
+    if (currentState && (currentTime - lastTouchPressTime > touchDebounceDelay)) {
         return true;
     }
 
     return false;
 }
+
 
 void setupAppModes() {
     // Re-ensure MODE_PIN is INPUT_PULLUP — may have been changed by Bluefruit or LoRa init
@@ -617,68 +669,12 @@ void setupAppModes() {
 
     // Verify pull-up is working: should read HIGH (unpressed) at boot
     SerialMon.print("[BTN] Boot check MODE_PIN= ");
-    SerialMon.println(digitalRead(MODE_PIN) ? "HIGH (OK)" : "LOW (button stuck?)");
+    SerialMon.println(nrf_gpio_pin_read(MODE_PIN) ? "HIGH (OK)" : "LOW (button stuck?)");
 
-    // Use standard ButtonConfig for touch button
-    ButtonConfig* config = ButtonConfig::getSystemButtonConfig();
-    g_modeButtonConfig.setEventHandler(handleEvent);
-    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureLongPress);
-    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureDoubleClick);
-    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureSuppressAfterClick);
-    g_modeButtonConfig.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
-
-    g_modeButtonConfig.setClickDelay(125);  
-
-    modeButton.setButtonConfig(&g_modeButtonConfig);
-    touchButton.init(TOUCH_PIN);
-    
-    while (Serial.available()) Serial.read();
-
+    btnState = BTN_STATE_IDLE;
+    btnPressTime = 0;
     actionButtonTimer=millis();
 }
-
-void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState) {
-    if (button->getPin() == MODE_PIN) {
-        if (eventType == AceButton::kEventPressed) {
-            if (in_settings_mode) {
-                // Cycle through different settings when in settings mode
-                cycleSettings();
-            } else if (!strcmp(current_mode, "TXT") && txtInboxMsgCount > 0) {
-                // In TXT mode with messages: toggle between inbox view and single-message view
-                txtModeToggleInboxView();
-            } else {
-                // Single click cycles through modes (default behavior)
-                updMode();
-            }
-        }
-        else if (eventType == AceButton::kEventDoubleClicked) {
-            // Double click, so quickly increase the SPF
-            deviceSettings.nextSpreadingFactor();
-            //Reset lora to use the new SPF
-            setupLoRa();
-            updModeAndChannelDisplay();
-            return;
-        } 
-        else if (eventType == AceButton::kEventLongPressed) {
-            // Long press enters or exits settings mode
-            toggleSettingsMode();
-            return;
-        } 
-        
-    } else if (button->getPin() == TOUCH_PIN && in_settings_mode) {
-        if (eventType == AceButton::kEventPressed) {
-            // Increment the current setting
-            updateCurrentSetting();
-        }
-    } else if (button->getPin() == TOUCH_PIN && !in_settings_mode) {
-        if (eventType == AceButton::kEventPressed) {
-            // We pressed the touch pin while not in settings
-            // Don't implement anything here, but use digitalRead in handleAppModes() 
-            //for better reading and better dealing with button handling performance
-        }
-    }
-}
-
 void powerOff() {
     // Power Off display message
     //Note that OFF is not part of the mode ENUM, to avoid it going there when switching modes
@@ -796,8 +792,10 @@ void sendTxtMessage(const char* message) {
         sendPacket(send_pkt_buf);
         delay(100);
         
-        // Render TXT single message view via frame engine
-        drawTxtSingleLayout();
+        // Only render TXT layout if we're actually in TXT mode (TST doesn't need it)
+        if (current_mode == "TXT") {
+            drawTxtSingleLayout();
+        }
     } else {
         // Long message — split into chunks with TXM multi-packet header
         int numChunks = (msgLen + TXT_CHUNK_SIZE - 1) / TXT_CHUNK_SIZE;

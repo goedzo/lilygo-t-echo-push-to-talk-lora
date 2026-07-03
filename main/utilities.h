@@ -100,6 +100,10 @@ extern SoftwareSerial SerialGPS;
 
 #define MONITOR_SPEED       115200
 
+// Serial log relay — forward to companion app LOG window via BLE LINE:SERIAL
+extern void sendSerialToApp(const String& msg);
+#define RELAY_LINE(msg) do { sendSerialToApp(String("SERIAL:") + (msg)); } while(0)
+
 
 
 

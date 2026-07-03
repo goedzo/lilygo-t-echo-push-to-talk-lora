@@ -7,6 +7,7 @@
 #include "lora.h"
 #include "text_inbox.h"
 #include "scan.h"
+#include "screen_sync.h"
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/Org_01.h>
@@ -327,6 +328,15 @@ void drawBeaconLayout() {
 void drawRangeLayout() {
     bool full = pendingFullRefresh();
 
+    // GxDEPG0150BN partial LUT expires after repeated use without periodic full refresh.
+    // Force a full refresh every ~45s to keep partial updates from dimming.
+    static uint32_t last_full_forced = 0;
+    if (!full && (millis() - last_full_forced > 45000)) {
+        forceFullRefresh();
+        full = pendingFullRefresh();
+        last_full_forced = millis();
+    }
+
     auto drawContent = []() {
         display->fillScreen(GxEPD_WHITE);
 
@@ -492,6 +502,12 @@ void drawPttLayout() {
 
 // ── Per-mode: TXT single message (from packet) ──
 void drawTxtSingleLayout() {
+    // Guard: never render TXT layout when not in TXT mode (prevents TST flash artifact)
+    extern const char* current_mode;
+    if (strcmp(current_mode, "TXT") != 0) {
+        return;
+    }
+
     bool full = pendingFullRefresh();
 
     auto drawContent = []() {
@@ -534,6 +550,7 @@ void drawTxtSingleLayout() {
 
 // ── Per-mode: TXT inbox (from txtShowInbox view) ──
 void drawTxtInboxLayout() {
+    markScreenDirty();
     bool full = pendingFullRefresh();
 
     auto drawContent = []() {
@@ -581,6 +598,7 @@ void drawTxtInboxLayout() {
 
 // ── Per-mode: TST — Sent/Recv dashboard ──
 void drawTstLayout() {
+    markScreenDirty();
     bool full = pendingFullRefresh();
 
     auto drawContent = []() {
@@ -616,6 +634,7 @@ void drawTstLayout() {
 
 // ── Per-mode: PONG — state + RTT display ──
 void drawPongLayout() {
+    markScreenDirty();
     bool full = pendingFullRefresh();
 
     auto drawContent = []() {
@@ -658,6 +677,7 @@ void drawPongLayout() {
 
 // ── Per-mode: SCAN — scan progress + top channels ──
 void drawScanLayout() {
+    markScreenDirty();
     bool full = pendingFullRefresh();
 
     // Sync scan state into layout_state for this render pass
@@ -759,6 +779,7 @@ void drawScanLayout() {
 
 // ── Per-mode: RAW — raw packet hex display ──
 void drawRawLayout() {
+    markScreenDirty();
     bool full = pendingFullRefresh();
 
     auto drawContent = []() {
@@ -790,6 +811,7 @@ void drawRawLayout() {
 
 // ── Per-mode: WP — Lat/Lon + broadcast ──
 void drawWpLayout() {
+    markScreenDirty();
     bool full = pendingFullRefresh();
 
     auto drawContent = []() {

@@ -1,5 +1,6 @@
 #include "ble.h"
 #include <bluefruit.h>
+#include "utilities.h"
 #include "display.h"
 #include "app_modes.h"
 #include "buddy_list.h"
@@ -166,18 +167,42 @@ void setupBLE() {
     Serial.println(deviceName);
 }
 
+// Serial log relay — queues device output to companion app LINE:SERIAL
+static volatile bool serial_pending = false;
+
+bool isPhoneConnected() {
+    return !notif_queue_empty;
+}
+
+void sendSerialToApp(const String& msg) {
+    if (msg.length() == 0) return;
+    
+    // Use the existing notification queue — it already handles wrapping, ~~ terminators, and drain timing
+    static char notifStr[260];
+    snprintf(notifStr, sizeof(notifStr), "LINE:SERIAL|DATA:%s", msg.c_str());
+    enqueue(notifStr);
+}
+
+static void sendSerialFromQueue();  // forward decl
+
 void handleBLE() {
     drainQueue();
+    sendSerialFromQueue();
     drainBinaryQueue();
 }
 
+// sendSerialFromQueue is a no-op — serial lines go straight to the notification queue via enqueue()
+static void sendSerialFromQueue() {
+    // nothing: sendSerialToApp calls enqueue() directly above
+}
+
 void onConnect(uint16_t conn_handle) {
-    Serial.println("Phone connected!");
+    RELAY_LINE("connected");
     updModeAndChannelDisplay();
 }
 
 void onDisconnect(uint16_t conn_handle, uint8_t reason) {
-    Serial.println("Phone disconnected!");
+    RELAY_LINE("disconnected");
 }
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len) {

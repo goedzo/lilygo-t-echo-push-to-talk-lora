@@ -35,11 +35,15 @@ extern ChannelResult topChannels[];
 
 static uint32_t last_sync_ms = 0;
 static const uint32_t SYNC_INTERVAL_MS = 1000; // Throttle: max 1 update per second
+static volatile bool screen_dirty = false;
+
+void markScreenDirty() { screen_dirty = true; }
 
 void sendScreenSync() {
     uint32_t now = millis();
     if (now - last_sync_ms < SYNC_INTERVAL_MS) return;
     last_sync_ms = now;
+    screen_dirty = false;
 
     if (!display) return;
 
@@ -197,4 +201,15 @@ void sendScreenSync() {
 
     // Send via BLE
     sendNotificationToApp(buf);
+}
+
+// Only push screen sync if display state changed since last notification
+void sendScreenSyncIfDirty() {
+    if (!screen_dirty) return;
+    
+    uint32_t now = millis();
+    if (now - last_sync_ms < SYNC_INTERVAL_MS) return;
+    
+    // Throttle: even dirty updates max out at 1/sec to avoid flooding SoftDevice
+    sendScreenSync();
 }

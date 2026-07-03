@@ -13,10 +13,10 @@ Automated build and upload scripts for the T-Echo firmware using Arduino CLI. Fu
 ## Local Contracts
 
 - **Prerequisite:** Arduino IDE installed at `D:\Tools\Arduino IDE` or standalone `arduino-cli.exe` available in PATH
-- **Board FQBN:** `adafruit:nrf52:feather52840` (Adafruit Feather nRF52840 Express)
+- **Board FQBN:** `adafruit:nrf52:pca10056` (Adafruit nRF52840 Feather - pca10056 variant)
 - **Core version:** `adafruit:nrf52@1.7.0`
-- **Build command:** `arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main`
-- **Upload command:** `arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin`
+- **Build command:** `arduino-cli compile -b adafruit:nrf52:pca10056 --build-path .pio/t-echo-build main`
+- **Upload command:** `arduino-cli upload -b adafruit:nrf52:pca10056 --port auto .pio/t-echo-build/main.bin`
 - RadioLib 7.x — vendored in `libraries/` and bundled in `main/lib/`; copied to Arduino lib dir during build (not from Library Manager)
 - **Verified output:** ~30% flash, ~8% RAM on release build (including crash_debug)
 

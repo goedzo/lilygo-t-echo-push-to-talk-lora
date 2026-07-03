@@ -75,6 +75,13 @@ function fallbackCopy(text) {
     document.body.removeChild(ta);
 }
 
+function clearLog() {
+    var consoleDiv = document.getElementById('console');
+    if (!consoleDiv) return;
+    consoleDiv.innerHTML = '';
+    showToast('Log cleared');
+}
+
 // Function to update the device status
 function updateDeviceStatus(status) {
     document.getElementById('deviceStatus').textContent = status;
@@ -218,6 +225,7 @@ function switchMode(aMode) {
 	} else {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
+		document.getElementById('mapSection').style.display = 'none';
 		app.stopPttStatusPolling();
 		app.stopTxtStatusPolling();
 	}
@@ -574,6 +582,12 @@ var app = {
             logCopyBtn.onclick = function(e) { e.preventDefault(); e.stopPropagation(); copyLogToClipboard(); return false; };
         }
         
+        // Log clear button
+        var logClearBtn = document.getElementById('logClearBtn');
+        if (logClearBtn) {
+            logClearBtn.onclick = function(e) { e.preventDefault(); e.stopPropagation(); clearLog(); return false; };
+        }
+        
         // Initialize log button icon to match current panel state
         updateLogButton();
         
@@ -844,26 +858,6 @@ var app = {
 			}, 1000);
 		});
 
-		// Poll for screen data via GETSCREEN write (in case notifications don't work on this device)
-		var screenPollCount = 0;
-		function pollScreen() {
-			if (!self.connectedDevices[deviceName]) return;
-			screenPollCount++;
-			ble.write(
-				deviceId, app.serviceUUID, app.characteristicUUID,
-				self.stringToBytes("GETSCREEN"),
-				function() {
-					logMessage("GETSCREEN#" + screenPollCount + " sent to " + deviceName);
-					// Keep polling every 5s as a fallback in case push notifications never arrive
-					if (screenPollCount < 30) setTimeout(pollScreen, 5000);
-				},
-				function(err) {
-					logMessage("GETSCREEN write failed (" + err + ")");
-				}
-			);
-		}
-		// Start polling after a delay to give the BLE stack time to settle
-		setTimeout(pollScreen, 2000);
 	},
     
     processCompleteMessage: function(deviceName, message) {
@@ -893,6 +887,17 @@ var app = {
             } else {
                 return;
             }
+        }
+
+        // Handle LINE:SERIAL — device SerialMon log relay lines
+        var serialData = '';
+        if (lineMatch && lineMatch[1] === 'SERIAL') {
+            var serialIdx = message.indexOf('|DATA:');
+            if (serialIdx !== -1) {
+                serialData = message.slice(serialIdx + 6);
+                logMessage('<span style="color:#888;font-style:italic;">[' + shortId + '] ' + serialData + '</span>');
+            }
+            return;
         }
 
         // Update this device's BLE/LoRa liveness state
@@ -1642,6 +1647,14 @@ var app = {
         if (modeBadge) modeBadge.textContent = mode;
         if (modeNameEl) modeNameEl.textContent = mode;
         if (chanSfEl) chanSfEl.textContent = fields['h:chansf'] || 'chn:A spf:7';
+        
+        // Sync app mode pill to match actual device mode from screen sync
+        if (app.currentMode !== mode) {
+            app.currentMode = mode;
+            document.querySelectorAll('.modePill').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+            });
+        }
 
         // Update status bar
         var freqEl = document.getElementById('screenFreq');
