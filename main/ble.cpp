@@ -183,6 +183,13 @@ void sendSerialToApp(const String& msg) {
     enqueue(notifStr);
 }
 
+void sendSerialToAppLn(const String& msg) {
+    if (msg.length() == 0) return;
+    SerialMon.println(msg);
+    static String lnMsg = String(msg) + "\n";
+    sendSerialToApp(lnMsg);
+}
+
 static void sendSerialFromQueue();  // forward decl
 
 void handleBLE() {
@@ -197,12 +204,12 @@ static void sendSerialFromQueue() {
 }
 
 void onConnect(uint16_t conn_handle) {
-    RELAY_LINE("connected");
+    sendSerialToAppLn("[BLE] connected");
     updModeAndChannelDisplay();
 }
 
 void onDisconnect(uint16_t conn_handle, uint8_t reason) {
-    RELAY_LINE("disconnected");
+    sendSerialToAppLn("[BLE] disconnected");
 }
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len) {

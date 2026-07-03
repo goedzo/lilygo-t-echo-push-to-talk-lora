@@ -52,7 +52,7 @@ The project has a stale `platformio.ini` reference but **PlatformIO cannot build
 | `main/display.cpp/.h` | E-paper rendering (GxEPD2 for GxDEPG0150BN, firstPage()/nextPage() model) |
 | `main/display_layout.cpp/.h` | Layout primitives + per-mode drawXxxLayout(). Rendering uses partial updates (`setPartialWindow()` + `refresh(true)`) for normal state changes (~0.8s). Full refresh (`setFullWindow()` + `refresh(false)`) only on mode switch (~2.5s), triggered by `forceFullRefresh()`. |
 | `main/settings.cpp/.h` | DeviceSettings struct persisted to RTC via PCF8563 |
-| `main/ble.cpp/.h` | BLE GATT service for companion app (`"1235"` / `"ABCE"`) |
+| `main/ble.cpp/.h` | BLE GATT service for companion app (`"1235"` / `"ABCE"`), serial monitoring relay via `LINE:SERIAL|DATA:` (use `sendSerialToAppLn()` to forward logs over Bluetooth) |
 | `main/battery.cpp/.h` | Battery monitoring |
 | `main/gps.cpp/.h` | GPS parsing (TinyGPSPlus) |
 | `main/packet.cpp/.h` | Packet framing by mode (BEACON, TXT, TST, RANGE, PONG, PTT, RAW, SCAN, WP) |

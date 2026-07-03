@@ -36,6 +36,7 @@ Takes care of the Android companion app: `cordova_app/PTTLora/`. A Cordova-based
 - BLE communication with the T-Echo uses custom GATT service UUIDs (`"1235"` / `"ABCE"`)
 - LoRa message relay between phone and device
 - All firmware text notifications arrive wrapped as `LINE:NOTIF|DATA:{payload}~~` — the app strips the prefix before regex matching. Payloads use `~~` terminators for multi-message framing on a single notification.
+- Device serial monitoring arrives as `LINE:SERIAL|DATA:{log message}` — the companion app displays these as italic gray log lines in the console tab, labeled with the device's short ID. Firmware uses `sendSerialToAppLn()` to send these (appends `\n` automatically). The format is `LINE:SERIAL|DATA:` prefix + raw text payload (no `SERIAL:` wrapper needed anymore).
 
 ## Verification
 

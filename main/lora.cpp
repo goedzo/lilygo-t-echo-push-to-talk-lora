@@ -862,6 +862,19 @@ int setFrequency(float freq) {
 
 // Setup LoRa radio
 bool setupLoRa() {
+    // Guard: skip if we already successfully initialized this boot cycle.
+    // Prevents "LoRa radio->begin(freq) OK" spam on every beacon/send/hop cycle.
+    static bool loraAlreadyInitialized = false;
+    if (loraAlreadyInitialized) {
+        return true;
+    }
+
+    // Dispose old radio object before creating a new one (avoid heap leak)
+    if (radio != nullptr) {
+        delete radio;
+        radio = nullptr;
+    }
+
     hopAfterTxRx=false;
     transmitFlag = false;
     operationDone = false;
@@ -893,13 +906,11 @@ bool setupLoRa() {
     int state = radio->begin(defaultFrequency);
 
     if (state != RADIOLIB_ERR_NONE) {
-        SerialMon.print(F("[BOOT] LoRa radio->begin(freq) failed, code "));
-        SerialMon.println(state);
-        RELAY_LINE("BOOT: LoRa FAIL code=" + String(state));
+        sendSerialToAppLn("[BOOT] LoRa FAIL code=" + String(state));
         return false;
     } else {
-        SerialMon.println(F("[BOOT] LoRa radio->begin(freq) OK"));
-        RELAY_LINE("BOOT: LoRa OK");
+        loraAlreadyInitialized = true;
+        sendSerialToAppLn("[BOOT] LoRa OK");
     }
 
     radio->setDio1Action(setFlag);

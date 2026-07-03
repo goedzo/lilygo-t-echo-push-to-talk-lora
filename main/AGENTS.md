@@ -28,7 +28,8 @@ Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 9 modes: BEACON, RAW, 
 - **Default revision is active** — VERSION_1 pins are commented out in `utilities.h`
 - Active pins: ePaper_Miso=P1.6, LoRa_Dio0=P0.22, GreenLed_Pin=P1.1, RedLed_Pin=P1.3, BlueLed_Pin=P0.14
 - Compile via **Arduino CLI only** — PlatformIO is not functional for this firmware
-- Debug output: `SerialMon` at 115200 baud
+- Debug output: `SerialMon` at 115200 baud (USB-only — never forwarded to phone app)
+- **Serial monitoring convention**: Use `sendSerialToAppLn()` or `sendSerialToApp()` to send to **both** USB serial and BLE companion app console. `SerialMon.print()` / `SerialMon.println()` output only goes to USB and is NOT relayed over Bluetooth.
 - Display updates: call `updDisp()` from app_modes or other modules that change state
 - Header guards: `#pragma once`
 

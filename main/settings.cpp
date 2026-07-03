@@ -6,6 +6,7 @@
 #include <pcf8563.h>
 #include "settings.h"
 #include <time.h>  // Include time.h for time manipulation
+#include "display_layout.h"
 
 // PCF8563 I2C address (7-bit)
 #define PCF8563_I2C_ADDR    0x51
@@ -125,20 +126,20 @@ void releaseI2Cbus() {
 }
 
 void setupSettings() {
-    SerialMon.println("[SETTINGS] >>> setupSettings() START");
+    sendSerialToAppLn("[SETTINGS] >>> setupSettings() START");
     
     pinMode(RTC_Int_Pin, INPUT);
     attachInterrupt(digitalPinToInterrupt(RTC_Int_Pin), rtcInterruptCb, FALLING);
-    SerialMon.println("[SETTINGS]   RTC interrupt configured");
+    sendSerialToAppLn("[SETTINGS]   RTC interrupt configured");
 
     // On nRF52 T-Echo, the CST816 touch controller shares I2C with PCF8563.
     // After power-on, CST816 may hold SDA low causing Wire.beginTransmission to hang forever.
     // Workaround: release I2C bus before attempting any I2C communication.
     
-    SerialMon.println("[SETTINGS]   Releasing I2C bus from touch controller...");
+    sendSerialToAppLn("[SETTINGS]   Releasing I2C bus from touch controller...");
     releaseI2Cbus();
 
-    SerialMon.println("[SETTINGS]   Using Wire probe for RTC");
+    sendSerialToAppLn("[SETTINGS]   Using Wire probe for RTC");
 
     Wire.begin();
 
@@ -148,9 +149,7 @@ void setupSettings() {
     int ret = 0;
     unsigned long start = millis();
     do {
-        SerialMon.print(F("  RTC probe attempt "));
-        SerialMon.print(6 - retry);
-        SerialMon.println("/5...");
+        sendSerialToAppLn("[SETTINGS]   RTC probe attempt " + String(6 - retry) + "/5...");
         Wire.beginTransmission(txAddr);
         ret = Wire.endTransmission();
         if (ret == 0) break;  // Success
@@ -160,17 +159,13 @@ void setupSettings() {
     unsigned long probeTime = millis() - start;
 
     if (ret != 0) {
-        SerialMon.print(F("[SETTINGS]   RTC not responding on I2C (probed in "));
-        SerialMon.print(probeTime);
-        SerialMon.println("ms)");
+        sendSerialToAppLn("[SETTINGS]   RTC not responding on I2C (probed in " + String(probeTime) + "ms)");
         
         // Still init Wire for other uses (touch controller etc.)
         Wire.begin();
-        SerialMon.println("[SETTINGS]   Wire begin OK (no RTC)");
+        sendSerialToAppLn("[SETTINGS]   Wire begin OK (no RTC)");
     } else {
-        SerialMon.print(F("[SETTINGS]   Wire probe: PCF8563 FOUND (probed in "));
-        SerialMon.print(probeTime);
-        SerialMon.println("ms)");
+        sendSerialToAppLn("[SETTINGS]   Wire probe: PCF8563 FOUND (probed in " + String(probeTime) + "ms)");
         rtc.begin(Wire);
         rtc.disableAlarm();
         
@@ -178,29 +173,31 @@ void setupSettings() {
         char timeBuf[32];
         snprintf(timeBuf, sizeof(timeBuf), "RTC: %04d-%02d-%02d %02d:%02d:%02d", 
                  dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
-        SerialMon.println(timeBuf);
+        sendSerialToAppLn("[SETTINGS]   RTC: " + String(timeBuf));
     }
 
-    SerialMon.println("[SETTINGS] <<< setupSettings() DONE");
-    RELAY_LINE("SETTINGS: RTC OK");
+    sendSerialToAppLn("[SETTINGS] <<< setupSettings() DONE");
 }
 
 void toggleSettingsMode() {
     in_settings_mode = !in_settings_mode;
     if (in_settings_mode) {
-        updModeAndChannelDisplay();
+        forceFullRefresh();
+        drawDefaultLayout();
+        forceFullRefresh();
         displayCurrentSetting();
     } else {
         if (radio) {
             setupLoRa();
         }
+        forceFullRefresh();
         updModeAndChannelDisplay();
     }
 }
 
 void cycleSettings() {
     setting_idx = (setting_idx + 1) % NUM_SETTINGS;
-    displayCurrentSetting();
+    drawSettingsLayout();
 }
 
 void updateCurrentSetting() {
@@ -209,18 +206,12 @@ void updateCurrentSetting() {
     switch (setting_idx) {
         case SPREADING_FACTOR:
             deviceSettings.nextSpreadingFactor();
-            char buf[20];
-            snprintf(buf, sizeof(buf), "SF Set to: %d", deviceSettings.spreading_factor);
-            updDisp(1, buf, false);
             break;
         case CHANNEL:
             deviceSettings.nextChannel();
-            updChannel();
             break;
         case BITRATE:
             deviceSettings.nextBitrate();
-            updModeAndChannelDisplay();
-            updDisp(1, "Bitrate Set", false);
             break;
         case BACKLIGHT:
             deviceSettings.backlight=!deviceSettings.backlight;
@@ -228,147 +219,31 @@ void updateCurrentSetting() {
             break;
         case VOLUME:
             deviceSettings.nextVolume();
-            updDisp(1, "Volume Set", false);
             break;
         case HOURS:
         case MINUTES:
         case SECONDS:
             deviceSettings.incrementTime(setting_idx, dateTime);
             rtc.setDateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour, dateTime.minute, dateTime.second);
-            displayCurrentTimeSetting();
             break;
         case BANDWIDTH:
             deviceSettings.nextBandwidth();
-            displayBandwidth();
             break;
         case CODING_RATE:
             deviceSettings.nextCodingRate();
-            displayCodingRate();
             break;
-        case FREQUENCY_HOPPING:   // New case for frequency hopping
+        case FREQUENCY_HOPPING:
             deviceSettings.toggleFrequencyHopping();
-            displayFrequencyHopping();
             break;
     }
-    displayCurrentSetting();
+    drawSettingsLayout();
 }
 
 void displayCurrentSetting() {
-    switch (setting_idx) {
-        case SPREADING_FACTOR:
-            displaySpreadingFactor();
-            break;
-        case CHANNEL:
-            displayChannel();
-            break;
-        case BITRATE:
-            displayBitrate();
-            break;
-        case BACKLIGHT:
-            displayBacklight();
-            break;
-        case VOLUME:
-            displayVolume();
-            break;
-        case HOURS:
-        case MINUTES:
-        case SECONDS:
-            displayCurrentTimeSetting();
-            break;
-        case BANDWIDTH:
-            displayBandwidth();
-            break;
-        case CODING_RATE:
-            displayCodingRate();
-            break;
-        case FREQUENCY_HOPPING:   // New display case for frequency hopping
-            displayFrequencyHopping();
-            break;
-    }
+    drawSettingsLayout();
 }
 
-void displayBacklight() {
-    updDisp(1, "Backlight:", true);
-    if(deviceSettings.backlight) {
-      updDisp(2, "On", true);
-    }
-    else {
-      updDisp(2, "Off", true);
-    }
-}
-
-void displayBitrate() {
-    updDisp(1, "Bitrate:", false);
-    char bitrate_str[20];
-    snprintf(bitrate_str, sizeof(bitrate_str), "Bitrate: %d bps", getBitrateFromIndex(deviceSettings.bitrate_idx));
-    updDisp(2, bitrate_str);
-}
-
-void displayVolume() {
-    updDisp(1, "Volume:", false);
-    char volume_str[20];
-    snprintf(volume_str, sizeof(volume_str), "Volume: %d", deviceSettings.volume_level);
-    updDisp(2, volume_str);
-}
-
-void displayChannel() {
-    updDisp(1, "Channel:", false);
-    char channel_str[20];
-    snprintf(channel_str, sizeof(channel_str), "Channel: %c", channels[deviceSettings.channel_idx]);
-    updDisp(2, channel_str);
-}
-
-void displaySpreadingFactor() {
-    updDisp(1, "Spreading Factor:", false);
-    char sf_str[20];
-    snprintf(sf_str, sizeof(sf_str), "SF: %d", deviceSettings.spreading_factor);
-    updDisp(2, sf_str);
-}
-
-void displayCurrentTimeSetting() {
-    RTC_Date dateTime = rtc.getDateTime();
-    char time_str[9];  // Format: HH:MM:SS
-    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", dateTime.hour, dateTime.minute, dateTime.second);
-
-    if (setting_idx == HOURS) {
-        updDisp(1, "Setting Hour:");
-    } else if (setting_idx == MINUTES) {
-        updDisp(1, "Setting Minute:");
-    } else if (setting_idx == SECONDS) {
-        updDisp(1, "Setting Second:");
-    }
-    updDisp(2, time_str);
-}
-
-void displayBandwidth() {
-    updDisp(1, "Bandwidth:", false);
-    
-    // Convert bandwidth from Hz to kHz (float value)
-    float bandwidth_in_khz = deviceSettings.bandwidth_idx / 1000.0;
-    
-    // Create a string to display the current bandwidth
-    char bw_str[20];
-    snprintf(bw_str, sizeof(bw_str), "BW: %.2f kHz", bandwidth_in_khz);
-    
-    // Update display with the current bandwidth
-    updDisp(2, bw_str);
-}
-
-void displayCodingRate() {
-    updDisp(1, "Coding Rate:", false);
-    char cr_str[20];
-    snprintf(cr_str, sizeof(cr_str), "CR: %d", deviceSettings.coding_rate_idx);
-    updDisp(2, cr_str);
-}
-
-void displayFrequencyHopping() {
-    updDisp(1, "Freqncy Hopping:", true);
-    if (deviceSettings.frequency_hopping_enabled) {
-        updDisp(2, "Enabled", true);
-    } else {
-        updDisp(2, "Disabled", true);
-    }
-}
+// Legacy functions kept for backward compatibility — no-ops since rendering uses drawSettingsLayout()
 
 // Example function to map the bitrate index to actual bitrate value (bps)
 int getBitrateFromIndex(int index) {

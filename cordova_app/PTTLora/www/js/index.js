@@ -16,7 +16,12 @@ function logMessage(message) {
     console.log(message);
     const consoleDiv = document.getElementById('console');
     const newMessage = document.createElement('p');
-    newMessage.textContent = message;
+    // Use innerHTML for messages that contain HTML (styled spans), textContent for plain text
+    if (message.indexOf('<') === 0) {
+        newMessage.innerHTML = message;
+    } else {
+        newMessage.textContent = message;
+    }
     consoleDiv.appendChild(newMessage);
     consoleDiv.scrollTop = consoleDiv.scrollHeight;
 }
@@ -85,6 +90,104 @@ function clearLog() {
 // Function to update the device status
 function updateDeviceStatus(status) {
     document.getElementById('deviceStatus').textContent = status;
+}
+
+// Update BLE info strip at top of app
+function updateBleInfoStrip(status) {
+    var deviceEl = document.getElementById('bleDeviceInfo');
+    var gattEl = document.getElementById('bleGattInfo');
+    var modeEl = document.getElementById('bleModeInfo');
+    var statusEl = document.getElementById('bleStatusInfo');
+    
+    if (!deviceEl || !gattEl || !modeEl || !statusEl) return;
+    
+    // Reset classes
+    [deviceEl, gattEl, modeEl, statusEl].forEach(function(el) {
+        el.className = 'ble-info-value';
+    });
+    
+    var devState = status.deviceState || 'none';
+    var targetName = app.targetDeviceName;
+    var shortId = targetName ? app.getShortDeviceId(targetName) : '---';
+    var activeTarget = app.getActiveDeviceId();
+    var connectedCount = Object.keys(app.connectedDevices).length;
+    
+    // Device field: show name + MAC suffix + connection count
+    if (devState === 'connected' && targetName) {
+        deviceEl.textContent = shortId + ' connected';
+        deviceEl.classList.add('connected');
+    } else if (connectedCount > 0) {
+        var devNames = [];
+        for (var n in app.connectedDevices) {
+            devNames.push(app.getShortDeviceId(n));
+        }
+        deviceEl.textContent = devNames.join(', ') + ' (' + connectedCount + ')';
+        deviceEl.classList.add('connected');
+    } else if (devState === 'scanning') {
+        deviceEl.textContent = 'Scanning...';
+        deviceEl.classList.add('scanning');
+    } else {
+        deviceEl.textContent = 'No device connected';
+        deviceEl.classList.add('error');
+    }
+    
+    // GATT field: show service/char UUIDs and connection state
+    if (devState === 'connected' && activeTarget && app.connectedDevices[activeTarget]) {
+        var dev = app.connectedDevices[activeTarget];
+        gattEl.textContent = '1235/' + (app.characteristicUUID || 'abce');
+        gattEl.classList.add('connected');
+    } else if (connectedCount > 0) {
+        gattEl.textContent = '1235/abce (' + connectedCount + ' dev)';
+        gattEl.classList.add('connected');
+    } else if (devState === 'scanning') {
+        gattEl.textContent = 'Discovering...';
+        gattEl.classList.add('scanning');
+    } else {
+        gattEl.textContent = 'Service: -- / Char: --';
+        gattEl.classList.add('error');
+    }
+    
+    // Mode field: show current mode + liveness
+    if (activeTarget && app.connectedDevices[activeTarget]) {
+        var d = app.connectedDevices[activeTarget];
+        var modes = [];
+        if (d.txtBleAlive || d.pttBleAlive) modes.push('BLE');
+        if (d.txtLoraAlive || d.pttLoraAlive) modes.push('LoRa');
+        var modeText = modes.length > 0 ? modes.join('+') : 'Conn';
+        if (app.currentMode) modeText += '/' + app.currentMode;
+        modeEl.textContent = modeText;
+        modeEl.classList.add('connected');
+    } else if (devState === 'scanning') {
+        modeEl.textContent = 'Scanning...';
+        modeEl.classList.add('scanning');
+    } else {
+        modeEl.textContent = app.currentMode || '---';
+        if (!app.currentMode) modeEl.classList.add('error');
+    }
+    
+    // Status field: show scan/connection state machine
+    switch (devState) {
+        case 'connected':
+            statusEl.textContent = '✓ Connected';
+            statusEl.classList.add('connected');
+            break;
+        case 'connecting':
+            statusEl.textContent = 'Connecting...';
+            statusEl.classList.add('scanning');
+            break;
+        case 'error':
+            statusEl.textContent = 'Reconnecting...';
+            statusEl.classList.add('scanning');
+            break;
+        default:
+            if (connectedCount > 0) {
+                statusEl.textContent = connectedCount + ' dev(s)';
+                statusEl.classList.add('connected');
+            } else {
+                statusEl.textContent = 'Scanning...';
+                statusEl.classList.add('scanning');
+            }
+    }
 }
 
 // Update status indicator dot color class
@@ -499,6 +602,9 @@ var app = {
             setStatusIndicator('connected');
         }
         
+        // Update BLE info strip
+        updateBleInfoStrip({ deviceState: count > 0 ? 'connected' : 'none' });
+        
         // Update device selector UI
         this.renderDeviceSelector();
     },
@@ -651,6 +757,7 @@ var app = {
 
         logMessage("Scanning for BLE devices...");
         var serviceUUIDs = ["1235"];
+        updateBleInfoStrip({ deviceState: 'scanning' });
         ble.startScan(serviceUUIDs, function(device) {
             logMessage("Device discovered: " + device.name + " (id=" + device.id + ")");
             if (device.name && app.isValidDeviceName(device.name)) {
@@ -668,6 +775,7 @@ var app = {
             logMessage("BLE scan error: " + error);
             updateDeviceStatus("Scan error, retrying...");
             setStatusIndicator('disconnected');
+            updateBleInfoStrip({ deviceState: 'error' });
             setTimeout(function() {
                 logMessage("Re-attempting to scan...");
                 app.scanForDevice();
@@ -701,6 +809,7 @@ var app = {
             logMessage("Connected to " + deviceName);
             updateDeviceStatus("Connected: " + deviceName);
             setStatusIndicator('connected');
+            updateBleInfoStrip({ deviceState: 'connected' });
 
             app.connectedDevices[deviceName].status = 'connected';
 
@@ -895,10 +1004,82 @@ var app = {
             var serialIdx = message.indexOf('|DATA:');
             if (serialIdx !== -1) {
                 serialData = message.slice(serialIdx + 6);
-                logMessage('<span style="color:#888;font-style:italic;">[' + shortId + '] ' + serialData + '</span>');
+                logMessage('<span style="color:#aaa;font-style:italic;">[' + shortId + '] ' + serialData + '</span>');
             }
             return;
         }
+
+        // Handle PTT state change notification (LINE:PTT|STATE:TX/RX)
+		if (lineMatch && lineMatch[1] === 'PTT') {
+			var dataIdx2 = message.indexOf('|STATE:');
+			if (dataIdx2 !== -1) {
+				var pttStateRaw = message.slice(dataIdx2 + 7);
+				
+				// Update this device's PTT liveness from its own state
+				if (this.connectedDevices[deviceName]) {
+					this.connectedDevices[deviceName].pttLoraAlive = true;
+				}
+				
+				var activeDev = app.getActiveDeviceId() || deviceName;
+				if (activeDev === deviceName) {
+					app.pttBleAlive = true;
+					
+					// Immediate button/badge update from PTT state — no need to wait for GETSTATUS
+					if (app.currentMode === 'PTT') {
+						var pttBadge = document.getElementById('loraBadge');
+						var bleBadge = document.getElementById('bleBadge');
+						var pttBtn = document.getElementById('pttButton');
+						var pttLabel = document.getElementById('pttLabel');
+						
+						if (pttStateRaw === 'TX') {
+							// Device is transmitting — show TX on button even without peer
+							if (loraBadge) {
+								loraBadge.textContent = 'TX active';
+								loraBadge.className = 'status-badge connected';
+							}
+							if (pttBtn && !app.pttIsCapturing) {
+								pttBtn.disabled = true;
+								pttBtn.className = 'transmitting';
+							}
+							if (pttLabel) pttLabel.textContent = 'TRANSMITTING...';
+						} else if (pttStateRaw === 'RX') {
+							// Device received PTT audio from channel — update badge to show we're on channel
+							app.pttLoraAlive = true;
+							if (pttBadge) {
+								pttBadge.textContent = '\u2713 On channel';
+								pttBadge.className = 'status-badge connected';
+							}
+							if (bleBadge && !bleAlive) {
+								bleBadge.textContent = 'Connected';
+								bleBadge.className = 'status-badge connected';
+							}
+							if (pttBtn && !app.pttIsCapturing) {
+								pttBtn.disabled = false;
+								pttBtn.className = 'active';
+							}
+							if (pttLabel) pttLabel.textContent = 'RECEIVING...';
+						} else {
+							// Idle — fall back to GETSTATUS liveness for badge color
+							app.pttLoraAlive = false;
+							if (pttBadge) {
+								pttBadge.textContent = '\u2717 No one on channel';
+								pttBadge.className = 'status-badge disconnected';
+							}
+							if (!bleAlive && pttBtn) {
+								pttBtn.disabled = true;
+								pttBtn.className = '';
+								if (pttLabel) pttLabel.textContent = 'Tap to connect';
+							} else if (bleAlive && !app.pttIsCapturing && pttBtn) {
+								pttBtn.disabled = false;
+								pttBtn.className = 'active';
+								if (pttLabel) pttLabel.textContent = 'HOLD TO TALK';
+							}
+						}
+					}
+				}
+			}
+			return;
+		}
 
         // Update this device's BLE/LoRa liveness state
         if (this.connectedDevices[deviceName]) {
@@ -1205,6 +1386,8 @@ var app = {
     buddyList: [],  // [{call_sign, device_id}] from peer beacons
     buddyListReceived: false,
 
+    _bleInfoInterval: null,
+
     initDisplayName: function() {
         var saved = localStorage.getItem('ptt_buddy_name');
         if (saved) {
@@ -1267,6 +1450,18 @@ var app = {
         var section = document.getElementById('buddySection');
         var container = document.getElementById('buddyContainer');
         if (!section || !container) return;
+        
+        // Periodically refresh BLE info strip to keep liveness current
+        if (!app._bleInfoInterval) {
+            app._bleInfoInterval = setInterval(function() {
+                var count = Object.keys(app.connectedDevices).length;
+                if (count > 0) {
+                    updateBleInfoStrip({ deviceState: 'connected' });
+                } else {
+                    updateBleInfoStrip({ deviceState: 'none' });
+                }
+            }, 3000);
+        }
         
         // Merge peer beacons with buddy list — use display names where available
         var contacts = [];
@@ -1617,12 +1812,17 @@ var app = {
                     if (kvSep === -1) continue;
                     fields[entry.slice(0, kvSep)] = entry.slice(kvSep + 1);
                 } else {
-                    // Non-content sections: key is already split by section key.
-                    // These entries use '=' as separator consistently in firmware.
-                    if (sepIdx === -1) continue;
-                    var k = entry.slice(0, sepIdx);
-                    var v = entry.slice(sepIdx + 1);
-                    fields[sectionKey.toLowerCase() + ':' + k] = v;
+                    // Non-content sections (H, M, S, T, G, B, I): entries may be simple values (no = separator)
+                    // e.g. "M:SCAN" → sectionKey=M, entry="SCAN" (raw mode value)
+                    // e.g. "I:gpst=ok,bat=6" → individual KV pairs under the section prefix
+                    if (sepIdx === -1) {
+                        // No '=' in entry — store as raw section-level value
+                        fields[sectionKey.toLowerCase()] = entry;
+                    } else {
+                        var k = entry.slice(0, sepIdx);
+                        var v = entry.slice(sepIdx + 1);
+                        fields[sectionKey.toLowerCase() + ':' + k] = v;
+                    }
                 }
             }
         }
@@ -1646,7 +1846,7 @@ var app = {
         var mode = fields.m || 'TXT';
         if (modeBadge) modeBadge.textContent = mode;
         if (modeNameEl) modeNameEl.textContent = mode;
-        if (chanSfEl) chanSfEl.textContent = fields['h:chansf'] || 'chn:A spf:7';
+        if (chanSfEl) chanSfEl.textContent = fields['h'] || 'chn:A spf:7';
         
         // Sync app mode pill to match actual device mode from screen sync
         if (app.currentMode !== mode) {
@@ -1663,9 +1863,9 @@ var app = {
         var batEl = document.getElementById('screenBatIcon');
         var gpsEl = document.getElementById('screenGpsIcon');
 
-        if (freqEl) freqEl.textContent = fields['s:f'] || '---';
-        if (timeEl) timeEl.textContent = fields['t:t'] || '--:--';
-        if (satsEl) satsEl.textContent = fields['g:g'] || '0';
+        if (freqEl) freqEl.textContent = fields['s'] || '---';
+        if (timeEl) timeEl.textContent = fields['t'] || '--:--';
+        if (satsEl) satsEl.textContent = fields['g'] || '0';
 
         // Battery icon (7 states: 0=empty through 6=full)
         var batIdx = parseInt(fields['i:bat']) || 6;
@@ -1719,11 +1919,11 @@ var app = {
         case 'RANGE':
             var role = c['range_role'] || '---';
             html += this._screenRow('Role: ' + role);
-            if (c['curr_lat']) {
-                html += this._screenRow(c['curr_lat'] + ', ' + c['curr_lon']);
+            if (c['curr_lat'] || c['home_lat']) {
+                html += this._screenRow((c['curr_lat'] || c['home_lat']) + ', ' + (c['curr_lon'] || c['home_lon']));
             }
             html += this._screenRow('Rng:' + (c['range_last_count'] || '---'));
-            html += this._screenRow('Stable: ' + c['range_stable_dist'] + ' m');
+            html += this._screenRow('Stable: ' + c['range_stable_dist']);
             html += this._screenRow('PLoss: ' + c['range_total_loss'] + '/' + c['range_consecutive_ok']);
             break;
 

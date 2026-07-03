@@ -27,6 +27,26 @@
             </button>
         </header>
 
+        <!-- BLE Connection Detail Strip -->
+        <section class="ble-info-strip" id="bleInfoStrip">
+            <div class="ble-info-row">
+                <span class="ble-info-label">DEVICE</span>
+                <span class="ble-info-value" id="bleDeviceInfo">---</span>
+            </div>
+            <div class="ble-info-row">
+                <span class="ble-info-label">GATT</span>
+                <span class="ble-info-value" id="bleGattInfo">Service: -- / Char: --</span>
+            </div>
+            <div class="ble-info-row">
+                <span class="ble-info-label">MODE</span>
+                <span class="ble-info-value" id="bleModeInfo">---</span>
+            </div>
+            <div class="ble-info-row">
+                <span class="ble-info-label">STATUS</span>
+                <span class="ble-info-value" id="bleStatusInfo">---</span>
+            </div>
+        </section>
+
         <!-- Toast notification -->
         <div class="toast" id="toast"></div>
 
@@ -61,6 +81,36 @@
             <section class="card device-section" id="deviceSection" style="display:none;">
                 <div class="device-strip" id="deviceStrip">
                     <!-- Connected devices populated dynamically -->
+                </div>
+            </section>
+
+            <!-- PTT Button -->
+            <section class="card ptt-section" id="pttSection" style="display:none;">
+                <div class="ptt-status-bar" id="pttStatus">
+                    <span class="status-badge" id="bleBadge">📱 Connecting</span>
+                    <span class="status-badge" id="loraBadge">📡 Checking...</span>
+                </div>
+                <button class="ptt-button" id="pttButton" disabled>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 15v1a3 3 0 003 3h8a3 3 0 003-3v-1"/></svg>
+                    <span id="pttLabel">Connecting...</span>
+                </button>
+            </section>
+
+            <!-- Waypoint Map Section -->
+            <section class="card map-section" id="mapSection" style="display:none;">
+                <div class="map-header">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                    <span>Waypoint Map</span>
+                    <button class="map-action-btn" id="sendLocationBtn" title="Send my location" onclick="app.sendMyLocation()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                        <span>Send</span>
+                    </button>
+                </div>
+                <div class="map-body">
+                    <div id="waypointMapContainer">
+                        <!-- Waypoint pins populated by JS -->
+                    </div>
+                    <div class="map-empty-hint" id="mapEmptyHint">No waypoints yet</div>
                 </div>
             </section>
 
@@ -119,36 +169,6 @@
                 </div>
                 <div class="history-body" id="messageHistoryContainer">
                     <!-- Messages populated by JS -->
-                </div>
-            </section>
-
-            <!-- PTT Button -->
-            <section class="card ptt-section" id="pttSection" style="display:none;">
-                <div class="ptt-status-bar" id="pttStatus">
-                    <span class="status-badge" id="bleBadge">📱 Connecting</span>
-                    <span class="status-badge" id="loraBadge">📡 Checking...</span>
-                </div>
-                <button class="ptt-button" id="pttButton" disabled>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 15v1a3 3 0 003 3h8a3 3 0 003-3v-1"/></svg>
-                    <span id="pttLabel">Connecting...</span>
-                </button>
-            </section>
-
-            <!-- Waypoint Map Section -->
-            <section class="card map-section" id="mapSection" style="display:none;">
-                <div class="map-header">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-                    <span>Waypoint Map</span>
-                    <button class="map-action-btn" id="sendLocationBtn" title="Send my location" onclick="app.sendMyLocation()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-                        <span>Send</span>
-                    </button>
-                </div>
-                <div class="map-body">
-                    <div id="waypointMapContainer">
-                        <!-- Waypoint pins populated by JS -->
-                    </div>
-                    <div class="map-empty-hint" id="mapEmptyHint">No waypoints yet</div>
                 </div>
             </section>
 

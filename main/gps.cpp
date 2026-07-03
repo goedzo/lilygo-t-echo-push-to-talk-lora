@@ -64,9 +64,7 @@ void loopGPS() {
         gps_status = GPS_ERROR;  // Set status to GPS_ERROR
         return;  // Exit the function to avoid further processing
     } else if (noDataCount > 0) {
-        SerialMon.print(F("[GPS] No data for "));
-        SerialMon.print(noDataCount);
-        SerialMon.println(" checks, now acquired");
+        sendSerialToAppLn("[GPS] No data for " + String(noDataCount) + " checks, now acquired");
         noDataCount = 0;
     }
 
@@ -87,7 +85,6 @@ void loopGPS() {
             //Update time if we are longer then a minute out of synch
             rtc.setDateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond);
             time_set = true;
-            //SerialMon.println("RTC set from GPS time");
         }
         if(gps_status==GPS_INIT) {
             gps_status = GPS_TIME;  // Set status to GPS_TIME since we found the time
@@ -97,8 +94,6 @@ void loopGPS() {
     if (millis() - lastGPSUpdate > 5000) {
         if (gps->altitude.isUpdated()) {
             gps_altitude = gps->altitude.meters();
-            //SerialMon.print(F("altitude: "));
-            //SerialMon.println(gps_altitude);
         }
 
         if (gps->satellites.isUpdated()) {
@@ -109,8 +104,6 @@ void loopGPS() {
             }
 
             gps_satellites = gps->satellites.value();  // Update the satellite count
-            //SerialMon.print(F("SATELLITES: "));
-            //SerialMon.println(gps_satellites);
         }
 
         if (gps->date.isUpdated()) {
@@ -121,27 +114,19 @@ void loopGPS() {
         if (gps->time.isUpdated()) {
             gps_time_age = gps->time.age();
             gps_time_value = gps->time.value();
-            //SerialMon.print(F("time: "));
-            //SerialMon.println(gps_time_value);
         }
 
         if (gps->speed.isUpdated()) {
             gps_speed_kmph = gps->speed.kmph();
             gps_speed_mps = gps->speed.mps();
-            //SerialMon.print(F("speed: "));
-            //SerialMon.println(gps_speed_kmph);
         }
 
         if (gps->course.isUpdated()) {
             gps_course = gps->course.deg();
-            //SerialMon.print(F("deg: "));
-            //SerialMon.println(gps_course);
         }
 
         if (gps->hdop.isUpdated()) {
             gps_hdop = gps->hdop.value();
-            //SerialMon.print(F("hdop: "));
-            //SerialMon.println(gps_hdop);
         }
 
         if (gps->location.isUpdated()) {
@@ -160,16 +145,12 @@ void loopGPS() {
                         else {
                             //Location is too old
                             gps_status=GPS_TIME;
-                            SerialMon.print("GPS Loc age too high");
-                            SerialMon.print(gps->location.age());
-                            SerialMon.println("");
+                            sendSerialToAppLn("[GPS] Loc age too high " + String(gps->location.age()));
                         }
                     } else {
                         // HDOP is too high, position might be unstable
                         gps_status=GPS_TIME;
-                        SerialMon.print("GPS Loc hdop too low ");
-                        SerialMon.print(gps->hdop.value());
-                        SerialMon.println("");
+                        sendSerialToAppLn("[GPS] Loc hdop too low " + String(gps->hdop.value()));
 
                         //Still store it, in case someone still wants to use it.
                         gps_latitude = gps->location.lat();
@@ -182,21 +163,15 @@ void loopGPS() {
                     // Location might not be stable
                     gps_status=GPS_TIME;
                     /*SerialMon.print("GPS Loc sattelites too low ");
-                    SerialMon.print(gps->satellites.value());
-                    SerialMon.println("");
                     */
 
                 }
 
-                //SerialMon.print(F("LOCATION   Lat="));
-                //SerialMon.print(gps_latitude, 6);
-                //SerialMon.print(F(" Long="));
-                //SerialMon.println(gps_longitude, 6);
             }
             else {
               gps_status=GPS_TIME;
-              SerialMon.println("GPS Location invalid");
-              RELAY_LINE("GPS: location invalid");
+              sendSerialToAppLn("[GPS] Location invalid");
+              sendSerialToAppLn("[GPS] Location invalid");
             }
 
         }

@@ -100,8 +100,14 @@ extern SoftwareSerial SerialGPS;
 
 #define MONITOR_SPEED       115200
 
-// Serial log relay — forward to companion app LOG window via BLE LINE:SERIAL
+// Serial monitoring — send to USB serial AND over BLE to companion app console tab.
+// There are two methods: one for a single line (appends \n), one for raw text without \n.
+// DO NOT call SerialMon.print() directly — it only goes to USB and is NOT forwarded to the phone app.
+// To get monitoring output onto Bluetooth, use one of these instead:
+//   sendSerialToAppLn("[mod] message")     -> sends "LINE:SERIAL|DATA:[mod] message\n"  (recommended for log lines)
+//   sendSerialToApp("[mod] partial line")  -> sends "LINE:SERIAL|DATA:[mod] partial line" (no \n)
 extern void sendSerialToApp(const String& msg);
+extern void sendSerialToAppLn(const String& msg);
 #define RELAY_LINE(msg) do { sendSerialToApp(String("SERIAL:") + (msg)); } while(0)
 
 

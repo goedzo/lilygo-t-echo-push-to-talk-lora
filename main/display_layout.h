@@ -26,6 +26,7 @@ void drawPongLayout();
 void drawScanLayout();
 void drawRawLayout();
 void drawWpLayout();
+void drawSettingsLayout();
 
 // ── Layout state (current mode's data) ──
 struct LayoutState {
@@ -81,5 +82,6 @@ void drawDefaultLayout();
 
 // ── Partial/full refresh control — exposed from display.cpp ──
 bool pendingFullRefresh();
+void markDisplayReady();
 
 #endif

@@ -809,6 +809,138 @@ void drawRawLayout() {
     renderPageLoop(drawContent, full);
 }
 
+// ── Per-mode: SETTINGS — current setting name + value card ──
+void drawSettingsLayout() {
+    markScreenDirty();
+    bool full = pendingFullRefresh();
+
+    auto drawContent = []() {
+        display->fillScreen(GxEPD_WHITE);
+
+        // Header row with settings gear icon
+        char chan_sf[20];
+        snprintf(chan_sf, sizeof(chan_sf), "chn:%c spf:%d", channels[deviceSettings.channel_idx], deviceSettings.spreading_factor);
+        drawModeIcon("SETTINGS");
+
+        int name_x = 24;
+        display->setFont(&FreeMonoBold9pt7b);
+        display->fillRect(name_x, disp_top_margin, 100, 16, GxEPD_BLACK);
+        display->setCursor(name_x + 4, disp_top_margin + 11);
+        display->setTextColor(GxEPD_WHITE);
+        display->print("SETTINGS");
+
+        int channel_x = disp_width - 90;
+        display->fillRect(channel_x, disp_top_margin, 86, 16, GxEPD_BLACK);
+        display->setCursor(channel_x + 4, disp_top_margin + 11);
+        display->setTextColor(GxEPD_WHITE);
+        display->print(chan_sf);
+
+        display->setTextColor(GxEPD_BLACK);
+
+        // Body area: setting label + value in bordered card
+        int card_y = 32;
+        int card_h = 110;
+
+        // Card background with border
+        display->fillRect(12, card_y, disp_width - 24, card_h, GxEPD_WHITE);
+        display->drawRect(12, card_y, disp_width - 24, card_h, GxEPD_BLACK);
+
+        // Determine current setting name and value
+        const char* setting_name = nullptr;
+        char setting_value[64] = "";
+
+        switch (setting_idx) {
+            case SPREADING_FACTOR:
+                setting_name = "Spreading Factor";
+                snprintf(setting_value, sizeof(setting_value), "SF: %d", deviceSettings.spreading_factor);
+                break;
+            case CHANNEL:
+                setting_name = "Channel";
+                snprintf(setting_value, sizeof(setting_value), "%c", channels[deviceSettings.channel_idx]);
+                break;
+            case BITRATE:
+                setting_name = "Bitrate";
+                snprintf(setting_value, sizeof(setting_value), "%d bps", getBitrateFromIndex(deviceSettings.bitrate_idx));
+                break;
+            case BACKLIGHT:
+                setting_name = "Backlight";
+                strncpy(setting_value, deviceSettings.backlight ? "On" : "Off", sizeof(setting_value));
+                break;
+            case VOLUME:
+                setting_name = "Volume";
+                snprintf(setting_value, sizeof(setting_value), "%d", deviceSettings.volume_level);
+                break;
+            case HOURS: {
+                RTC_Date dt = rtc.getDateTime();
+                setting_name = "Hour";
+                char time_buf[9];
+                snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d", dt.hour, dt.minute, dt.second);
+                strncpy(setting_value, time_buf, sizeof(setting_value));
+                break;
+            }
+            case MINUTES: {
+                RTC_Date dt = rtc.getDateTime();
+                setting_name = "Minute";
+                char time_buf[9];
+                snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d", dt.hour, dt.minute, dt.second);
+                strncpy(setting_value, time_buf, sizeof(setting_value));
+                break;
+            }
+            case SECONDS: {
+                RTC_Date dt = rtc.getDateTime();
+                setting_name = "Second";
+                char time_buf[9];
+                snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d", dt.hour, dt.minute, dt.second);
+                strncpy(setting_value, time_buf, sizeof(setting_value));
+                break;
+            }
+            case BANDWIDTH: {
+                float bw_khz = deviceSettings.bandwidth_idx / 1000.0;
+                setting_name = "Bandwidth";
+                snprintf(setting_value, sizeof(setting_value), "%.2f kHz", bw_khz);
+                break;
+            }
+            case CODING_RATE:
+                setting_name = "Coding Rate";
+                snprintf(setting_value, sizeof(setting_value), "1/%d", deviceSettings.coding_rate_idx);
+                break;
+            case FREQUENCY_HOPPING:
+                setting_name = "Freq Hopping";
+                strncpy(setting_value, deviceSettings.frequency_hopping_enabled ? "Enabled" : "Disabled", sizeof(setting_value));
+                break;
+        }
+
+        // Draw setting name (top of card)
+        display->setFont(&FreeMonoBold9pt7b);
+        int name_y = card_y + 12;
+        display->fillRect(16, name_y, disp_width - 32, 18, GxEPD_BLACK);
+        display->setCursor(20, name_y + 12);
+        display->setTextColor(GxEPD_WHITE);
+        display->print(setting_name);
+
+        // Draw setting value (bottom of card)
+        int val_y = card_y + 40;
+        display->setFont(&FreeMonoBold12pt7b);
+        int text_w = strlen(setting_value) * 8;
+        int cx = (disp_width - text_w) / 2;
+        display->setCursor(cx, val_y + 10);
+        display->setTextColor(GxEPD_BLACK);
+        display->print(setting_value);
+
+        // Draw instruction hint at bottom of card
+        int instr_y = card_y + card_h - 24;
+        display->setFont(&FreeMonoBold9pt7b);
+        display->fillRect(16, instr_y, disp_width - 32, 18, GxEPD_WHITE);
+        display->setCursor(20, instr_y + 12);
+        display->setTextColor(GxEPD_BLACK);
+        display->print("MODE: cycle");
+
+        drawBottomStatusbar();
+    };
+
+    renderPageLoop(drawContent, full);
+}
+
 // ── Per-mode: WP — Lat/Lon + broadcast ──
 void drawWpLayout() {
     markScreenDirty();

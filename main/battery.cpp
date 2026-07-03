@@ -55,21 +55,14 @@ uint8_t mvToPercent(float mvolts) {
 }
 
 void checkBattery() {
-    SerialMon.println("[BAT] >>> checkBattery() START");
+    sendSerialToAppLn("[BAT] >>> checkBattery() START");
     
     float vbat_mv = readVBAT();
     uint8_t vbat_per = mvToPercent(vbat_mv);
 
-    SerialMon.print("[BAT] raw ADC=");
-    // The raw value is no longer available externally, log just the computed values
-    SerialMon.print("vbat=");
-    SerialMon.print(vbat_mv);
-    SerialMon.print(" mV (");
-    SerialMon.print(vbat_per);
-    SerialMon.println("%)");
-    RELAY_LINE("BAT: " + String(vbat_mv) + "mV " + String(vbat_per) + "%");
+    sendSerialToAppLn("[BAT] raw ADC=vbat=" + String(vbat_mv) + " mV (" + String(vbat_per) + "%)");
     
-    SerialMon.println("[BAT] <<< checkBattery() DONE");
+    sendSerialToAppLn("[BAT] <<< checkBattery() DONE");
 }
 
 // New function to return the battery percentage

@@ -978,3 +978,51 @@ body {
     font-weight: 600;
     letter-spacing: 0.5px;
 }
+
+/* === BLE Connection Detail Strip === */
+.ble-info-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: #1A2B3E;
+    border-bottom: 1px solid #1E3040;
+}
+
+.ble-info-row {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 10px;
+    background: #15202B;
+    min-width: 0;
+}
+
+.ble-info-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #3D5A73;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 3px;
+}
+
+.ble-info-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #8FA4B8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: 'Courier New', monospace;
+}
+
+.ble-info-value.connected {
+    color: #4ADE80;
+}
+
+.ble-info-value.scanning {
+    color: #F5A623;
+}
+
+.ble-info-value.error {
+    color: #F87171;
+}

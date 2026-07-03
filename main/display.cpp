@@ -167,17 +167,21 @@ GxIO_Class      *io        = nullptr;
 GxEPD_Class     *display_v1   = nullptr;
 GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>* display = nullptr;
 
+// ── Partial/full refresh control ──
+static bool s_need_full_refresh = true;  // default: start with full refresh
+static uint32_t s_boot_complete_ms = 0;
+
 void printline(const char* msg) {
     display->print(msg);
 }
 
 void setupDisplay() {
-    SerialMon.println("[Display] starting e-paper init...");
+    sendSerialToAppLn("[Display] starting e-paper init...");
 
     pinMode(ePaper_Backlight, OUTPUT);
     digitalWrite(ePaper_Backlight, HIGH);
     enableBacklight(true);
-    SerialMon.println("[Display] backlight ON");
+    sendSerialToAppLn("[Display] backlight ON");
 
     dispPort = new SPIClass(
         NRF_SPIM2, ePaper_Miso, ePaper_Sclk, ePaper_Mosi);
@@ -187,18 +191,18 @@ void setupDisplay() {
     GxEPD2_150_BN epd(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
     display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(epd);
 
-    SerialMon.println("[Display] calling init with reset_duration=300...");
+    sendSerialToAppLn("[Display] calling init with reset_duration=300...");
     display->init(0, true, 300, false, *dispPort, spiSettings);
-    SerialMon.println("[Display] init() returned OK");
+    sendSerialToAppLn("[Display] init() returned OK");
 
     delay(200);
-    SerialMon.println("[Display] post-reset delay done");
+    sendSerialToAppLn("[Display] post-reset delay done");
 
     display->setRotation(3);
-    SerialMon.println("[Display] rotation set, clearing screen...");
+    sendSerialToAppLn("[Display] rotation set, clearing screen...");
 
     display->clearScreen();
-    SerialMon.println("[Display] clearScreen returned OK");
+    sendSerialToAppLn("[Display] clearScreen returned OK");
 
     display->setFullWindow();
     display->fillScreen(GxEPD_WHITE);
@@ -212,10 +216,12 @@ void setupDisplay() {
         display->print("T-Echo Ready!");
     } while (display->nextPage());
 
-    SerialMon.println("[Display] doing full refresh...");
+    sendSerialToAppLn("[Display] doing full refresh...");
     display->refresh(false);
-    SerialMon.println("[Display] COMPLETE - e-paper should be updating now");
-    RELAY_LINE("DISP: init complete");
+    sendSerialToAppLn("[Display] COMPLETE - e-paper should be updating now");
+    
+    s_boot_complete_ms = millis();
+    forceFullRefresh();
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {
@@ -276,8 +282,7 @@ void drawModeIcon(const char* mode) {
 }
 
 void showError(const char* error_msg) {
-    SerialMon.print("[Display] Error: ");
-    SerialMon.println(error_msg);
+    sendSerialToAppLn("[Display] Error: " + String(error_msg));
 }
 
 void clearScreen() {
@@ -299,9 +304,6 @@ void printTimeIcon(bool updateScreen) {}
 void printStatusOnApp() {}
 void sleepDisplay() {}
 
-// ── Partial/full refresh control ──
-static bool s_need_full_refresh = true;  // default: start with full refresh
-
 // Call when mode switches — next draw will use full refresh, then revert to partial
 void forceFullRefresh() {
     s_need_full_refresh = true;
@@ -309,6 +311,13 @@ void forceFullRefresh() {
 
 // Called by layout functions — returns true if this render should be full, then resets flag
 bool pendingFullRefresh() {
+    // Force full refresh for 3s after boot completes. During this window the e-paper panel is
+    // still stabilizing — partial updates corrupt the image (ghosting, blank body area) when
+    // the app connects via BLE and triggers a draw too quickly.
+    if (s_boot_complete_ms > 0 && (millis() - s_boot_complete_ms) < 3000) {
+        return true;
+    }
+
     if (s_need_full_refresh) {
         s_need_full_refresh = false;
         return true;

@@ -145,13 +145,12 @@ void sendScreenSync() {
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "scan_freq=%s,", layout_state.scan_current_freq);
 
         for (int i = 0; i < 10; i++) {
-            char freq_field[48];
             if (i < 10 && topChannels[i].frequency > 0) {
-                snprintf(freq_field, sizeof(freq_field), "s%d_f=%.2fmh,s%d_r=%.1fdB,", i, topChannels[i].frequency / 1e6, i, topChannels[i].rssi);
+                off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "s%d_f=%.2fmh,", i, topChannels[i].frequency / 1e6);
+                off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "s%d_r=%.1fdB,", i, topChannels[i].rssi);
             } else {
-                snprintf(freq_field, sizeof(freq_field), "s%d_f=---mh,", i);
+                off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "s%d_f=---mh,", i);
             }
-            off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "%s", freq_field);
         }
     }
     else if (strcmp(current_mode, "RAW") == 0) {
