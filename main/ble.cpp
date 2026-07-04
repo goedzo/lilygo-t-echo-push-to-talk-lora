@@ -210,6 +210,17 @@ void onConnect(uint16_t conn_handle) {
 
 void onDisconnect(uint16_t conn_handle, uint8_t reason) {
     sendSerialToAppLn("[BLE] disconnected");
+
+    // Reset PTT states to prevent stale "SENDING" or "RECEIVING" indicators
+    setPttTxActive(false);
+    setPttRxActive(false);
+
+    // Notify user via e-paper that the remote (phone) is lost
+    if (strcmp(current_mode, "PTT") == 0) {
+        drawPttLayout(); // This will render as STANDBY since active flags are now false
+    } else {
+        updModeAndChannelDisplay();
+    }
 }
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len) {

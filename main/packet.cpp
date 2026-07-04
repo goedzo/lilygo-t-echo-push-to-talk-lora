@@ -8,10 +8,8 @@
 
 Packet::Packet() 
     : type("NULL"),    // Initialize type to "NULL"
-      header(""),      // Initialize header as an empty string
       length(0),       // Initialize length to 0
       content(""),     // Initialize content as an empty string
-      raw(nullptr),    // Initialize raw buffer to nullptr
       rawLength(0),    // Initialize raw length to 0
       channel('\0'),   // Initialize channel to null character
       packetCounter(0),// Initialize packetCounter to 0
@@ -22,10 +20,7 @@ Packet::Packet()
 {}
 
 Packet::~Packet() {
-    // Free allocated memory for raw buffer
-    if (raw != nullptr) {
-        delete[] raw;
-    }
+    // No dynamic memory to free for raw buffer anymore
 }
 
 bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
@@ -53,8 +48,7 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
     // Parse the header if it's not a "Ping!" message
     if (!parseHeader(buffer, bufferSize)) {
         // If the header is unknown, store the raw message and set type to "NULL"
-        rawLength = bufferSize;
-        raw = new uint8_t[rawLength];  // Allocate memory for raw buffer
+        rawLength = (bufferSize > 128) ? 128 : bufferSize;
         memcpy(raw, buffer, rawLength);  // Copy raw buffer content
         return true;
     }
@@ -97,12 +91,8 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
         Serial.println(content);
         
         // For binary payloads (PTT Opus), also store raw buffer length for binary handling
-        rawLength = bufferSize;
-        if (raw != nullptr) {
-            delete[] raw;
-        }
-        raw = new uint8_t[bufferSize];
-        memcpy(raw, buffer, bufferSize);
+        rawLength = (bufferSize > 128) ? 128 : bufferSize;
+        memcpy(raw, buffer, rawLength);
     } else {
         // Handle the case where there's not enough data for content
         content = String("");

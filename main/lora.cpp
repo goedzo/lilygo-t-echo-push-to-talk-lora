@@ -517,7 +517,13 @@ bool checkForMissingPackets(Packet& packet, uint8_t* rcv_pkt_buf, uint16_t packe
                 unsigned long now = millis();
                 unsigned long timeSinceLastReq = now - lastReqSendTime;
                 if (timeSinceLastReq < REQ_PACKET_SPACING_MS) {
-                    delay(REQ_PACKET_SPACING_MS - timeSinceLastReq);
+                    // Instead of blocking with delay(), we stop requesting more packets in this loop 
+                    // and let the main loop handle other tasks. The remaining missed packets will be 
+                    // requested once enough time has passed, or on next packet reception if logic allows.
+                    // However, to maintain correctness without a state machine for REQs, 
+                    // we'll simply break here; subsequent requests are handled by the fact that 
+                    // this function is called when a new packet arrives and gaps are detected.
+                    break; 
                 }
             }
             // Store the newer packet in the queue until all missing packets are received
@@ -1087,14 +1093,16 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverr
     int state = radio->startTransmit((uint8_t*)send_pkt_buf, newLen);
     transmitFlag = true;
 
-    if (state != RADIOLIB_ERR_NONE) {
-        Serial.print(F("Transmission start failed, code "));
-        Serial.println(state);
-        char buf[50];
-        snprintf(buf, sizeof(buf), "Lora Strt Trnsmt Err: %d", state);
-        showError(buf);
-        setupLoRa();  // Reinitialize the radio
-    }
+        if (state != RADIOLIB_ERR_NONE) {
+            Serial.print(F("Transmission start failed, code "));
+            Serial.println(state);
+            char buf[50];
+            snprintf(buf, sizeof(buf), "Lora Strt Trnsmt Err: %d", state);
+            showError(buf);
+            // Removed blocking setupLoRa() call here to avoid potential recursive 
+            // delays or hangs in the critical radio path. Radio re-init should be handled 
+            // asynchronously if needed, but for now we just report and stop transmission.
+        }
 
     // Free heap fallback buffer if we used it
     if (newLen > MAX_PACKET_SIZE) {

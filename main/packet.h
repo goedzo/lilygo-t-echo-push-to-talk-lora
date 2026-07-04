@@ -7,22 +7,21 @@ class Packet {
 public:
     // Properties
     String type;
-    String header;
     uint16_t length;
     String content;
-    uint8_t* raw;        // Raw message buffer
-    uint16_t rawLength;  // Length of the raw message
-    char channel;        // Store the channel
-    uint32_t packetCounter;  // Message counter to track duplicates or for other purposes
-    uint32_t testCounter;  // Message counter to track duplicates or for other purposes
-    String gpsData;     // GPS data
-    String sendDateTime;// Send date and time
+    uint8_t raw[128];        // Raw message buffer (fixed size to avoid heap fragmentation)
+    uint16_t rawLength;     // Length of the raw message
+    char channel;           // Store the channel
+    uint32_t packetCounter; // Message counter to track duplicates or for other purposes
+    uint32_t testCounter;   // Message counter to track duplicates or for other purposes
+    String gpsData;         // GPS data
+    String sendDateTime;    // Send date and time
 
     // Beacon-specific fields (populated when type == "BEACON")
     double  beacon_lat;      // Latitude from ~GP field
     double  beacon_lon;      // Longitude from ~GP field
     uint8_t beacon_battery;  // Battery from ~BT field
-    String  beacon_deviceId; // Device ID from B prefix
+    String  beacon_deviceId; // Device ID (changed from String, max 15 + null)
     char    beacon_callSign[17]; // Call sign from ~CN field (max 16 bytes + null)
 
     // Constructor

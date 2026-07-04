@@ -26,10 +26,6 @@ const char* current_mode=modes[modeIndex];
 uint32_t        sendTestMessageTimer = 0;
 int pckt_count=0;
 
-uint32_t        actionButtonTimer = 0;
-bool ignore_next_button_press=false;
-
-// Buffers
 short raw_buf[RAW_SIZE];
 //This is used for sending LORA messages
 //This buffer receives LORA messages
@@ -80,6 +76,7 @@ int range_total_pckt_loss=0;
 // MODE_PIN state machine variables (replaces AceButton entirely)
 enum { BTN_STATE_IDLE = 0, BTN_STATE_PRESSING, BTN_STATE_SETTINGS, BTN_STATE_POWER } btnState = BTN_STATE_IDLE;
 unsigned long btnPressTime = 0;       // When button was first pressed
+bool settingsToggled = false;         // Track if we already toggled settings for this press
 static bool debounceActive = false;
 static unsigned long debounceStart = 0;
 #define BUTTON_DEBOUNCE_MS 50
@@ -169,7 +166,7 @@ void handleAppModes() {
     // MODE_PIN state machine — use digitalRead which works reliably on P1.10 pull-up wiring
     bool pinPressed = (digitalRead(MODE_PIN) == LOW);
 
-    if (!pinPressed) {
+    if (pinPressed) {
         // Debounce: ignore any signal within the first BUTTON_DEBOUNCE_MS after state change
         if (!debounceActive || (millis() - debounceStart < BUTTON_DEBOUNCE_MS)) {
             debounceActive = true;
@@ -215,6 +212,7 @@ void handleAppModes() {
             btnState = BTN_STATE_IDLE;
         }
 
+        settingsToggled = false;
         debounceActive = false;
     }
 
@@ -222,11 +220,10 @@ void handleAppModes() {
     if (btnState == BTN_STATE_PRESSING) {
         unsigned long holdDuration = millis() - btnPressTime;
 
-        if (holdDuration >= 500 && holdDuration < 10000) {
-            if (btnState == BTN_STATE_PRESSING) {
-                btnState = BTN_STATE_SETTINGS;
-                toggleSettingsMode();
-            }
+        if (holdDuration >= 500 && holdDuration < 10000 && !settingsToggled) {
+            settingsToggled = true;
+            btnState = BTN_STATE_SETTINGS;
+            toggleSettingsMode();
         } else if (holdDuration >= 10000 && !in_settings_mode) {
             btnState = BTN_STATE_POWER;
             powerOff();
@@ -240,19 +237,6 @@ void handleAppModes() {
 
     // Send screen mirror to companion app only when display state actually changed
     sendScreenSyncIfDirty();
-
-    //Let's implement a power off, when the action button is pressed 5 seconds
-    if(digitalRead(MODE_PIN) == LOW) {
-      //Keep counting until 5 seconds
-      if (millis() - actionButtonTimer > 5000) {
-        powerOff();
-      }
-
-    }
-    else if (digitalRead(MODE_PIN) == HIGH) {
-      //No button pressed
-      actionButtonTimer=millis();
-    }
 
 
     if (!in_settings_mode) {
@@ -519,11 +503,12 @@ void handlePacket(Packet packet) {
                       txt_reassemble_timer = millis();
                   }
 
-                  // Append chunk data to buffer (memcpy for safety with null bytes)
-                  int currentLen = strlen(txt_reassemble_buf);
-                  if (currentLen + chunkLen < TXT_MULTI_MAX_MSG_LEN) {
-                      memcpy(txt_reassemble_buf + currentLen, chunkData, chunkLen + 1);
-                      txt_reassemble_recv_count++;
+                   // Append chunk data to buffer (memcpy for safety with null bytes)
+                   int currentLen = strlen(txt_reassemble_buf);
+                   if (currentLen + chunkLen < TXT_MULTI_MAX_MSG_LEN) {
+                       memcpy(txt_reassemble_buf + currentLen, chunkData, chunkLen);
+                       txt_reassemble_buf[currentLen + chunkLen] = '\0';
+                       txt_reassemble_recv_count++;
 
                       if (txt_reassemble_recv_count == txt_reassemble_expected) {
                           // All chunks received — store full message in inbox and display
@@ -673,7 +658,7 @@ void setupAppModes() {
 
     btnState = BTN_STATE_IDLE;
     btnPressTime = 0;
-    actionButtonTimer=millis();
+    settingsToggled = false;
 }
 void powerOff() {
     // Power Off display message
