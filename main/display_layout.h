@@ -61,6 +61,9 @@ struct LayoutState {
     char wp_label[25];
     bool wp_broadcasting;
     uint32_t wp_bcast_remaining_s;
+    
+    // ── Dirty flag for lazy display updates (from disp_timer) ──
+    bool _dirty;  // true = screen needs redraw via flushDisplayIfNeeded()
 };
 extern LayoutState layout_state;
 void initLayoutState();

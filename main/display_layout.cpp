@@ -21,6 +21,7 @@ LayoutState layout_state;
 void initLayoutState() {
     memset(&layout_state, 0, sizeof(layout_state));
     layout_state.mode = current_mode;
+    layout_state._dirty = false;
     layout_state.beacon_distance = 0;
     layout_state.range_distance_m = 0;
     layout_state.range_sender = false;

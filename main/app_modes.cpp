@@ -11,8 +11,9 @@
 #include "scan.h"
 #include "screen_sync.h"
 #include "display_layout.h"  // For per-mode drawXxxLayout() wiring
+#include "disp_timer.h"
 
-// Extern for partial/full refresh control
+// Extern for partial/full refresh control from display.cpp
 extern void forceFullRefresh();
 
 
@@ -71,7 +72,7 @@ int range_total_pckt_loss=0;
 // Button objects
 // Define the pin numbers
 #define MODE_PIN _PINNUM(1,10)  // Button 2 connected to P1.10
-#define TOUCH_PIN _PINNUM(0,11)  // Button 2 connected to P0.11 (Touch-capable pin)
+#define TOUCH_PIN _PINNUM(0,11)  // Touch pin
 
 // MODE_PIN state machine variables (replaces AceButton entirely)
 enum { BTN_STATE_IDLE = 0, BTN_STATE_PRESSING, BTN_STATE_SETTINGS, BTN_STATE_POWER } btnState = BTN_STATE_IDLE;
@@ -87,6 +88,12 @@ static unsigned long debounceTimestamp = 0;
 unsigned long lastTouchPressTime = 0; // Timestamp of the last button press
 unsigned long touchDebounceDelay = 50;     // Debounce time in milliseconds
 bool touchButtonPressed = false;      // Flag to track the debounced state
+
+// ── Display render queue state (from disp_timer) ──
+static bool s_deferred_mode_switch = false;  // Mode changed — need deferred full refresh + redraw
+static const char* s_pending_draw_mode = nullptr;  // Track which mode to redraw after flush
+static bool s_display_rendering = false;       // True while inside a blocking draw call
+static bool s_dirty_screen = false;            // Dirty-draw queued for next flush cycle
 
 
 void switchMode(String receivedMode) {
@@ -129,69 +136,42 @@ void updMode() {
     forceFullRefresh();
 
     // Update the mode and channel display with the correct mode-specific layout
-    updModeAndChannelDisplay();
-    if(current_mode=="RANGE") {
-        //Make sure we reset the count
-        range_last_count=0;
-
-        printRangeStatus();
-    } else if(current_mode=="BEACON") {
-        drawBeaconLayout();
-    } else if(current_mode=="PTT") {
-        drawPttLayout();
-    } else if(current_mode=="SCAN") {
-        drawScanLayout();
-    } else if(current_mode=="TXT") {
-        drawTxtSingleLayout();
-    } else if(current_mode=="TST") {
-        drawTstLayout();
-    } else if(current_mode=="PONG") {
-        drawPongLayout();
-    } else if(current_mode=="RAW") {
-        drawRawLayout();
-    } else if(current_mode=="WP") {
-        drawWpLayout();
-    }
-
-    // Handle mode-specific initialization
-    if (current_mode == "SCAN") {
-        startScanFrequencies();  // Start the scan process when SCAN mode is selected
-    } else {
-        stopScanFrequencies();   // Ensure the scan is stopped when switching out of SCAN mode
-    }
-
+    // Defer display render until after button/BLE/GPS work completes in handleAppModes().
+    // This prevents mode switching from blocking the main loop mid-iteration.
+    s_deferred_mode_switch = true;
+    s_pending_draw_mode = current_mode;
 }
 
 
 // The main loop that is the logic for all app modes
 void handleAppModes() {
-    // MODE_PIN edge-triggered state machine with debouncing
+    // ── CRITICAL: Check button state FIRST, before any display work ──
+    // This ensures button detection is never blocked by a pending screen refresh.
     bool currentPinState = (digitalRead(MODE_PIN) == LOW);  // Active-LOW
 
     if (currentPinState != lastPinState) {
-        // Pin changed — update debounce window and process events
         debounceTimestamp = millis();
 
         if (currentPinState && !lastPinState) {
-            // HIGH → LOW transition (button pressed)
             btnState = BTN_STATE_PRESSING;
             btnPressTime = millis();
-            Serial.println("[BTN] Press detected");
+            sendSerialToAppLn(F("[BTN] Press detected"));
         } else if (!currentPinState && lastPinState) {
-            // LOW → HIGH transition (button released)
             unsigned long holdDuration = millis() - btnPressTime;
-            Serial.print("[BTN] Released after ");
-            Serial.print(holdDuration);
-            Serial.println(" ms");
+            sendSerialToApp(F("[BTN] Released after "));
+            sendSerialToApp((String)holdDuration);
+            sendSerialToAppLn(F(" ms"));
 
-            // Short press (<500ms) — cycle mode or toggle inbox view
+            // Process button action immediately (before any display update)
             if (holdDuration < 500) {
                 if (in_settings_mode) {
                     cycleSettings();
                 } else if (!strcmp(current_mode, "TXT") && txtInboxMsgCount > 0) {
                     txtModeToggleInboxView();
                 } else {
-                    updMode();
+                    // Queue mode switch — actual render deferred until after button release
+                    s_deferred_mode_switch = true;
+                    s_pending_draw_mode = modes[modeIndex + 1];  // Next mode (updMode hasn't run yet)
                 }
             }
 
@@ -201,13 +181,11 @@ void handleAppModes() {
 
         lastPinState = currentPinState;
     } else if (currentPinState && millis() - debounceTimestamp >= BUTTON_DEBOUNCE_MS) {
-        // Button still held past debounce — only enter once
         if (btnState == BTN_STATE_IDLE) {
             btnState = BTN_STATE_PRESSING;
             btnPressTime = millis();
         }
 
-        // Long-press thresholds while holding
         unsigned long holdDuration = millis() - btnPressTime;
 
         if (holdDuration >= 500 && holdDuration < 10000 && !settingsToggled) {
@@ -220,16 +198,64 @@ void handleAppModes() {
         }
     }
 
-    checkLoraPacketComplete(); //If a message was received, it will call handlePacket();
+    // ── Process deferred mode switch now that button is released ──
+    if (s_deferred_mode_switch) {
+        s_deferred_mode_switch = false;
+        const char* target_mode = s_pending_draw_mode;
+        s_pending_draw_mode = nullptr;
 
-    // Update GPS location
+        // Advance to the target mode (mimics updMode's logic without rendering)
+        int newModeIndex = -1;
+        for (int i = 0; i < numModes; i++) {
+            if (target_mode && modes[i] && strcmp(modes[i], target_mode) == 0) {
+                newModeIndex = i;
+                break;
+            }
+        }
+
+        if (newModeIndex >= 0) {
+            modeIndex = newModeIndex;
+            current_mode = modes[modeIndex];
+            forceFullRefresh();
+
+            // Handle non-display work from updMode()
+            if (current_mode == "TST" || current_mode == "RAW" || current_mode == "TXT" ||
+                current_mode == "RANGE" || current_mode == "PONG" || current_mode == "SCAN" ||
+                current_mode == "BEACON") {
+                setupLoRa();
+            }
+
+            if (current_mode == "SCAN") {
+                startScanFrequencies();
+            } else {
+                stopScanFrequencies();
+            }
+
+            // Now render — button is already released so no interference
+            s_display_rendering = true;
+            if (strcmp(current_mode, "RANGE") == 0) drawRangeLayout();
+            else if (strcmp(current_mode, "BEACON") == 0) drawBeaconLayout();
+            else if (strcmp(current_mode, "PTT") == 0) drawPttLayout();
+            else if (strcmp(current_mode, "SCAN") == 0) drawScanLayout();
+            else if (strcmp(current_mode, "TXT") == 0) drawTxtSingleLayout();
+            else if (strcmp(current_mode, "TST") == 0) drawTstLayout();
+            else if (strcmp(current_mode, "PONG") == 0) drawPongLayout();
+            else if (strcmp(current_mode, "RAW") == 0) drawRawLayout();
+            else if (strcmp(current_mode, "WP") == 0) drawWpLayout();
+            else drawDefaultLayout();
+            s_display_rendering = false;
+        }
+    }
+
+    // ── Flush any dirty-draw display update (after button work is fully done) ──
+    flushDisplayIfNeeded();
+
+    checkLoraPacketComplete();
+
     loopGPS();
-
-    // Send screen mirror to companion app only when display state actually changed
     sendScreenSyncIfDirty();
 
-
-    if (!in_settings_mode) {
+    if (!in_settings_mode && !s_display_rendering) {
         if (current_mode == "PTT") {
             // PTT transmit: receiveOpusFrame() called from ble.cpp when phone sends Opus data.
             // The binary frame from BLE is forwarded to LoRa here when the phone app initiates.
@@ -245,20 +271,21 @@ void handleAppModes() {
             //Non blocking send
             sendTestMessage();
             
-            // Update TST layout state and render (every loop to keep display current)
+            // Update TST layout state — render deferred to flush cycle
             layout_state.tst_sent = test_message_counter;
             layout_state.tst_rcvd = pckt_count;
             
             // Only redraw every 2 seconds or when counters change — prevents e-paper flash damage
             static uint32_t last_tst_draw = 0;
             if (millis() - last_tst_draw > 2000) {
-                drawTstLayout();
+                s_dirty_screen = true;
                 last_tst_draw = millis();
             }
         } 
         else if (current_mode == "TXT") {
-            // Show latest message or inbox scroll view
+            // Show latest message or inbox scroll view — render deferred to flush cycle
             txtModeInboxDisplay();
+            s_dirty_screen = true;
         }
 
         // Mode-specific behavior for button actions
@@ -274,9 +301,9 @@ void handleAppModes() {
         }
         else if (current_mode == "PONG") {
             if (debouncedTouchPress()) {
-              // Start pingpong — update state and render
+              // Start pingpong — update state and send packet immediately (no display blocking)
               layout_state.pong_state = 1;  // sending
-              drawPongLayout();
+              s_dirty_screen = true;
               sendPacket("Ping!");
             }
             
@@ -284,7 +311,7 @@ void handleAppModes() {
             static uint32_t last_pong_draw = 0;
             static int8_t last_pong_state = -1;
             if (millis() - last_pong_draw > 3000 || layout_state.pong_state != last_pong_state) {
-                drawPongLayout();
+                s_dirty_screen = true;
                 last_pong_draw = millis();
                 last_pong_state = layout_state.pong_state;
             }
@@ -296,8 +323,7 @@ void handleAppModes() {
                 range_last_count=0;
                 range_total_pckt_loss=0;
                 range_consecutive_ok=0;
-                updModeAndChannelDisplay();
-                printRangeStatus();
+                s_dirty_screen = true;
             }  
 
             if(range_role_sender) {
@@ -324,7 +350,7 @@ void handleAppModes() {
                 float freq_range = endFreq - startFreq;
                 int16_t cur_progress = (scanning) ? (int16_t)((currentFrequency - startFreq) / freq_range * 100) : 0;
                 if (millis() - last_scan_draw > 1000 || cur_progress != last_scan_progress) {
-                    drawScanLayout();
+                    s_dirty_screen = true;
                     last_scan_draw = millis();
                     last_scan_progress = cur_progress;
                 }
@@ -358,11 +384,29 @@ void handleAppModes() {
             static uint32_t last_beacon_draw = 0;
             static double last_beacon_dist = -999;
             if (millis() - last_beacon_draw > 3000 || beacon_display_dist != last_beacon_dist) {
-                drawBeaconLayout();
+                s_dirty_screen = true;
                 last_beacon_draw = millis();
                 last_beacon_dist = beacon_display_dist;
             }
         }    
+    }
+
+    // Handle touch input in settings mode — one value change per touch press/release cycle
+    if (in_settings_mode) {
+        static uint8_t last_touch_state = 0;
+        uint8_t touch_state = digitalRead(TOUCH_PIN) ? 0 : 1;
+        // Detect rising edge (touch release after debounce) to trigger update
+        if (touch_state && !last_touch_state) {
+            unsigned long currentTime = millis();
+            if ((currentTime - lastTouchPressTime) > touchDebounceDelay) {
+                updateCurrentSetting();
+            }
+        }
+        // Track when the pin goes LOW (button pressed) to start debounce timer
+        if (!touch_state) {
+            lastTouchPressTime = millis();
+        }
+        last_touch_state = touch_state;
     }
 }
 
@@ -929,3 +973,13 @@ void txtModeClearInbox() {
     // Refresh to show empty state
     txtModeInboxDisplay();
 }
+
+// ── Button yield helper: called by renderPageLoop before blocking on display refresh ──
+// Returns true if MODE_PIN is currently held (skip this render).
+// Processes any pending button release / long-press while we have a chance.
+bool handleAppModesButtonYield() {
+    // No MODE_PIN to check — always allow render
+    return false;
+}
+
+void forceFullRefresh();

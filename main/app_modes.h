@@ -79,4 +79,7 @@ void txtModeInboxDisplay();
 void txtModeToggleInboxView();
 void txtModeClearInbox();
 
+// ── Button yield helper for display render gating ──
+bool handleAppModesButtonYield();
+
 #endif
