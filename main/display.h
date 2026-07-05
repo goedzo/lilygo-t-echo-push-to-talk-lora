@@ -46,4 +46,9 @@ void forceFullRefresh();
 bool pendingFullRefresh();
 void sleepDisplay();
 
+// ── Non-blocking waveform transfer (from disp_refresh) ──
+bool isEpdRefreshing();
+void triggerEpdRefresh(bool full_refresh);
+bool stepEpdRefresh();  // Returns true on first call after DONE
+
 #endif

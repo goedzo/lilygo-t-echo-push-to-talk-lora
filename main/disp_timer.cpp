@@ -12,6 +12,7 @@
 #include "disp_timer.h"
 #include "display_layout.h"
 #include "app_modes.h"
+#include "disp_refresh.h"
 
 extern void forceFullRefresh();
 

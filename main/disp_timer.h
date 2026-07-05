@@ -22,4 +22,8 @@ void forceImmediateDraw();
 // Tell the system that a screen update is currently in progress
 bool isDisplayBusy();
 
+// Step the waveform cycle — call from main loop after display work completes
+// Returns true when waveform just completed
+bool stepEpdRefresh();
+
 #endif

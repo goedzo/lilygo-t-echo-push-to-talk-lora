@@ -6,6 +6,7 @@
 #include "gps.h"
 #include "lora.h"
 #include "ble.h"
+#include "disp_refresh.h"
 
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
 #include <GxIO/GxIO.h>
@@ -17,6 +18,10 @@
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include "display.h"
+
+// ── Display SPI reference (set during setup for non-blocking refresh) ──
+static SPIClass* s_disp_spi = nullptr;
+static SPISettings s_disp_spi_settings;
 
 int disp_top_margin = 12;
 int disp_bottom_margin = 3;
@@ -186,13 +191,14 @@ void setupDisplay() {
     dispPort = new SPIClass(
         NRF_SPIM2, ePaper_Miso, ePaper_Sclk, ePaper_Mosi);
 
-    SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);
+    s_disp_spi = dispPort;  // Save for non-blocking waveform transfer
+    initDispRefresh(dispPort, s_disp_spi_settings);  // Initialize non-blocking refresh system
 
     GxEPD2_150_BN epd(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
     display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(epd);
 
     sendSerialToAppLn("[Display] calling init with reset_duration=300...");
-    display->init(0, true, 300, false, *dispPort, spiSettings);
+    display->init(0, true, 300, false, *dispPort, s_disp_spi_settings);
     sendSerialToAppLn("[Display] init() returned OK");
 
     delay(200);

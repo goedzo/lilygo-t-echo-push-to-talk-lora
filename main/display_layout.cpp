@@ -8,6 +8,7 @@
 #include "text_inbox.h"
 #include "scan.h"
 #include "screen_sync.h"
+#include "disp_refresh.h"
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/Org_01.h>
@@ -168,9 +169,10 @@ void drawBottomStatusbar() {
 }
 
 // ── Internal: common page-loop for all layouts.
-//     use_full_refresh=true  → setFullWindow() + refresh(false) [~2.5s]
-//     use_full_refresh=false → setPartialWindow(y=12, h=184) + refresh(true) [~0.8s]
-//     The drawFn parameter draws everything between fillScreen and nextPage().
+//     use_full_refresh=true  → setFullWindow() + non-blocking waveform (~3.8s wall-clock)
+//     use_full_refresh=false → setPartialWindow(y=12, h=184) + non-blocking waveform (~0.7s)
+//     After drawing completes, triggers the waveform transfer via stepEpdRefresh().
+//     Call stepEpdRefresh() from main loop to advance the waveform cycle step-by-step.
 // ──
 typedef void (*drawFn)();
 
@@ -188,11 +190,8 @@ static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
         drawContent();
     } while (display->nextPage());
 
-    if (use_full_refresh) {
-        display->refresh(false);  // full e-paper refresh (~2.5s)
-    } else {
-        display->refresh(true);   // partial e-paper refresh (~0.8s)
-    }
+    // Trigger non-blocking waveform transfer — wall-clock time identical to blocking refresh
+    triggerEpdRefresh(use_full_refresh);
 }
 
 // ── Default layout: header row + bottom status bar ──
@@ -328,15 +327,6 @@ void drawBeaconLayout() {
 // ── Per-mode: RANGE — distance + role card ──
 void drawRangeLayout() {
     bool full = pendingFullRefresh();
-
-    // GxDEPG0150BN partial LUT expires after repeated use without periodic full refresh.
-    // Force a full refresh every ~45s to keep partial updates from dimming.
-    static uint32_t last_full_forced = 0;
-    if (!full && (millis() - last_full_forced > 45000)) {
-        forceFullRefresh();
-        full = pendingFullRefresh();
-        last_full_forced = millis();
-    }
 
     auto drawContent = []() {
         display->fillScreen(GxEPD_WHITE);

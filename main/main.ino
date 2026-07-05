@@ -340,6 +340,13 @@ void loop()
     
     handleAppModes();
     handleBLE();  // BLE handling + drain notification queue
+    
+    // Step the non-blocking waveform cycle — advances by ~0.5ms per call
+    // CPU is free to process BLE/LoRa/buttons between steps
+    static bool s_just_did_refresh = false;
+    if (stepEpdRefresh()) {
+        s_just_did_refresh = true;
+    }
     if (millis() - blinkMillis > 1000) {
         blinkMillis = millis();
         switch (rgb) {
