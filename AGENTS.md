@@ -152,6 +152,20 @@ Default section order:
 - Delete stale notes instead of explaining history
 - Trim obvious statements, repeated rules, misplaced detail, and warnings for risks that no longer exist
 
+## Critical Firmware Conventions — Always Apply
+
+### Serial monitoring (non-negotiable)
+
+When modifying **any** firmware source file in `main/`, **every** debug/log output line must use `sendSerialToApp()` or `sendSerialToAppLn()`:
+- `sendSerialToAppLn(const String&)` — sends to **both** USB serial AND BLE companion app (auto-appends `\n`)
+- `sendSerialToApp(const String&)` — sends to **BLE only** (no USB, no newline)
+
+**Never use `Serial.println()` or `Serial.print()` for debug/log output in firmware modules.** These only write to USB and are invisible in the companion app. The only acceptable exceptions are:
+- Crash/debug code paths (hardfault, stack guard, heap tracker) — these must go to USB for DFU capture
+- The internal implementation of `sendSerialToAppLn` itself (line 188 in ble.cpp)
+
+Before marking any firmware change complete, verify zero new/modified `Serial.println()` or `Serial.print()` calls exist in the changed `.cpp`/`.ino` files (excluding crash_debug modules and ble.cpp line 188).
+
 ## Closeout — Mandatory Firmware Build Validation
 
 Every code change to **any** firmware file requires the following build + upload validation before the task is considered done:

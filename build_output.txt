@@ -1,0 +1,64 @@
+﻿============================================
+  LilyGO T-Echo - Arduino CLI Build
+============================================
+
+arduino-cli  Version: 1.5.1 Commit: 01f3d4f2b Date: 2026-06-05T10:22:12Z
+
+[1/3] Ensuring Adafruit nRF52 core...
+
+Downloading index: package_index.tar.bz2 0 B / 104.75 KiB    0.00%
+Downloading index: package_index.tar.bz2 downloaded
+  OK: Core verified
+
+[2/3] Using vendored libraries from libraries/...
+  OK: Libraries verified
+  OK: Libraries verified
+
+[3/3] Building firmware...
+V:\Bmad\Project_ptt_lora\main\display_layout.cpp: In function 'void drawDefaultLayout()':
+V:\Bmad\Project_ptt_lora\main\display_layout.cpp:198:5: error: 'markScreenDirty' was not declared in this scope
+  198 |     markScreenDirty();
+      |     ^~~~~~~~~~~~~~~
+V:\Bmad\Project_ptt_lora\main\display_layout.cpp: In function 'void drawBeaconLayout()':
+V:\Bmad\Project_ptt_lora\main\display_layout.cpp:218:5: error: 'markScreenDirty' was not declared in this scope
+  218 |     markScreenDirty();
+      |     ^~~~~~~~~~~~~~~
+V:\Bmad\Project_ptt_lora\main\display_layout.cpp: In function 'void drawRangeLayout()':
+V:\Bmad\Project_ptt_lora\main\display_layout.cpp:330:5: error: 'markScreenDirty' was not declared in this scope
+  330 |     markScreenDirty();
+      |     ^~~~~~~~~~~~~~~
+V:\Bmad\Project_ptt_lora\main\display_layout.cpp: In function 'void drawPttLayout()':
+V:\Bmad\Project_ptt_lora\main\display_layout.cpp:407:5: error: 'markScreenDirty' was not declared in this scope
+  407 |     markScreenDirty();
+      |     ^~~~~~~~~~~~~~~
+
+[92mUsed library[0m                                     [92mVersion[0m [90mPath[0m
+[93mSoftwareSerial[0m                                   1.0.0   [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\libraries\SoftwareSerial[0m
+[93mSPI[0m                                              1.0     [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\libraries\SPI[0m
+[93mWire[0m                                             1.0     [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\libraries\Wire[0m
+[93mGxEPD[0m                                            3.1.0   [90mC:\Users\julien\Documents\Arduino\libraries\GxEPD[0m
+[93mAdafruit GFX Library[0m                             1.2.9   [90mC:\Users\julien\Documents\Arduino\libraries\Adafruit-GFX-Library[0m
+[93mPCF8563_Library[0m                                  0.0.1   [90mC:\Users\julien\Documents\Arduino\libraries\PCF8563_Library[0m
+[93mGxEPD2[0m                                           1.6.2   [90mC:\Users\julien\Documents\Arduino\libraries\GxEPD2[0m
+[93mTinyGPSPlus[0m                                      1.0.3   [90mC:\Users\julien\Documents\Arduino\libraries\TinyGPSPlus[0m
+[93mAceButton[0m                                        1.3.3   [90mC:\Users\julien\Documents\Arduino\libraries\AceButton[0m
+[93mRadioLib[0m                                         7.1.2   [90mC:\Users\julien\Documents\Arduino\libraries\RadioLib[0m
+[93mAdafruit Bluefruit nRF52 Libraries[0m               0.21.0  [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\libraries\Bluefruit52Lib[0m
+[93mAdafruit nRFCrypto[0m                               0.1.2   [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\libraries\Adafruit_nRFCrypto[0m
+[93mAdafruit TinyUSB Library[0m                         3.6.0   [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\libraries\Adafruit_TinyUSB_Arduino[0m
+[93mAdafruit Little File System Libraries[0m            0.11.0  [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\libraries\Adafruit_LittleFS[0m
+[93mAdafruit Internal File System on Bluefruit nRF52[0m 0.11.0  [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\libraries\InternalFileSytem[0m
+
+[92mUsed platform[0m  [92mVersion[0m [90mPath[0m
+[93madafruit:nrf52[0m 1.7.0   [90mC:\Users\julien\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0[0m
+Error during build: exit status 1
+
+============================================
+  BUILD FAILED
+============================================
+
+Troubleshooting:
+  1. Libraries must be installed via Library Manager:
+     arduino-cli lib install "Library Name"
+  2. Or copy from libraries/ to C:\Users\julien\Arduino\libraries\
+Press any key to continue . . . 

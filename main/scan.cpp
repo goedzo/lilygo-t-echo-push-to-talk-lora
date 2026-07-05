@@ -4,6 +4,9 @@
 #include "display_layout.h"  // For layout_state access
 #include <Arduino.h>
 
+extern void sendSerialToApp(const String& msg);
+extern void sendSerialToAppLn(const String& msg);
+
 #define MAX_TOP_CHANNELS 10
 
 // Variables to control the scanning process
@@ -74,14 +77,14 @@ void startScanFrequencies() {
     scanning = true;
     initTopChannels();
     syncTopChannelsToLayout();  // Clear layout state on scan start
-    Serial.println(F("Frequency scan started."));
+    sendSerialToAppLn(F("Frequency scan started."));
 
     int state = setFrequency(currentFrequency);
     if (state != RADIOLIB_ERR_NONE) {
-        Serial.print(F("Failed to set frequency "));
-        Serial.print(currentFrequency);
-        Serial.print(F(" MHz, code "));
-        Serial.println(state);
+        sendSerialToApp(F("Failed to set frequency "));
+        sendSerialToApp((String)currentFrequency);
+        sendSerialToApp(F(" MHz, code "));
+        sendSerialToAppLn((String)state);
     }
 
 
@@ -93,7 +96,7 @@ void stopScanFrequencies() {
         //We stop and revert back to the original frequency
         setFrequency(enterFrequency);
         scanning = false;
-        Serial.println(F("Frequency scan stopped."));
+        sendSerialToAppLn(F("Frequency scan stopped."));
     }
     //printTopChannels();  // Print the final top 10 channels to the display
 }
@@ -108,10 +111,10 @@ void handleFrequencyScan() {
                 // Set the current frequency only once, when sampleCount is 0 (i.e., for a new frequency)
                 int state = setFrequency(currentFrequency);
                 if (state != RADIOLIB_ERR_NONE) {
-                    Serial.print(F("Failed to set frequency "));
-                    Serial.print(currentFrequency);
-                    Serial.print(F(" MHz, code "));
-                    Serial.println(state);
+                    sendSerialToApp(F("Failed to set frequency "));
+                    sendSerialToApp((String)currentFrequency);
+                    sendSerialToApp(F(" MHz, code "));
+                    sendSerialToAppLn((String)state);
                     return;
                 }
                 // Start receiving

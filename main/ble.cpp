@@ -163,8 +163,8 @@ void setupBLE() {
     // Drain USB after advertising starts
     while (Serial.available()) Serial.read();
 
-    Serial.print("BLE Initialized with device name: ");
-    Serial.println(deviceName);
+    SerialMon.println("BLE Initialized with device name: " + String(deviceName));
+    sendSerialToAppLn("[BOOT] BLE init complete");
 }
 
 // Serial log relay — queues device output to companion app LINE:SERIAL
@@ -225,8 +225,8 @@ void onDisconnect(uint16_t conn_handle, uint8_t reason) {
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
     // This callback is invoked when the characteristic is written to
-    Serial.print("Characteristic written, length: ");
-    Serial.println(len);
+    sendSerialToApp(F("Characteristic written, length: "));
+    sendSerialToAppLn((String)len);
 
     // Check if the data is fully printable
     if (isDataPrintable(data, len)) {
@@ -235,8 +235,7 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
         for (int i = 0; i < len; i++) {
             receivedValue += (char)data[i];
         }
-        Serial.print("Received string: ");
-        Serial.println(receivedValue);
+        sendSerialToAppLn(receivedValue);
 
         // Process the received message if it contains a ':'
         int delimiterIndex = receivedValue.indexOf(':');
@@ -244,10 +243,10 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
             String action = receivedValue.substring(0, delimiterIndex);
             String value = receivedValue.substring(delimiterIndex + 1);
 
-            Serial.print("Action: ");
-            Serial.println(action);
-            Serial.print("Value: ");
-            Serial.println(value);
+            sendSerialToApp(F("Action: "));
+            sendSerialToApp(action);
+            sendSerialToApp(F(", Value: "));
+            sendSerialToAppLn(value);
 
             // Handle the action and value accordingly
             if (action == "SETMODE") {
@@ -300,7 +299,7 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
                 sendNotificationToApp(resp);
             } 
             else {
-                Serial.println("Unknown action");
+                sendSerialToAppLn(F("Unknown action"));
             }
         } else {
             // No delimiter — check for bare GETSTATUS
@@ -319,7 +318,7 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
                 snprintf(resp, sizeof(resp), "OK{SCREEN:refreshed}");
                 sendNotificationToApp(resp);
             } else {
-                Serial.println("Invalid format. Missing ':' delimiter.");
+                sendSerialToAppLn(F("Invalid format. Missing ':' delimiter."));
             }
         }
 
@@ -347,14 +346,13 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
 
     } else {
         // Handle as binary data (unknown type)
-        Serial.print("Received binary data: ");
-        for (int i = 0; i < len; i++) {
-            Serial.print("0x");
-            if (data[i] < 16) Serial.print("0");
-            Serial.print(data[i], HEX);
-            Serial.print(" ");
+        sendSerialToApp(F("Received binary data: 0x"));
+        for (int i = 0; i < len && i < 32; i++) {
+            char hexBuf[8];
+            snprintf(hexBuf, sizeof(hexBuf), "%02X ", data[i]);
+            sendSerialToApp(hexBuf);
         }
-        Serial.println();
+        sendSerialToAppLn("");
     }
 }
 

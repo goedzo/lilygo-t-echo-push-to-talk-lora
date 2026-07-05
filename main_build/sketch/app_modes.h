@@ -1,0 +1,83 @@
+#line 1 "V:\\Bmad\\Project_ptt_lora\\main\\app_modes.h"
+#ifndef APP_MODES_H
+#define APP_MODES_H
+
+#include <AceButton.h>
+#include "packet.h"
+
+// Define an array of mode names as strings
+extern const char* modes[];
+extern const int numModes;
+extern int modeIndex;
+extern const char* current_mode;
+extern double range_home_lat;
+extern double range_home_long;
+
+void sendTxtMessage(const char* message);
+
+// Waypoint storage in RTC RAM (same region as text inbox)
+#define WP_RTC_START 0x200075C0
+#define WP_MAX_ENTRIES 8
+#define WP_MAX_LABEL 24
+struct WaypointEntry {
+    double lat;
+    double lon;
+    float  alt;
+    char   label[WP_MAX_LABEL + 1];
+    String senderId;
+    uint32_t timestamp; // RTC seconds stored in RTC RAM
+    bool valid;
+};
+extern WaypointEntry wpStoredWaypoints[WP_MAX_ENTRIES];
+extern int     wpStoredCount;
+
+// Waypoint broadcast
+extern bool wpBroadcastActive;
+extern uint32_t wpBroadcastStartMs;
+
+void startWaypointBroadcast(double lat, double lon, float alt, const char* label);
+
+// Core mode functions
+void setupAppModes();
+void handleAppModes();
+void handleEvent(ace_button::AceButton* button, uint8_t eventType, uint8_t buttonState);
+void sendRangeMessage();
+bool debouncedTouchPress();
+void sendAudio();
+void sendTestMessage(bool now=false);
+void handlePacket(Packet packet);
+void updMode();
+void updChannel();
+void powerOff();
+void sleepAudio();
+void turnoffLed();
+void printRangeStatus();
+void switchMode(String receivedMode);
+
+// Beacon mode distance tracking
+extern double beacon_display_dist;
+extern String beacon_display_name;
+extern unsigned long beacon_last_distance_update;
+
+// Text inbox display state (TXT mode)
+extern uint8_t  txtInboxScrollPage;
+extern uint8_t  txtInboxMsgCount;
+extern bool     txtShowInbox;       // true = showing inbox, false = showing single latest
+
+// TST test message counters
+extern int test_message_counter;
+extern int rcv_test_message_counter;
+extern int pckt_count;
+
+// Range test state
+extern bool range_role_sender;
+extern double range_stable_dist;
+extern double range_max_dist;
+extern int range_total_pckt_loss;
+extern int range_consecutive_ok;
+
+void txtModeInboxDisplay();
+void txtModeToggleInboxView();
+void txtModeClearInbox();
+
+#endif

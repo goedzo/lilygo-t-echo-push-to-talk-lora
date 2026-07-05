@@ -77,8 +77,10 @@ int range_total_pckt_loss=0;
 enum { BTN_STATE_IDLE = 0, BTN_STATE_PRESSING, BTN_STATE_SETTINGS, BTN_STATE_POWER } btnState = BTN_STATE_IDLE;
 unsigned long btnPressTime = 0;       // When button was first pressed
 bool settingsToggled = false;         // Track if we already toggled settings for this press
-static bool debounceActive = false;
-static unsigned long debounceStart = 0;
+
+// Edge-triggered debounce for MODE_PIN — only fires once per press event
+static bool lastPinState = HIGH;      // Previous reading (button is active-LOW)
+static unsigned long debounceTimestamp = 0;
 #define BUTTON_DEBOUNCE_MS 50
 
 // Variables for debouncing the touch button
@@ -107,7 +109,7 @@ void switchMode(String receivedMode) {
         current_mode = modes[modeIndex];
         updMode();  // Update mode based on the new selection
     } else {
-        Serial.println("Received mode is not valid.");
+        sendSerialToAppLn(F("Received mode is not valid."));
     }
 }
 
@@ -163,35 +165,24 @@ void updMode() {
 
 // The main loop that is the logic for all app modes
 void handleAppModes() {
-    // MODE_PIN state machine — use digitalRead which works reliably on P1.10 pull-up wiring
-    bool pinPressed = (digitalRead(MODE_PIN) == LOW);
+    // MODE_PIN edge-triggered state machine with debouncing
+    bool currentPinState = (digitalRead(MODE_PIN) == LOW);  // Active-LOW
 
-    if (pinPressed) {
-        // Debounce: ignore any signal within the first BUTTON_DEBOUNCE_MS after state change
-        if (!debounceActive || (millis() - debounceStart < BUTTON_DEBOUNCE_MS)) {
-            debounceActive = true;
-            debounceStart = millis();
-        } else if (debounceActive && (millis() - debounceStart >= BUTTON_DEBOUNCE_MS)) {
-            // Debounce passed — actual button press detected
-            debounceActive = false;
+    if (currentPinState != lastPinState) {
+        // Pin changed — update debounce window and process events
+        debounceTimestamp = millis();
 
-            switch (btnState) {
-                case BTN_STATE_IDLE:
-                    btnState = BTN_STATE_PRESSING;
-                    btnPressTime = millis();
-                    break;
-                case BTN_STATE_POWER:
-                    break;
-                default:
-                    btnState = BTN_STATE_PRESSING;
-                    btnPressTime = millis();
-                    break;
-            }
-        }
-    } else {
-        // Button released
-        if (btnState == BTN_STATE_PRESSING) {
+        if (currentPinState && !lastPinState) {
+            // HIGH → LOW transition (button pressed)
+            btnState = BTN_STATE_PRESSING;
+            btnPressTime = millis();
+            Serial.println("[BTN] Press detected");
+        } else if (!currentPinState && lastPinState) {
+            // LOW → HIGH transition (button released)
             unsigned long holdDuration = millis() - btnPressTime;
+            Serial.print("[BTN] Released after ");
+            Serial.print(holdDuration);
+            Serial.println(" ms");
 
             // Short press (<500ms) — cycle mode or toggle inbox view
             if (holdDuration < 500) {
@@ -205,19 +196,18 @@ void handleAppModes() {
             }
 
             btnState = BTN_STATE_IDLE;
+            settingsToggled = false;
         }
 
-        // Release after settings/power-off toggle — go back to idle
-        if (btnState == BTN_STATE_SETTINGS || btnState == BTN_STATE_POWER) {
-            btnState = BTN_STATE_IDLE;
+        lastPinState = currentPinState;
+    } else if (currentPinState && millis() - debounceTimestamp >= BUTTON_DEBOUNCE_MS) {
+        // Button still held past debounce — only enter once
+        if (btnState == BTN_STATE_IDLE) {
+            btnState = BTN_STATE_PRESSING;
+            btnPressTime = millis();
         }
 
-        settingsToggled = false;
-        debounceActive = false;
-    }
-
-    // Check for long press thresholds while holding
-    if (btnState == BTN_STATE_PRESSING) {
+        // Long-press thresholds while holding
         unsigned long holdDuration = millis() - btnPressTime;
 
         if (holdDuration >= 500 && holdDuration < 10000 && !settingsToggled) {
@@ -525,23 +515,21 @@ void handlePacket(Packet packet) {
       else if (current_mode == "PONG" && packet.type == "PING") {
           //We pong this message
           
-          // Print RSSI (Received Signal Strength Indicator)
-          Serial.print(F("[SX1262] RSSI:\t\t"));
-          Serial.print(radio->getRSSI());
-          Serial.println(F(" dBm"));
+          sendSerialToApp(F("[SX1262] RSSI:\t\t"));
+          sendSerialToApp((String)radio->getRSSI());
+          sendSerialToAppLn(F(" dBm"));
 
           // Print SNR (Signal-to-Noise Ratio)
-          Serial.print(F("[SX1262] SNR:\t\t"));
-          Serial.print(radio->getSNR());
-          Serial.println(F(" dB"));
+          sendSerialToApp(F("[SX1262] SNR:\t\t"));
+          sendSerialToApp((String)radio->getSNR());
+          sendSerialToAppLn(F(" dB"));
 
           layout_state.pong_state = 2;  // received
           layout_state.pong_rtt_ms = 0;  // Set to actual RTT when available
           
           drawPongLayout();
 
-          // Send another packet
-          Serial.print(F("[SX1262] Sending another packet ... "));
+          sendSerialToApp(F("[SX1262] Sending another packet ... "));
           //Don't flood, just wait 3 seconds
           delay(1000);
           layout_state.pong_state = 1;  // sending again
@@ -653,8 +641,8 @@ void setupAppModes() {
     pinMode(TOUCH_PIN, INPUT_PULLUP);
 
     // Verify pull-up is working: should read HIGH (unpressed) at boot
-    SerialMon.print("[BTN] Boot check MODE_PIN= ");
-    SerialMon.println(nrf_gpio_pin_read(MODE_PIN) ? "HIGH (OK)" : "LOW (button stuck?)");
+    sendSerialToApp(F("[BTN] Boot check MODE_PIN= "));
+    sendSerialToAppLn(nrf_gpio_pin_read(MODE_PIN) ? "HIGH (OK)" : "LOW (button stuck?)");
 
     btnState = BTN_STATE_IDLE;
     btnPressTime = 0;

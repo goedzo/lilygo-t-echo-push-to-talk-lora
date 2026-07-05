@@ -28,9 +28,24 @@ Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 9 modes: BEACON, RAW, 
 - **Default revision is active** — VERSION_1 pins are commented out in `utilities.h`
 - Active pins: ePaper_Miso=P1.6, LoRa_Dio0=P0.22, GreenLed_Pin=P1.1, RedLed_Pin=P1.3, BlueLed_Pin=P0.14
 - Compile via **Arduino CLI only** — PlatformIO is not functional for this firmware
-- Debug output: `SerialMon` at 115200 baud (USB-only — never forwarded to phone app)
-- **Serial monitoring convention**: Use `sendSerialToAppLn()` or `sendSerialToApp()` to send to **both** USB serial and BLE companion app console. `SerialMon.print()` / `SerialMon.println()` output only goes to USB and is NOT relayed over Bluetooth.
-- Display updates: call `updDisp()` from app_modes or other modules that change state
+
+### Serial monitoring (NON-NEGOTIABLE)
+
+**Never use `Serial.println()` or `Serial.print()` in any module source file.** These write only to USB and are invisible in the companion app.
+
+Every debug/log output must use:
+- `sendSerialToAppLn(const String&)` — **both** USB serial AND BLE companion app (auto-appends `\n`)
+- `sendSerialToApp(const String&)` — **BLE only** (no USB, no newline)
+
+Exceptions (these must go to USB for DFU/crash capture):
+- Crash/debug code paths (hardfault, stack guard, heap tracker)
+- The internal body of `sendSerialToAppLn` itself in ble.cpp
+
+Before marking any firmware change complete, verify **zero** new/modified `Serial.println()` or `Serial.print()` calls in the changed `.cpp`/`.ino` files.
+
+### Display updates
+
+Call `updDisp()` from app_modes or other modules that change state.
 - Header guards: `#pragma once`
 
 ### Build instructions (Arduino CLI)

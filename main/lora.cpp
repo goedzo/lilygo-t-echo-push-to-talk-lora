@@ -267,7 +267,7 @@ float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
     }
 
     // If no good frequency is found, fallback to startFreq
-    Serial.println(F("No good frequency found, falling back to startFreq"));
+    sendSerialToAppLn(F("No good frequency found, falling back to startFreq"));
     return defaultFrequency;
 }
 
@@ -415,7 +415,7 @@ void shareFrequencyMap() {
 void updateFrequencyMap(const unsigned char* receivedData, int len) {
     // Validate the checksum
     if (calculateChecksum(receivedData, len - 1) != receivedData[len - 1]) {
-        Serial.println("Invalid frequency map received");
+        sendSerialToAppLn(F("Invalid frequency map received"));
         return;  // Invalid map, do not update
     }
 
@@ -450,7 +450,7 @@ void handleMapSharing() {
 
 void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
     if (receivePacketQueueCount >= RECEIVE_PACKET_QUEUE_SIZE) {
-        Serial.println(F("Newer packet queue full, discarding packet."));
+        sendSerialToAppLn(F("Newer packet queue full, discarding packet."));
         return;
     }
     // Truncate to max size — no heap allocation needed
@@ -477,8 +477,8 @@ void processPacketQueue() {
     for (int i = 0; i < receivePacketQueueCount; i++) {
         Packet packet;
         if (packet.parsePacket(receivePacketQueue[i].packetData, receivePacketQueue[i].packetLen)) {
-            Serial.print(F("Processing queued packet: "));
-            Serial.println(packet.packetCounter);
+            sendSerialToApp(F("Processing queued packet: "));
+            sendSerialToAppLn((String)packet.packetCounter);
       
             // Only process this queue when we have the next packet available
             unsigned int expectedPacketCounter = lastReceivedCounter + 1;
@@ -499,15 +499,15 @@ bool checkForMissingPackets(Packet& packet, uint8_t* rcv_pkt_buf, uint16_t packe
     if (lastReceivedCounter > 0 && missedPackets > 0) {
         // Check if we missed more than RETRANSMIT_BUFFER_SIZE packets
         if (missedPackets > RETRANSMIT_BUFFER_SIZE) {
-            Serial.println(F("Too many packets missed, unable to request older packets"));
+            sendSerialToAppLn(F("Too many packets missed, unable to request older packets"));
             lastReceivedCounter = packet.packetCounter;  // Skip to the newest packet
             return true;  // Continue processing since no retransmission request is needed
         } else {
             // Request all missed packets with spacing and dedup tracking
             for (unsigned int missedCounter = expectedPacketCounter; missedCounter < packet.packetCounter; missedCounter++) {
                 sendRetransmitRequest(missedCounter);
-                Serial.print(F("Requesting retransmission of packet: "));
-                Serial.println(missedCounter);
+                sendSerialToApp(F("Requesting retransmission of packet: "));
+                sendSerialToAppLn((String)missedCounter);
 
                 char buf[50];
                 snprintf(buf, sizeof(buf), "Missed: %d", missedCounter);
@@ -539,7 +539,7 @@ bool checkForMissingPackets(Packet& packet, uint8_t* rcv_pkt_buf, uint16_t packe
 }
 
 void handleRetransmitRequestComplete() {
-    Serial.println(F("Retransmission request completed, processing queued packets..."));
+    sendSerialToAppLn(F("Retransmission request completed, processing queued packets..."));
 
     // Process all queued packets, in order, as long as they are in sequence
     bool packetProcessed = true;
@@ -551,8 +551,8 @@ void handleRetransmitRequestComplete() {
                 // Process the packet
                 Packet packet;
                 if (packet.parsePacket(receivePacketQueue[i].packetData, receivePacketQueue[i].packetLen)) {
-                    Serial.print(F("Processing queued packet: "));
-                    Serial.println(packet.packetCounter);
+                    sendSerialToApp(F("Processing queued packet: "));
+                    sendSerialToAppLn((String)packet.packetCounter);
 
                     char buf[50];
                     snprintf(buf, sizeof(buf), "Recover: %d", packet.packetCounter);
@@ -592,17 +592,17 @@ void checkLoraPacketComplete() {
             transmitFlag = false;
             int state = radio->finishTransmit();
             if (state == RADIOLIB_ERR_NONE) {
-                Serial.println("Packet was Sent, finishTransmit");
+                sendSerialToApp(F("Packet was Sent, finishTransmit"));
             } else {
-                Serial.print(F("Sent failed, code "));
-                Serial.println(state);
+                sendSerialToApp(F("Sent failed, code "));
+                sendSerialToAppLn((String)state);
             }
             if (hopAfterTxRx) {
                 hopAfterTxRx = false;
                 setFrequency(hopToFrequency);  // Set the new frequency
                 if (lastMessageLength > 0) {
                     delay(1000);  // Allow some deviation in other devices
-                    Serial.println(F("Resending last message after frequency hop"));
+                    sendSerialToAppLn(F("Resending last message after frequency hop"));
                     sendPacket(lastMessageBuffer, lastMessageLength, lastMessageCounter);
                 }
             } else {
@@ -625,10 +625,13 @@ void checkLoraPacketComplete() {
 
                     Packet packet;
                     if (packet.parsePacket(rcv_pkt_buf, packet_len)) {
-                        Serial.print(F("Packet parsed: "));
-                        Serial.println(packet.type);
-                        Serial.println(packet.content);
-                        Serial.println(packet.packetCounter);
+                        sendSerialToApp(F("Packet parsed: "));
+                        sendSerialToApp((String)packet.type);
+                        sendSerialToApp("\n");
+                        sendSerialToApp(packet.content);
+                        sendSerialToApp("\n");
+                        sendSerialToApp(F("PC: "));
+                        sendSerialToAppLn((String)packet.packetCounter);
 
                         // Extract sender's time from the packet for gradual convergence
                         long receiverTimeSeconds = 0;
@@ -714,9 +717,9 @@ void checkLoraPacketComplete() {
                                 }
                             }
                             
-                            Serial.print(F("PROBE received from: "));
-                            Serial.println(senderID);
-                            Serial.println(F("PROBE synced — enabling hopping"));
+                            sendSerialToApp(F("PROBE received from: "));
+                            sendSerialToAppLn(senderID);
+                            sendSerialToAppLn(F("PROBE synced — enabling hopping"));
                         } else if (!time_set) {
                             // Not a PRB packet but we have no GPS time yet
                             // Try to auto-sync from ANY packet's ~SD field
@@ -725,7 +728,7 @@ void checkLoraPacketComplete() {
                             // If we just got time set, exit probe mode
                             if (time_set && inProbeMode) {
                                 inProbeMode = false;
-                                Serial.println(F("Auto-synced via ~SD field — enabling hopping"));
+                                sendSerialToAppLn(F("Auto-synced via ~SD field — enabling hopping"));
                             }
                         }
 
@@ -770,8 +773,8 @@ void checkLoraPacketComplete() {
                         //No need to process
                     }
                 } else if (state != RADIOLIB_ERR_RX_TIMEOUT) {
-                    Serial.print(F("Receive failed, code "));
-                    Serial.println(state);
+                    sendSerialToApp(F("Receive failed, code "));
+                    sendSerialToAppLn((String)state);
                 }
             }
             if (hopAfterTxRx) {
@@ -847,16 +850,16 @@ int setFrequency(float freq) {
     if (state == RADIOLIB_ERR_NONE) {
         currentFrequency = freq;
         printFrequencyIcon(true);  // Show frequency on screen
-        Serial.print(F("Frequency set to: "));
+        sendSerialToApp(F("Frequency set to: "));
     } else {
         // If unsuccessful, report error
-        Serial.print(F("Failed to set frequency, code: "));
+        sendSerialToApp(F("Failed to set frequency, code: "));
     }
 
     // Log frequency and state
-    Serial.print(freq);
-    Serial.print(F(" - "));
-    Serial.println(state);
+    sendSerialToApp((String)freq);
+    sendSerialToApp(F(" - "));
+    sendSerialToAppLn((String)state);
     
     // Reset transmit flag and start receiving
     transmitFlag = false;
@@ -1004,8 +1007,8 @@ void handleRetransmitRequest(unsigned int requestedCounter) {
         }
         
         if (retransmitPacketBuffer[i].messageCounter == requestedCounter) {
-            Serial.print(F("Resending packet with counter: "));
-            Serial.println(requestedCounter);
+            sendSerialToApp(F("Resending packet with counter: "));
+            sendSerialToAppLn((String)requestedCounter);
 
             char buf[50];
             snprintf(buf, sizeof(buf), "Resend: %d", requestedCounter);
@@ -1015,7 +1018,7 @@ void handleRetransmitRequest(unsigned int requestedCounter) {
             return;
         }
     }
-    Serial.println(F("Requested packet not found in buffer"));
+    sendSerialToAppLn(F("Requested packet not found in buffer"));
     char buf[50];
     snprintf(buf, sizeof(buf), "Resend 404: %d", requestedCounter);
     showError(buf);
@@ -1023,7 +1026,7 @@ void handleRetransmitRequest(unsigned int requestedCounter) {
 
 void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverride) {
     if (transmitFlag) {
-        Serial.println(F("Already in transmit, enqueueing packet"));
+        sendSerialToAppLn(F("Already in transmit, enqueueing packet"));
         enqueuePacket(pkt_buf, len);
         return;
     }
@@ -1081,10 +1084,11 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverr
 
     // Get time-on-air for logging
     timeOnAir = radio->getTimeOnAir(newLen);
-    Serial.print(F("Time-on-Air (ms): "));
-    Serial.println(timeOnAir);
+    sendSerialToApp(F("Time-on-Air (ms): "));
+    sendSerialToAppLn((String)timeOnAir);
 
-    Serial.println(send_pkt_buf);
+    sendSerialToApp((String)send_pkt_buf);
+    sendSerialToApp("\n");
 
     //In case we need to resent, store it in the buffer
     storePacketInBuffer((uint8_t*)send_pkt_buf, newLen, currentMessageCounter);  // Store in buffer in case we need to resend
@@ -1094,8 +1098,8 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverr
     transmitFlag = true;
 
         if (state != RADIOLIB_ERR_NONE) {
-            Serial.print(F("Transmission start failed, code "));
-            Serial.println(state);
+            sendSerialToApp(F("Transmission start failed, code "));
+            sendSerialToAppLn((String)state);
             char buf[50];
             snprintf(buf, sizeof(buf), "Lora Strt Trnsmt Err: %d", state);
             showError(buf);
@@ -1137,7 +1141,7 @@ int calculateQuality(float rssi, float snr, bool ignoreSNR) {
 void sleepLoRa() {
     int state = radio->sleep();
     if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("LoRa module is now in sleep mode."));
+        sendSerialToAppLn(F("LoRa module is now in sleep mode."));
     } else {
         char buf[50];
         snprintf(buf, sizeof(buf), "LoRa Sleep Error: %d", state);
@@ -1219,7 +1223,7 @@ bool isQueueEmpty() {
 // Function to enqueue a packet — fixed-size buffer, no heap allocation
 void enqueuePacket(uint8_t* pkt_buf, uint16_t len) {
     if (isQueueFull()) {
-        Serial.println(F("Packet queue full, dropping packet"));
+        sendSerialToAppLn(F("Packet queue full, dropping packet"));
         return;
     }
     
@@ -1255,7 +1259,7 @@ void handleTransmissionComplete() {
 
     // Check if there is a packet in the queue and transmit it
     if (dequeuePacket(nextPacketData, nextPacketLen)) {
-        Serial.println(F("Sending next packet from queue"));
+        sendSerialToAppLn(F("Sending next packet from queue"));
         sendPacket(nextPacketData, nextPacketLen);
 
         // no heap free needed — buffer is static
@@ -1290,7 +1294,7 @@ void initNakReliability() {
         retransmitPacketBuffer[i].storedAt = 0;
     }
     
-    Serial.println(F("[NAK] Reliability system initialized"));
+    sendSerialToAppLn(F("[NAK] Reliability system initialized"));
 }
 
 // Send a retransmission request with dedup and spacing logic
@@ -1340,8 +1344,8 @@ void sendRetransmitRequest(unsigned int counter) {
     sendPacket((uint8_t*)requestBuf, strlen(requestBuf));
     lastReqSendTime = millis();
     
-    Serial.print(F("[NAK] REQ sent for counter: "));
-    Serial.println(counter);
+    sendSerialToApp(F("[NAK] REQ sent for counter: "));
+    sendSerialToAppLn((String)counter);
 }
 
 // Check if a specific counter has been received (resolves outstanding REQs)
@@ -1350,9 +1354,9 @@ bool markPacketReceived(unsigned int counter) {
     for (int i = 0; i < RETRANSMIT_BUFFER_SIZE; i++) {
         if (outstandingReqs[i].counter == counter && !outstandingReqs[i].resolved) {
             outstandingReqs[i].resolved = true;
-            Serial.print(F("[NAK] REQ for counter "));
-            Serial.print(counter);
-            Serial.println(F(" resolved — packet received"));
+            sendSerialToApp(F("[NAK] REQ for counter "));
+            sendSerialToApp((String)counter);
+            sendSerialToAppLn(F(" resolved — packet received"));
             return true;
         }
     }
@@ -1372,9 +1376,9 @@ void checkOutstandingReqs(unsigned int processedCounter) {
         // Check if the retransmitted packet arrived
         if (outstandingReqs[i].counter == processedCounter) {
             outstandingReqs[i].resolved = true;
-            Serial.print(F("[NAK] REQ for counter "));
-            Serial.print(processedCounter);
-            Serial.println(F(" resolved via processed counter"));
+            sendSerialToApp(F("[NAK] REQ for counter "));
+            sendSerialToApp((String)processedCounter);
+            sendSerialToAppLn(F(" resolved via processed counter"));
             continue;
         }
         
@@ -1387,9 +1391,9 @@ void checkOutstandingReqs(unsigned int processedCounter) {
             
             if (outstandingReqs[i].attempts > REQ_RETRY_MAX) {
                 // Give up — gap is permanent, advance past it
-                Serial.print(F("[NAK] Giving up on counter "));
-                Serial.print(outstandingReqs[i].counter);
-                Serial.println(F(" after max retries"));
+                sendSerialToApp(F("[NAK] Giving up on counter "));
+                sendSerialToApp((String)outstandingReqs[i].counter);
+                sendSerialToAppLn(F(" after max retries"));
                 
                 // Advance lastReceivedCounter to skip this gap permanently
                 if (outstandingReqs[i].counter > lastReceivedCounter) {
@@ -1401,13 +1405,13 @@ void checkOutstandingReqs(unsigned int processedCounter) {
             } else {
                 // Retry with exponential backoff
                 unsigned long nextDelay = (unsigned long)(REQ_BASE_TIMEOUT_MS << (outstandingReqs[i].attempts - 1));
-                Serial.print(F("[NAK] Retrying REQ for counter "));
-                Serial.print(outstandingReqs[i].counter);
-                Serial.print(F(" (attempt "));
-                Serial.print(outstandingReqs[i].attempts);
-                Serial.print(F(", delay "));
-                Serial.print(nextDelay);
-                Serial.println(F("ms)"));
+                sendSerialToApp(F("[NAK] Retrying REQ for counter "));
+                sendSerialToApp((String)outstandingReqs[i].counter);
+                sendSerialToApp(F(" (attempt "));
+                sendSerialToApp((String)outstandingReqs[i].attempts);
+                sendSerialToApp(F(", delay "));
+                sendSerialToApp((String)nextDelay);
+                sendSerialToAppLn(F("ms)"));
                 
                 outstandingReqs[i].lastSentTime = now;
                 

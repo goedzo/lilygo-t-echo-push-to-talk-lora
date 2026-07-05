@@ -1,0 +1,9 @@
+#line 1 "V:\\Bmad\\Project_ptt_lora\\main\\lib\\src\\modules\\SX128x\\SX1281.cpp"
+#include "SX1281.h"
+#if !RADIOLIB_EXCLUDE_SX128X
+
+SX1281::SX1281(Module* mod) : SX128x(mod) {
+
+}
+
+#endif

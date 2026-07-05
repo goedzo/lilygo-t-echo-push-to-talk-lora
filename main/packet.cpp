@@ -5,6 +5,9 @@
 
 #include "lora.h"
 
+extern void sendSerialToApp(const String& msg);
+extern void sendSerialToAppLn(const String& msg);
+
 
 Packet::Packet() 
     : type("NULL"),    // Initialize type to "NULL"
@@ -30,11 +33,11 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
     }
 
     // Debug: Print the received packet as characters
-    Serial.print("Received Packet: ");
+    sendSerialToApp(F("Received Packet: "));
     for (uint16_t i = 0; i < bufferSize; i++) {
-        Serial.print((char)buffer[i]);
+        sendSerialToApp((String)(char)buffer[i]);
     }
-    Serial.println();
+    sendSerialToAppLn("");
 
     length = bufferSize;
 
@@ -66,7 +69,7 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
         unsigned char calculatedChecksum = calculateChecksum(buffer, bufferSize - 1);  // Exclude the checksum byte
 
         if (receivedChecksum != calculatedChecksum) {
-            Serial.println("Invalid checksum for MAP packet, discarding");
+            sendSerialToAppLn(F("Invalid checksum for MAP packet, discarding"));
             type = "NULL";  // Invalidate this packet
             return false;  // Invalid MAP packet, discard
         }
@@ -87,8 +90,8 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
     // Extract content for other types after the "~~" marker
     if (index < bufferSize) {
         content = String((char*)(buffer + index));
-        Serial.print(F("Content determined: "));
-        Serial.println(content);
+        sendSerialToApp(F("Content determined: "));
+        sendSerialToAppLn(content);
         
         // For binary payloads (PTT Opus), also store raw buffer length for binary handling
         rawLength = (bufferSize > 128) ? 128 : bufferSize;
@@ -109,8 +112,8 @@ bool Packet::parsePacket(uint8_t* buffer, uint16_t bufferSize) {
     // Handle REQ type. Must be done after parsing the header to correctly extract the content
     if (type == "REQ") {
         // The content will be the requested packet counter (a number)
-        Serial.print(F("Requested packet counter: "));
-        Serial.println(content);
+        sendSerialToApp(F("Requested packet counter: "));
+        sendSerialToAppLn(content);
 
         int packetCounter = atoi(content.c_str());  // Convert to integer
         if (packetCounter>0) {
@@ -149,7 +152,7 @@ bool Packet::isProbePacket() const {
 
 bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
     if (bufferSize < 3) {  // Ensure there's enough room for at least the type
-        Serial.println(F("Packet too short, invalid."));
+        sendSerialToAppLn(F("Packet too short, invalid."));
         return false;
     }
 
@@ -160,7 +163,7 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
     }
 
     if (index >= bufferSize) {
-        Serial.println(F("No separator '~' found, invalid header."));
+        sendSerialToAppLn(F("No separator '~' found, invalid header."));
         return false;  // No separator "~" found
     }
 
@@ -180,31 +183,31 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
             if (contentStart + 1 < bufferSize && buffer[contentStart] == 'O') {
                 // Opus PTT: payload is raw bytes starting after the 'O'
                 content = String((char*)(buffer + contentStart + 1));
-                Serial.println(F("PTT packet detected — Opus payload"));
+                sendSerialToAppLn(F("PTT packet detected — Opus payload"));
             } else {
-                Serial.print(F("Type determined: PTT on channel "));
-                Serial.println(channel);
+                sendSerialToApp(F("Type determined: PTT on channel "));
+                sendSerialToAppLn((String)channel);
             }
         } else {
-            Serial.print(F("Type determined: PTT on channel "));
-            Serial.println(channel);
+            sendSerialToApp(F("Type determined: PTT on channel "));
+            sendSerialToAppLn((String)channel);
         }
     } else if (strncmp((char*)buffer, "RN", 2) == 0 && index == 3) {
         type = "RANGE";  // Set type to "RANGE"
         channel = buffer[2];  // Set the channel (e.g., A, B, C, etc.)
-        Serial.print(F("Type determined: RANGE on channel "));
-        Serial.println(channel);
+        sendSerialToApp(F("Type determined: RANGE on channel "));
+        sendSerialToAppLn((String)channel);
     } else if (strncmp((char*)buffer, "TXM", 3) == 0 && index >= 5) {
         type = "TXT_MULTI";  // Set type to TXT_MULTI for chunked messages
         channel = buffer[3];  // Set the channel (TXMA, TXMB, etc.)
-        Serial.print(F("Type determined: TXT_MULTI on channel "));
-        Serial.println(channel);
+        sendSerialToApp(F("Type determined: TXT_MULTI on channel "));
+        sendSerialToAppLn((String)channel);
     } else if (strncmp((char*)buffer, "MAP", 3) == 0 && index == 3) {
         type = "MAP";
-        Serial.println(F("Type determined: MAP"));
+        sendSerialToAppLn(F("Type determined: MAP"));
     } else if (strncmp((char*)buffer, "REQ", 3) == 0 && index == 3) {
         type = "REQ";
-        Serial.println(F("Type determined: REQ (Retransmit Request)"));
+        sendSerialToAppLn(F("Type determined: REQ (Retransmit Request)"));
     } else if (strncmp((char*)buffer, "B", 1) == 0 && buffer[1] != '~') {
         // Peer beacon packet — type is already "BEACON" from the check below
         type = "BEACON";
@@ -234,14 +237,14 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
             }
         }
         
-        Serial.println(F("Type determined: BEACON"));
+        sendSerialToAppLn(F("Type determined: BEACON"));
     } else if (strncmp((char*)buffer, "PR", 2) == 0 && index >= 3) {
         type = "PRB";  // Probe discovery packet
         channel = '\0';  // Probes don't use channel field
-        Serial.println(F("Type determined: PRB (Probe Discovery)"));
+        sendSerialToAppLn(F("Type determined: PRB (Probe Discovery)"));
     } else {
         type = "NULL";  // Unknown type, mark as invalid
-        Serial.println(F("Unknown type, invalid packet."));
+        sendSerialToAppLn(F("Unknown type, invalid packet."));
         return false;
     }
 
@@ -274,8 +277,8 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
             fieldStart += 2;
             fieldLength -= 2;
 
-            Serial.print(F("Field type extracted: "));
-            Serial.println(fieldType);
+            sendSerialToApp(F("Field type extracted: "));
+            sendSerialToAppLn(fieldType);
 
             // Process the fields: PC (packet counter), SD (Send DateTime), GP (GPS Data)
             if (strcmp(fieldType, "PC") == 0) {
@@ -285,8 +288,8 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
                     strncpy(packetCounterStr, (char*)(buffer + fieldStart), fieldLength);
                     packetCounterStr[fieldLength] = '\0';  // Null-terminate the string
                     packetCounter = atoi(packetCounterStr);  // Convert to integer
-                    Serial.print(F("Packet counter (PC) determined: "));
-                    Serial.println(packetCounter);
+                    sendSerialToApp(F("Packet counter (PC) determined: "));
+                    sendSerialToAppLn((String)packetCounter);
                 }
             } else if (strcmp(fieldType, "SD") == 0) {
                 // Send DateTime (SD)
@@ -295,8 +298,8 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
                     strncpy(dateTimeStr, (char*)(buffer + fieldStart), 14);
                     dateTimeStr[14] = '\0';
                     sendDateTime = String(dateTimeStr);  // Store as string or convert to actual time format if needed
-                    Serial.print(F("Send DateTime (SD) determined: "));
-                    Serial.println(sendDateTime);
+                    sendSerialToApp(F("Send DateTime (SD) determined: "));
+                    sendSerialToAppLn(sendDateTime);
                 }
             } else if (strcmp(fieldType, "GP") == 0) {
                 // GPS data (GP) — store as-is for RANGE/other uses
@@ -305,8 +308,8 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
                     strncpy(gpsStr, (char*)(buffer + fieldStart), fieldLength);
                     gpsStr[fieldLength] = '\0';  // Null-terminate the string
                     gpsData = String(gpsStr);  // Store as string or parse as needed
-                    Serial.print(F("GPS data (GP) determined: "));
-                    Serial.println(gpsData);
+                    sendSerialToApp(F("GPS data (GP) determined: "));
+                    sendSerialToAppLn(gpsData);
                 }
                 
                 // For beacon packets, also parse ~GP as lat,lon for distance calc
@@ -340,8 +343,8 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
                 }
             } else {
                 // Unknown field type
-                Serial.print(F("Unknown field: "));
-                Serial.println(fieldType);
+                sendSerialToApp(F("Unknown field: "));
+                sendSerialToAppLn(fieldType);
             }
         }
     }
