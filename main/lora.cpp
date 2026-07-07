@@ -155,6 +155,13 @@ void beaconAddOrUpdate(const Packet& packet) {
             gps_latitude, gps_longitude,
             packet.beacon_lat, packet.beacon_lon);
     }
+
+    // Trigger screen sync if BEACON mode is active
+    extern const char* current_mode;
+    extern void markScreenDirty();
+    if (strcmp(current_mode, "BEACON") == 0) {
+        markScreenDirty();
+    }
 }
 
 void beaconDisplayRoster(uint8_t line) {

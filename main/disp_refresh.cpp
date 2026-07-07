@@ -17,6 +17,24 @@
 static SPIClass* s_spiclass = nullptr;
 static SPISettings s_spi_settings;
 
+// Partial window coordinates — set by renderPageLoop, written to GRAM registers before waveform
+static uint16_t s_partial_x = 0;
+static uint16_t s_partial_y = 0;
+static uint16_t s_partial_w = 0;
+static uint16_t s_partial_h = 0;
+static bool   s_partial_set = false;
+
+// Record partial window coordinates — call before triggerEpdRefresh() when doing partial updates.
+// The coordinates are written to GRAM registers (0x44/0x45/0x4E/0x4F) during the waveform trigger,
+// matching GxEPD2_150_BN::_setPartialRamArea() exactly so the SSD1681 refreshes the right region.
+void epdSetGRAMWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    s_partial_x = x;
+    s_partial_y = y;
+    s_partial_w = w;
+    s_partial_h = h;
+    s_partial_set = true;
+}
+
 // ── Waveform LUT (copied from GxEPD2_150_BN.cpp:361-381) ──
 static const uint8_t s_lut_partial[] = {
     0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -109,6 +127,37 @@ bool stepEpdRefresh() {
         case EpdPhase::POWER_RAMP: {
             uint16_t ramp_time = s_use_full_refresh ? 100 : 100;  // power_on_time from GxEPD2_150_BN
             if (millis() - s_phase_start_ms >= ramp_time) {
+                if (!s_use_full_refresh && s_partial_set) {
+                    // For partial updates, write GRAM window + pointer registers so the SSD1681 knows
+                    // which region to refresh. Mirrors GxEPD2_150_BN::_setPartialRamArea() exactly:
+                    //   0x11 → 0x03 (RAM entry mode: x inc, y inc)
+                    //   0x44 → x/8, (x+w-1)/8    (horizontal start/end in byte columns)
+                    //   0x45 → y%256, y/256, (y+h-1)%256, (y+h-1)/256  (vertical start/end split 4 bytes)
+                    //   0x4E → x/8    (RAM-X pointer)
+                    //   0x4F → y%256, y/256     (RAM-Y pointer)
+                    _epd_write_command(0x11);
+                    _epd_write_data(0x03);
+
+                    _epd_write_command(0x44);
+                    _epd_write_data(uint8_t((s_partial_x / 8) & 0xFF));
+                    _epd_write_data(((s_partial_x + s_partial_w - 1) / 8) & 0xFF);
+
+                    _epd_write_command(0x45);
+                    _epd_write_data(uint8_t(s_partial_y % 256));
+                    _epd_write_data(uint8_t(s_partial_y / 256));
+                    _epd_write_data(((s_partial_y + s_partial_h - 1) % 256));
+                    _epd_write_data(((s_partial_y + s_partial_h - 1) / 256));
+
+                    _epd_write_command(0x4e);
+                    _epd_write_data(uint8_t((s_partial_x / 8) & 0xFF));
+
+                    _epd_write_command(0x4f);
+                    _epd_write_data(uint8_t(s_partial_y % 256));
+                    _epd_write_data(uint8_t(s_partial_y / 256));
+
+                    s_partial_set = false;
+                }
+
                 // Send display update command + data to SSD1681
                 _epd_write_command(0x22);
                 uint8_t cmd_byte = s_use_full_refresh ? 0xF7 : 0xFC;
@@ -133,7 +182,10 @@ bool stepEpdRefresh() {
                     _epd_write_data(0x83);  // Power off command
                     _epd_write_command(0x20);
 
-                    s_partial_initialized = false;  // Reset partial mode flag
+                    s_partial_x = 0;
+                    s_partial_y = 0;
+                    s_partial_w = 0;
+                    s_partial_h = 0;
                 }
                 s_phase = EpdPhase::DONE;
                 return false;

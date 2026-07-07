@@ -99,7 +99,7 @@ uint32_t        blinkMillis = 0;
 uint8_t rgb = 0;
 int count=0;
 
-#define DB(x) do { SerialMon.print(F("[DB] line ")); SerialMon.println(__LINE__); x; } while(0)
+#define DB(x) do { sendSerialToAppLn(String(F("[DB] line ")) + __LINE__); x; } while(0)
 
 // Stack guard pattern — write known value at stack bottom to detect overflow
 void initStackGuard(uint32_t* guard, uint32_t pattern) {
@@ -338,8 +338,11 @@ void loop()
 {
     checkCrashState();
     
+    //sendSerialToAppLn(F("[LOOP] begin"));
     handleAppModes();
+    //sendSerialToAppLn(F("[LOOP] after handleAppModes"));
     handleBLE();  // BLE handling + drain notification queue
+    //sendSerialToAppLn(F("[LOOP] after handleBLE"));
     
     // Step the non-blocking waveform cycle — advances by ~0.5ms per call
     // CPU is free to process BLE/LoRa/buttons between steps

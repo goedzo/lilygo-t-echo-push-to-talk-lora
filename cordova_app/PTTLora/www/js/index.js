@@ -820,13 +820,31 @@ var app = {
             }
 
             app.updateMultiDeviceStatus();
-            // Wait for GATT service discovery to fully complete before touching the characteristic
-            setTimeout(function() {
-                logMessage("Waiting 1s for BLE stack stability before enabling notifications...");
+            // Request larger MTU (247) to reduce BLE fragmentation — done before GATT service discovery
+            logMessage("Requesting MTU 247...");
+            ble.requestMtu(deviceId, 247, function() {
+                logMessage("MTU 247 negotiated OK");
+                // Wait for GATT service discovery to fully complete before touching the characteristic
+                setTimeout(function() {
+                    logMessage("Waiting 1s for BLE stack stability before enabling notifications...");
+                    setTimeout(function() {
+                        app.startNotification(deviceName, deviceId);
+                        // Trigger immediate screen sync so app shows current device state
+                        setTimeout(function() {
+                            app.sendDataToDevice(deviceName, 'GETSCREEN');
+                        }, 500);
+                    }, 1000);
+                }, 1500);
+            }, function(error) {
+                logMessage("MTU negotiation failed (code=" + (error.code || error) + "), using default");
+                // Fallback: proceed with default MTU anyway
                 setTimeout(function() {
                     app.startNotification(deviceName, deviceId);
-                }, 1000);
-            }, 1500);
+                    setTimeout(function() {
+                        app.sendDataToDevice(deviceName, 'GETSCREEN');
+                    }, 500);
+                }, 2500);
+            });
         }, function(error) {
             var errMsg = typeof error === 'string' ? error : (error.message || error.code != null ? 'code=' + error.code : '') + (error.resultCode != null ? ', resultCode=' + error.resultCode : '') + (error.targetDeviceName && typeof error.targetDeviceName !== 'function' ? ', target=' + error.targetDeviceName : '') || Object.keys(error).length ? JSON.stringify(error) : 'unknown BLE error';
             logMessage("Error connecting to " + deviceName + ": " + errMsg);
@@ -924,12 +942,31 @@ var app = {
 		logMessage("Starting notifications from " + deviceName + "...");
 
 		var self = this;
+        var lastNotifKey = '';
+        var lastNotifTime = 0;
 
 		ble.startNotification(deviceId, app.serviceUUID, app.characteristicUUID, function(data) {
+            // Deduplicate rapid consecutive identical chunks (BLE stack re-sends on some devices)
+            var notifKey = '';
+            if (data.byteLength > 0 && data.byteLength < 256) {
+                var dArr = new Uint8Array(data);
+                for (var k = 0; k < dArr.length; k++) {
+                    notifKey += dArr[k].toString(16).padStart(2, '0');
+                }
+            }
+            var nowMs = Date.now();
+            if (notifKey === lastNotifKey && (nowMs - lastNotifTime) < 50) {
+                return; // Skip duplicate within 50ms window
+            }
+            lastNotifKey = notifKey;
+            lastNotifTime = nowMs;
+
+			logMessage('NOTIF:raw=' + data.byteLength + 'b');
 			var byteArray = new Uint8Array(data);
 			
 			// Check for binary Opus frame prefix (raw BLE notify, no text wrapping)
 			if (byteArray.length >= 4 && byteArray[0] === 0xFE && byteArray[1] === 0x01) {
+				logMessage('NOTIF:opus ' + data.byteLength + 'b');
 				var payloadLen = (byteArray[3] << 8) | byteArray[2];
 				if (payloadLen > 0 && byteArray.length >= 4 + payloadLen) {
 					var opusBytes = new Uint8Array(byteArray.buffer, byteArray.byteOffset + 4, payloadLen);
@@ -941,6 +978,7 @@ var app = {
 			}
 			
 			var receivedNotification = app.bytesToString(byteArray);
+			logMessage('NOTIF:str=' + receivedNotification.substring(0, 80));
 
             // Route notification to the correct device's buffer
             if (!app.connectedDevices[deviceName]) {
@@ -1262,12 +1300,12 @@ var app = {
 			return;
 		}
 
-		// Handle Screen Mirror (LINE:S)
+		// Handle Screen Mirror (LINE:S) — must use the unwrapped payload when NOTIF prefix was stripped
 		if (lineMatch && lineMatch[1] === 'S') {
-			var syncData = message.slice(lineMatch[0].length);
-			logMessage('SCREEN:MIRROR data=' + JSON.stringify(syncData).substring(0, 200));
+			var syncSource = (wrappedData.length > 0) ? wrappedData : message;
+			var syncData = syncSource.slice(lineMatch[0].length);
+			logMessage('SCREEN:MIRROR data=' + JSON.stringify(syncData).substring(0, 300));
 			var fields = app.parseScreenMirrorFields(syncData);
-			logMessage('SCREEN:parsed fields=' + JSON.stringify(fields).substring(0, 300));
 			app.renderScreenMirror(syncData);
 			
 			// BLE liveness update from screen mirror — if the device sends screen data,
@@ -1940,7 +1978,14 @@ var app = {
 
         case 'TXT':
             var msgCount = parseInt(c['txt_inbox_count']) || 0;
-            if (!c['txt_show_inbox'] && c['txt_latest_msg']) {
+            if (c['txt_show_inbox'] === '1') {
+                var scrollPage = parseInt(c['txt_scroll_page']) || 0;
+                html += this._screenRow('Inbox: P ' + (scrollPage + 1) + '/' + Math.ceil(Math.max(msgCount, 1) / 8));
+                for (var rp = 0; rp < 8; rp++) {
+                    // App would need to know the inbox content — just show page info
+                    html += this._screenRow('...');
+                }
+            } else if (c['txt_latest_msg']) {
                 html += this._screenRow(msgCount + ' msg(s)');
                 html += this._screenRow('---');
                 // Truncate long message for screen width
@@ -1948,16 +1993,10 @@ var app = {
                 var msg = c['txt_latest_msg'];
                 if (msg.length > maxLineLen) msg = msg.slice(0, maxLineLen - 3) + '...';
                 html += this._screenRow(msg);
-            } else if (c['txt_show_inbox'] === '1') {
-                var scrollPage = parseInt(c['txt_scroll_page']) || 0;
-                html += this._screenRow('Inbox: P ' + (scrollPage + 1) + '/' + Math.ceil(Math.max(msgCount, 1) / 16));
-                for (var rp = 0; rp < 8; rp++) {
-                    // App would need to know the inbox content — just show page info
-                    html += this._screenRow('...');
-                }
             } else {
-                html += this._screenRow('No messages yet');
-                html += this._screenRow('Wait for TXT mode');
+                // Default TXT view — show inbox count even if there are no messages
+                html += this._screenRow(msgCount + ' msg(s)');
+                html += this._screenRow(c['txt_latest_msg'] || 'No new message');
             }
             break;
 
@@ -1979,7 +2018,7 @@ var app = {
             html += this._screenRow('Freq: ' + freq);
             html += this._screenRow('Progress: ' + progress);
             // Scan results rows
-            for (var sr = 0; sr < 10; sr++) {
+            for (var sr = 0; sr < 5; sr++) {
                 var sf = c['s' + sr + '_f'] || '';
                 var rs = c['s' + sr + '_r'] || '';
                 if (sf && sf !== '---mh') {
@@ -2045,5 +2084,15 @@ var app = {
             'WP': '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8DCE8" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>',
         };
         return icons[mode] || icons['TXT'];
+    },
+
+    refreshScreen: function() {
+        var keys = Object.keys(app.connectedDevices);
+        if (keys.length === 0) {
+            showToast('No device connected');
+            return;
+        }
+        var target = app.targetDeviceName || keys[0];
+        app.sendDataToDevice(target, 'GETSCREEN');
     }
 };

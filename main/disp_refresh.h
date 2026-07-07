@@ -16,6 +16,10 @@ bool isEpdRefreshing();
 // Use after drawing is complete (buffer pushed to SSD1681 via firstPage/nextPage).
 void triggerEpdRefresh(bool full_refresh);
 
+// Set partial window coordinates to be written to GRAM registers before waveform trigger.
+// Call this with the same params as setPartialWindow() when doing partial updates.
+void epdSetGRAMWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+
 // Call from main loop. Advances by ~0.5ms per call, checks BUSY pin every 10ms.
 // Returns true on the first call after DONE (waveform just completed).
 bool stepEpdRefresh();

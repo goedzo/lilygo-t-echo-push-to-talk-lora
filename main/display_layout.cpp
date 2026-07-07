@@ -8,7 +8,7 @@
 #include "text_inbox.h"
 #include "scan.h"
 #include "screen_sync.h"
-#include "disp_refresh.h"
+#include "disp_refresh.h"  // For triggerEpdRefresh + epdSetGRAMWindow
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/Org_01.h>
@@ -182,6 +182,9 @@ static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
     } else {
         // Partial window: covers header (y=12) through bottom statusbar area (y=196)
         display->setPartialWindow(0, 12, disp_width, 184);
+        // Also tell the SSD1681 GRAM controller where to refresh — GxEPD2's setPartialWindow()
+        // stores coords internally but triggerEpdRefresh() sends raw commands that need them.
+        epdSetGRAMWindow(0, 12, disp_width, 184);
     }
 
     display->firstPage();
@@ -493,6 +496,7 @@ void drawPttLayout() {
 
 // ── Per-mode: TXT single message (from packet) ──
 void drawTxtSingleLayout() {
+    markScreenDirty();
     // Guard: never render TXT layout when not in TXT mode (prevents TST flash artifact)
     extern const char* current_mode;
     if (strcmp(current_mode, "TXT") != 0) {

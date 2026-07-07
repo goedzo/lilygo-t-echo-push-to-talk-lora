@@ -68,16 +68,20 @@ struct LayoutState {
 extern LayoutState layout_state;
 void initLayoutState();
 
-// ── PTT state helpers (called from modules that know TX/RX state) ──
+// ── PTT state helpers (called from modules that know TX/RX state) — also triggers screen sync ──
+extern void markScreenDirty();
+
 inline void setPttTxActive(bool active) {
     layout_state.ptt_tx_active = active;
     if (active) layout_state.ptt_rx_active = false;
     layout_state.ptt_state_changed_ms = millis();
+    markScreenDirty();
 }
 inline void setPttRxActive(bool active) {
     layout_state.ptt_rx_active = active;
     if (active) layout_state.ptt_tx_active = false;
     layout_state.ptt_state_changed_ms = millis();
+    markScreenDirty();
 }
 
 // ── Default layout (header + statusbar) for modes that haven't implemented a custom layout yet ──

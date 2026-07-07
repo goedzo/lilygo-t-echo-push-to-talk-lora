@@ -158,9 +158,7 @@ void handleAppModes() {
             sendSerialToAppLn(F("[BTN] Press detected"));
         } else if (!currentPinState && lastPinState) {
             unsigned long holdDuration = millis() - btnPressTime;
-            sendSerialToApp(F("[BTN] Released after "));
-            sendSerialToApp((String)holdDuration);
-            sendSerialToAppLn(F(" ms"));
+            sendSerialToAppLn(String(F("[BTN] Released after ")) + holdDuration + F(" ms"));
 
             // Process button action immediately (before any display update)
             if (holdDuration < 500) {
@@ -171,7 +169,8 @@ void handleAppModes() {
                 } else {
                     // Queue mode switch — actual render deferred until after button release
                     s_deferred_mode_switch = true;
-                    s_pending_draw_mode = modes[modeIndex + 1];  // Next mode (updMode hasn't run yet)
+                    int nextIdx = (modeIndex + 1) % numModes;
+                    s_pending_draw_mode = modes[nextIdx];  // Next mode (wraps around)
                 }
             }
 
@@ -254,6 +253,7 @@ void handleAppModes() {
 
     loopGPS();
     sendScreenSyncIfDirty();
+    //sendSerialToAppLn(F("[LOOP] loopAppModes END"));
 
     if (!in_settings_mode && !s_display_rendering) {
         if (current_mode == "PTT") {
@@ -343,14 +343,16 @@ void handleAppModes() {
             // Handle the SCAN mode
             handleFrequencyScan();  // Call the non-blocking scan function
             
-            // Render current scan state after processing — only when progress changes
+            // Render current scan state — only when progress changes or every 3s max
             static uint32_t last_scan_draw = 0;
             static int16_t last_scan_progress = -1;
             {
                 float freq_range = endFreq - startFreq;
                 int16_t cur_progress = (scanning) ? (int16_t)((currentFrequency - startFreq) / freq_range * 100) : 0;
-                if (millis() - last_scan_draw > 1000 || cur_progress != last_scan_progress) {
-                    s_dirty_screen = true;
+                if ((scanning && millis() - last_scan_draw > 3000) || cur_progress != last_scan_progress) {
+                    s_display_rendering = true;
+                    drawScanLayout();
+                    s_display_rendering = false;
                     last_scan_draw = millis();
                     last_scan_progress = cur_progress;
                 }
@@ -452,24 +454,25 @@ void handlePacket(Packet packet) {
           // Render updated BEACON layout via frame engine
           drawBeaconLayout();
       }
-      else if (current_mode == "RAW" || current_mode == "TST") {
-          //Cool of period to allow receiving of messages because of switching from sent to receive takes time
-          sendTestMessageTimer = millis();
+       else if (current_mode == "RAW" || current_mode == "TST") {
+           //Cool of period to allow receiving of messages because of switching from sent to receive takes time
+           sendTestMessageTimer = millis();
 
-          pckt_count++;
-          
-          if (current_mode == "RAW") {
-              // Set raw layout state for drawRawLayout()
-              strncpy(layout_state.raw_hex_line1, packet.content.c_str(), sizeof(layout_state.raw_hex_line1) - 1);
-              layout_state.raw_hex_line1[sizeof(layout_state.raw_hex_line1) - 1] = '\0';
-              drawRawLayout();
-          } else {
-              // TST mode — update test counters for drawTstLayout()
-              layout_state.tst_sent = test_message_counter;
-              layout_state.tst_rcvd = pckt_count;
-              drawTstLayout();
-          }
-      } 
+           pckt_count++;
+           
+           if (current_mode == "RAW") {
+               // Set raw layout state for drawRawLayout()
+               strncpy(layout_state.raw_hex_line1, packet.content.c_str(), sizeof(layout_state.raw_hex_line1) - 1);
+               layout_state.raw_hex_line1[sizeof(layout_state.raw_hex_line1) - 1] = '\0';
+               drawRawLayout();
+           } else {
+               // TST mode — update test counters for drawTstLayout()
+               layout_state.tst_sent = test_message_counter;
+               layout_state.tst_rcvd = pckt_count;
+               drawTstLayout();
+           }
+           markScreenDirty();
+       } 
       else if (current_mode == "PTT" && packet.type == "PTT") {
           // Received PTT audio via LoRa — forward Opus bytes to connected phone via BLE
           extern void sendBinaryNotification(const uint8_t* data, uint8_t len);
@@ -510,6 +513,7 @@ void handlePacket(Packet packet) {
               // Store in inbox and display latest
               extern const char* bleGetDeviceIdShort();
               inboxStore(bleGetDeviceIdShort(), 8, (const uint8_t*)packet.content.c_str(), packet.content.length());
+              markScreenDirty();
               
               // Render TXT single message view via frame engine
               drawTxtSingleLayout();
@@ -551,6 +555,7 @@ void handlePacket(Packet packet) {
                           
                           txtShowInbox = false;
                           txtInboxScrollPage = 0;
+                          markScreenDirty();
                       }
                   }
               }

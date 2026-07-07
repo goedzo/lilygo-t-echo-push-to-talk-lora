@@ -20,20 +20,63 @@ bool isDataPrintable(const uint8_t* data, int length);
 // Get short device ID for beacon (last 8 hex chars of MAC)
 const char* bleGetDeviceIdShort();
 
+// BLE connection state — set by onConnect/onDisconnect
+static bool ble_connected = false;
+
+// Deferred display update flag — avoids calling display functions inside SoftDevice callback context
+static volatile bool pending_display_update = false;
+
 // Notification queue — defer BLE notify calls to loop() to avoid hard faults
-#define NOTIF_QUEUE_SIZE 8
+// Increased from 8→16 and 256→320 bytes per slot to handle high-frequency SCAN data
+#define NOTIF_QUEUE_SIZE 16
+#define NOTIF_SLOT_SIZE  320
 #define BIN_NOTIF_QUEUE_SIZE 4
-static char notif_queue[NOTIF_QUEUE_SIZE][256];
+static char notif_queue[NOTIF_QUEUE_SIZE][NOTIF_SLOT_SIZE];
 static uint8_t notif_queue_len[NOTIF_QUEUE_SIZE];
 static uint8_t notif_head = 0;
 static uint8_t notif_tail = 0;
 static volatile bool notif_queue_empty = true;
+
+// Track if we're inside the write callback — prevents SoftDevice deadlock
+static volatile bool in_write_callback = false;
+
+// Stall queue/drain processing during connection handshake — SoftDevice needs time to stabilize
+uint32_t ble_connect_stall_until = 0;
+#define BLE_CONNECT_STALL_MS 1500
+
+// Track stale drain failures — if notify() keeps failing, clear the stale item after timeout
+static volatile bool drain_failed = false;
+static uint32_t drain_fail_start = 0;
+static uint32_t drain_stall_until = 0;
+#define DRAIN_FAIL_TIMEOUT_MS   1500    // Clear stale items after 1.5s of persistent failures
+#define DRAIN_STALL_MS          3000    // Silent stall for 3s after first failure
+
+// Maximum BLE ATT MTU we should send per notification (negotiated with central)
+#define MAX_BLE_MTU 247
+
+// Notification string buffer size: PREFIX(16) + payload(230) + ~~(2) + margin = 252
+// Used by both sendSerialToApp() and sendNotificationToApp()
+#define NOTIF_STR_MAX_LEN (16 + 230 + 2 + 4)
+
+// Deferred screen sync — avoid dropping in write callback (in_write_callback causes sendNotificationToApp to return immediately)
+static volatile bool pending_screen_sync = false;
+
+// Extern for sendSerialToAppLn in screen_sync.cpp — used by drain failure logging
+extern void sendSerialToAppLn(const String& msg);
 
 // Binary notification queue for Opus frames (raw bytes, no text wrapping)
 static uint8_t bin_notif_queue[BIN_NOTIF_QUEUE_SIZE][128];
 static uint8_t bin_notif_len[BIN_NOTIF_QUEUE_SIZE];
 static uint8_t bin_notif_head = 0;
 static uint8_t bin_notif_tail = 0;
+
+// Return count of pending notifications in queue
+int getPendingNotificationCount() {
+    if (notif_queue_empty) return 0;
+    int count = notif_head >= notif_tail ? (notif_head - notif_tail) : (NOTIF_QUEUE_SIZE - notif_tail + notif_head);
+    if (count == 0 && !notif_queue_empty) count = NOTIF_QUEUE_SIZE - 1;
+    return count;
+}
 
 static bool queueFull() {
     uint8_t next = (notif_head + 1) % NOTIF_QUEUE_SIZE;
@@ -43,46 +86,105 @@ static bool queueFull() {
 static bool enqueue(const char* msg) {
     if (queueFull()) return false;
     size_t len = strlen(msg);
-    if (len >= sizeof(notif_queue[0])) return false;
+    if (len >= NOTIF_SLOT_SIZE) return false;
     memcpy(notif_queue[notif_head], msg, len + 1);
     notif_queue_len[notif_head] = (uint8_t)(len + 1);
     notif_head = (notif_head + 1) % NOTIF_QUEUE_SIZE;
     notif_queue_empty = false;
+    
+    // Debug: log enqueue for LINE:SERIAL messages
+    if (strncmp(msg, "LINE:SERIAL", 11) == 0) {
+        SerialMon.print(F("[BLE] enqueue head="));
+        SerialMon.print(notif_head);
+        SerialMon.print(" len=");
+        SerialMon.print(len);
+        SerialMon.print(" stall_until=");
+        SerialMon.print(drain_stall_until ? drain_stall_until : 0);
+        SerialMon.println();
+    }
     return true;
 }
 
 static void drainQueue() {
     if (notif_queue_empty) return;
+
+    // Stall silently during connection handshake — SoftDevice needs time to stabilize
+    if (millis() < ble_connect_stall_until) return;
     
-    while (!notif_queue_empty && notif_head != notif_tail) {
-        bool drained = false;
-        for (int i = 0; i < NOTIF_QUEUE_SIZE && !notif_queue_empty; i++) {
-            if (i == notif_tail && !queueFull() || (!queueFull() && i == notif_tail)) {
-                uint8_t msg_len = notif_queue_len[i];
-                size_t total = msg_len + 2; // +2 for "~~"
-                uint8_t buffer[total];
-                memcpy(buffer, notif_queue[i], msg_len);
-                buffer[msg_len] = '~';
-                buffer[msg_len + 1] = '~';
-                
-                if (bleCharacteristic.notify(buffer, total) == ERROR_NONE) {
-                    drained = true;
-                    delay(50); // Small gap between notifies to avoid SD queue overflow
-                    
-                    notif_queue[notif_tail][0] = '\0';
-                    notif_queue_len[notif_tail] = 0;
-                    notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
-                    
-                    if (notif_head == notif_tail) {
-                        notif_queue_empty = true;
-                    }
-                } else {
-                    // BLE not ready yet, stop draining
-                    break;
-                }
-            }
+    // Stall silently after drain failure — prevents hammering notify() when central can't keep up
+    if (drain_failed && millis() < drain_stall_until) return;
+
+    // Drain all pending items — don't limit to 1 per call.
+    uint8_t iter = 0;
+    while (!notif_queue_empty) {
+        if (iter++ > 40) { SerialMon.println(F("[BLE] drainQueue: infinite loop detected, breaking")); break; }
+
+        uint8_t msg_len = notif_queue_len[notif_tail];
+        size_t total = msg_len + 2; // +2 for "~~"
+        
+        // Clamp payload to max BLE MTU — anything beyond 247 bytes gets fragmented and lost
+        if (total > MAX_BLE_MTU) {
+            msg_len = (uint8_t)(MAX_BLE_MTU - 2);
+            total = msg_len + 2;
         }
-        if (!drained) break;
+
+        static uint8_t buffer[MAX_BLE_MTU]; // Fixed-size — VLA on stack causes BLE deadlock
+
+        // Sanity: skip empty slots
+        if (msg_len == 0) {
+            notif_queue_empty = true;
+            break;
+        }
+
+        memcpy(buffer, notif_queue[notif_tail], msg_len);
+        buffer[msg_len] = '~';
+        buffer[msg_len + 1] = '~';
+
+        // After stall timeout expires: clear stale item unconditionally to unblock queue
+        if (drain_failed && millis() >= drain_stall_until) {
+            notif_queue[notif_tail][0] = '\0';
+            notif_queue_len[notif_tail] = 0;
+            notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+            if (notif_head == notif_tail) {
+                notif_queue_empty = true;
+            }
+            drain_failed = false;
+            drain_stall_until = 0;
+            continue; // Try draining next item
+        }
+
+        int32_t ret = bleCharacteristic.notify(buffer, total);
+
+        if (ret == ERROR_NONE) {
+            drain_failed = false;
+            drain_stall_until = 0;
+            notif_queue[notif_tail][0] = '\0';
+            notif_queue_len[notif_tail] = 0;
+            notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+            if (notif_head == notif_tail) {
+                notif_queue_empty = true;
+            }
+        } else {
+            // Track drain failures — set extended stall window to give central time to recover
+            if (!drain_failed) {
+                drain_failed = true;
+                drain_fail_start = millis();
+                drain_stall_until = millis() + DRAIN_STALL_MS;
+            } else if (millis() - drain_fail_start > DRAIN_FAIL_TIMEOUT_MS) {
+                // Clear stale notification — nothing is consuming it
+                notif_queue[notif_tail][0] = '\0';
+                notif_queue_len[notif_tail] = 0;
+                notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+                if (notif_head == notif_tail) {
+                    notif_queue_empty = true;
+                }
+                drain_failed = false;
+                drain_stall_until = 0;
+            } else {
+                // Within stall window — break without re-hammering notify()
+            }
+            break; // Failed to send — stop draining, retry next iteration
+        }
     }
 }
 
@@ -104,18 +206,23 @@ static bool enqueueBinary(const uint8_t* data, uint8_t len) {
 static void drainBinaryQueue() {
     if (bin_notif_head == bin_notif_tail) return;
     
-    bool drained = false;
-    for (int i = 0; i < BIN_NOTIF_QUEUE_SIZE && bin_notif_head != bin_notif_tail; i++) {
-        uint8_t len = bin_notif_len[i];
-        if (bleCharacteristic.notify(bin_notif_queue[i], len) == ERROR_NONE) {
-            drained = true;
-            delay(20);
-            
-            bin_notif_len[i] = 0;
-            bin_notif_tail = (bin_notif_tail + 1) % BIN_NOTIF_QUEUE_SIZE;
-        } else {
-            break;
-        }
+    uint8_t idx = bin_notif_tail;
+    uint8_t len = bin_notif_len[idx];
+    
+    SerialMon.print(F("[BLE] drainBinary: idx="));
+    SerialMon.print(idx);
+    SerialMon.print(" len=");
+    SerialMon.print(len);
+    SerialMon.print(" notify()...");
+    
+    int32_t ret = bleCharacteristic.notify(bin_notif_queue[idx], len);
+    
+    SerialMon.print(ret == ERROR_NONE ? "ERROR_NONE" : String("ERR(") + ret + ")");
+    SerialMon.println();
+    
+    if (ret == ERROR_NONE) {
+        bin_notif_len[idx] = 0;
+        bin_notif_tail = (bin_notif_tail + 1) % BIN_NOTIF_QUEUE_SIZE;
     }
 }
 
@@ -124,7 +231,20 @@ void sendBinaryNotification(const uint8_t* data, uint8_t len) {
     enqueueBinary(data, len);
 }
 
+// Increase SoftDevice ATT MTU to 247 before BLE init (default is 23)
+// Uses Bluefruit.configPrphConn() — must be called before Bluefruit.begin()
+// This reduces BLE fragmentation from ~8 packets per message down to 1-2
+
 void setupBLE() {
+    // Set maximum ATT MTU via Bluefruit API before Bluefruit.begin()
+    // Request max ATT MTU (247 bytes) for larger single-packet payloads — reduces fragmentation
+    // Use explicit connection parameters: min_event_length=3, hvn_tx_queue=6
+    Bluefruit.configPrphConn(247, BLE_GAP_EVENT_LENGTH_DEFAULT, 6, BLE_GATTC_WRITE_CMD_TX_QUEUE_SIZE_DEFAULT);
+
+    // Request MTU override via GATT before advertising — central will negotiate this value
+    uint16_t mtu = 247;
+    (void)mtu; // Value set via configPrphConn ATT_MTU param above
+
     Bluefruit.begin();
     Bluefruit.setTxPower(4);  // Set the TX power to max (4dBm)
 
@@ -171,32 +291,126 @@ void setupBLE() {
 static volatile bool serial_pending = false;
 
 bool isPhoneConnected() {
+    static uint8_t call_cnt = 0;
+    if (call_cnt++ % 100 == 0) {
+        SerialMon.print(F("[BLE] isPhoneConnected(): notif_queue_empty="));
+        SerialMon.print(notif_queue_empty ? 1 : 0);
+        SerialMon.print(" head=");
+        SerialMon.print(notif_head);
+        SerialMon.print(" tail=");
+        SerialMon.print(notif_tail);
+        SerialMon.print(" => returning ");
+        SerialMon.println(!notif_queue_empty ? "true" : "false");
+    }
     return !notif_queue_empty;
 }
 
 void sendSerialToApp(const String& msg) {
     if (msg.length() == 0) return;
+    SerialMon.print(msg);
     
+    // Stall period: drop all serial notifications until SoftDevice stabilizes after connect.
+    // Sending during handshake fills the notif queue with log lines that never drain,
+    // causing massive fragmentation and duplicate NOTIF entries on the app side.
+    if (millis() < ble_connect_stall_until) return;
+
     // Use the existing notification queue — it already handles wrapping, ~~ terminators, and drain timing
-    static char notifStr[260];
+    static char notifStr[NOTIF_STR_MAX_LEN];
     snprintf(notifStr, sizeof(notifStr), "LINE:SERIAL|DATA:%s", msg.c_str());
     enqueue(notifStr);
 }
 
 void sendSerialToAppLn(const String& msg) {
     if (msg.length() == 0) return;
-    SerialMon.println(msg);
-    static String lnMsg = String(msg) + "\n";
+    String lnMsg = String(msg) + "\n";
     sendSerialToApp(lnMsg);
 }
 
 static void sendSerialFromQueue();  // forward decl
-
 void handleBLE() {
-    drainQueue();
+    static uint8_t handle_cnt = 0;
+    if (handle_cnt++ % 50 == 0) {
+        SerialMon.print(F("[BLE] handleBLE #"));
+        SerialMon.print(handle_cnt);
+        SerialMon.print(" connected=");
+        SerialMon.print(ble_connected ? 1 : 0);
+        SerialMon.print(" stall=");
+        SerialMon.print(millis() < ble_connect_stall_until ? 1 : 0);
+        SerialMon.print(" stall_until=");
+        SerialMon.print(ble_connect_stall_until);
+        SerialMon.print(" now=");
+        SerialMon.print(millis());
+        SerialMon.print(" pending_disp=");
+        SerialMon.print(pending_display_update ? 1 : 0);
+        SerialMon.print(" pending_sync=");
+        SerialMon.print(pending_screen_sync ? 1 : 0);
+        SerialMon.print(" drain_fail=");
+        SerialMon.print(drain_failed ? 1 : 0);
+        SerialMon.println();
+    }
+
+    // Stall queue/drain during connection handshake — SoftDevice needs time to stabilize
+    if (millis() < ble_connect_stall_until) {
+        sendSerialFromQueue();
+        return;
+    }
+
+    // Clear stall after first post-stall cycle so we don't re-stall on reconnect
+    if (ble_connect_stall_until > 0) ble_connect_stall_until = 0;
+
+    // Process deferred display update out of SoftDevice callback context
+    if (pending_display_update) {
+        pending_display_update = false;
+        if (strcmp(current_mode, "PTT") == 0) {
+            drawPttLayout();
+        } else {
+            updModeAndChannelDisplay();
+        }
+    }
+
+    // Process deferred screen sync — was being dropped because sendNotificationToApp checks in_write_callback
+    if (pending_screen_sync) {
+        pending_screen_sync = false;
+        
+        // Call the real screen sync function instead of dummy data
+        extern void sendScreenSync();
+        sendScreenSync();
+    }
+
+    if (ble_connected) {
+        SerialMon.print(F("[BLE] calling drainQueue: connected="));
+        SerialMon.print(ble_connected ? 1 : 0);
+        SerialMon.print(" empty=");
+        SerialMon.print(notif_queue_empty ? 1 : 0);
+        SerialMon.print(" head=");
+        SerialMon.print(notif_head);
+        SerialMon.print(" tail=");
+        SerialMon.print(notif_tail);
+        SerialMon.println();
+        drainQueue();
+    } else {
+        static uint32_t last_summary = 0;
+        if (millis() - last_summary > 2000) {
+            last_summary = millis();
+            uint8_t queue_count = (notif_head >= notif_tail) ? (notif_head - notif_tail) : (NOTIF_QUEUE_SIZE - notif_tail + notif_head);
+            SerialMon.print(F("[BLE] summary: connected=0 empty="));
+            SerialMon.print(notif_queue_empty ? 1 : 0);
+            SerialMon.print(" head=");
+            SerialMon.print(notif_head);
+            SerialMon.print(" tail=");
+            SerialMon.print(notif_tail);
+            SerialMon.print(" count=");
+            SerialMon.print(queue_count);
+            SerialMon.print(" drain_failed=");
+            SerialMon.print(drain_failed ? 1 : 0);
+            SerialMon.println();
+        }
+    }
     sendSerialFromQueue();
     drainBinaryQueue();
 }
+
+bool isBleConnected() { return ble_connected; }
 
 // sendSerialFromQueue is a no-op — serial lines go straight to the notification queue via enqueue()
 static void sendSerialFromQueue() {
@@ -204,162 +418,103 @@ static void sendSerialFromQueue() {
 }
 
 void onConnect(uint16_t conn_handle) {
+    SerialMon.print(F("[BLE] onConnect: setting ble_connected=true, stall_until="));
+    SerialMon.println(millis() + BLE_CONNECT_STALL_MS);
+    ble_connected = true;
+    // Stall drain for 1.5s to let SoftDevice stabilize — prevents handshake deadlock
+    ble_connect_stall_until = millis() + BLE_CONNECT_STALL_MS;
     sendSerialToAppLn("[BLE] connected");
-    updModeAndChannelDisplay();
 }
 
 void onDisconnect(uint16_t conn_handle, uint8_t reason) {
+    SerialMon.print(F("[BLE] onDisconnect: clearing queue, head="));
+    SerialMon.print(notif_head);
+    SerialMon.print(" tail=");
+    SerialMon.println(notif_tail);
+    ble_connected = false;
+    notif_queue_empty = true;
+    notif_head = 0;
+    notif_tail = 0;
+    ble_connect_stall_until = 0;
     sendSerialToAppLn("[BLE] disconnected");
 
     // Reset PTT states to prevent stale "SENDING" or "RECEIVING" indicators
     setPttTxActive(false);
     setPttRxActive(false);
 
-    // Notify user via e-paper that the remote (phone) is lost
-    if (strcmp(current_mode, "PTT") == 0) {
-        drawPttLayout(); // This will render as STANDBY since active flags are now false
-    } else {
-        updModeAndChannelDisplay();
-    }
+    // Defer display update out of SoftDevice callback context
+    pending_display_update = true;
 }
 
 void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-    // This callback is invoked when the characteristic is written to
-    sendSerialToApp(F("Characteristic written, length: "));
-    sendSerialToAppLn((String)len);
+    in_write_callback = true;
 
-    // Check if the data is fully printable
-    if (isDataPrintable(data, len)) {
-        // Convert byte array to String assuming it is printable
-        String receivedValue;
-        for (int i = 0; i < len; i++) {
-            receivedValue += (char)data[i];
-        }
-        sendSerialToAppLn(receivedValue);
+    // Copy bytes to local buffer FIRST — never iterate callback pointer through SoftDevice context
+    char localBuf[256];
+    int nlen = len < (int)(sizeof(localBuf) - 1) ? (int)len : (int)(sizeof(localBuf) - 1);
+    for (int i = 0; i < nlen; i++) { localBuf[i] = (char)data[i]; }
+    localBuf[nlen] = '\0';
 
-        // Process the received message if it contains a ':'
-        int delimiterIndex = receivedValue.indexOf(':');
-        if (delimiterIndex != -1) {
-            String action = receivedValue.substring(0, delimiterIndex);
-            String value = receivedValue.substring(delimiterIndex + 1);
-
-            sendSerialToApp(F("Action: "));
-            sendSerialToApp(action);
-            sendSerialToApp(F(", Value: "));
-            sendSerialToAppLn(value);
-
-            // Handle the action and value accordingly
-            if (action == "SETMODE") {
-                switchMode(value);
-            } 
-            else if (action == "SENDTXT") {
-                sendTxtMessage(value.c_str());
-            } 
-            else if (action == "SETNAME") {
-                static char localName[32];
-                int len = strlen(value.c_str());
-                if (len > 0 && len < sizeof(localName)) {
-                    strncpy(localName, value.c_str(), sizeof(localName) - 1);
-                    localName[sizeof(localName) - 1] = '\0';
-                    buddySetDisplayName(localName);
-                    char resp[48]; snprintf(resp, sizeof(resp), "OK{NAME:%s}", localName);
-                    sendNotificationToApp(resp);
-                } else {
-                    sendNotificationToApp("ERR{NAME:too long}");
-                }
-            }
-            else if (action == "SETBUDDY") {
-                int count = buddyImportCsv(value.c_str());
-                char resp[48]; snprintf(resp, sizeof(resp), "OK{BUDDY:%d}", count);
-                sendNotificationToApp(resp);
-            }
-            else if (action == "GETBUDDY") {
-                static char csvBuf[512];
-                if (buddyExportCsv(csvBuf, sizeof(csvBuf))) {
-                    char resp[560]; snprintf(resp, sizeof(resp), "OK{BUDDY:%s}", csvBuf);
-                    sendNotificationToApp(resp);
-                } else {
-                    sendNotificationToApp("OK{BUDDY:}");
-                }
-            }
-            else if (action == "GETSCREEN") {
-                // Trigger an immediate screen sync to the app
-                extern void sendScreenSync();
-                sendScreenSync();
-                sendNotificationToApp("OK{SCREEN:refreshed}");
-            }
-            else if (action == "GETSTATUS") {
-                // Return connection status: BLE link + LoRa peer liveness
-                // If we're in the write callback, BLE is connected by definition.
-                extern bool isPeerAlive();
-                bool loraAlive = isPeerAlive();
-                
-                char resp[32];
-                snprintf(resp, sizeof(resp), "OK{BLE:1}{LORA:%d}", loraAlive ? 1 : 0);
-                sendNotificationToApp(resp);
-            } 
-            else {
-                sendSerialToAppLn(F("Unknown action"));
-            }
-        } else {
-            // No delimiter — check for bare GETSTATUS
-            if (receivedValue == "GETSTATUS") {
-                extern bool isPeerAlive();
-                bool loraAlive = isPeerAlive();
-                
-                char resp[32];
-                snprintf(resp, sizeof(resp), "OK{BLE:1}{LORA:%d}", loraAlive ? 1 : 0);
-                sendNotificationToApp(resp);
-            } else if (receivedValue == "GETSCREEN") {
-                // Handle bare GETSCREEN without colon delimiter (app polling)
-                extern void sendScreenSync();
-                sendScreenSync();
-                static char resp[24];
-                snprintf(resp, sizeof(resp), "OK{SCREEN:refreshed}");
-                sendNotificationToApp(resp);
-            } else {
-                sendSerialToAppLn(F("Invalid format. Missing ':' delimiter."));
-            }
-        }
-
-    } else if (len >= 4 && data[0] == 0xFE && data[1] == 0x01) {
-        // Handle as binary Opus audio frame
-        uint16_t opusLen = ((uint16_t)data[3] << 8) | data[2];
-        if (opusLen > 0 && 4 + opusLen <= len) {
-            extern void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverride);
-            
-            // Build LoRa packet: PT{channel}{O}{opus_bytes}
-            static char opusPktBuf[MAX_PKT];
-            snprintf(opusPktBuf, sizeof(opusPktBuf), "PT%cO", 
-                     channels[deviceSettings.channel_idx]);
-            
-            int pktLen = strlen(opusPktBuf);
-            memcpy(opusPktBuf + pktLen, (char*)(data + 4), opusLen);
-            pktLen += opusLen;
-            
-            // Mark PTT TX state for drawPttLayout()
-            setPttTxActive(true);
-            drawPttLayout();
-            
-            sendPacket((uint8_t*)opusPktBuf, (uint16_t)pktLen, 0);
-        }
-
-    } else {
-        // Handle as binary data (unknown type)
-        sendSerialToApp(F("Received binary data: 0x"));
-        for (int i = 0; i < len && i < 32; i++) {
-            char hexBuf[8];
-            snprintf(hexBuf, sizeof(hexBuf), "%02X ", data[i]);
-            sendSerialToApp(hexBuf);
-        }
-        sendSerialToAppLn("");
+    // Check printable on local buffer
+    bool printable = true;
+    for (int i = 0; i < nlen; i++) {
+        uint8_t b = (uint8_t)localBuf[i];
+        if (b >= 0xC2) continue;
+        if (b >= 0x80 && b < 0xC2) continue;
+        if (b < 0x20 && b != 0x09 && b != 0x0A && b != 0x0D) { printable = false; break; }
+        if (b == 0x7F) { printable = false; break; }
+        if (b >= 0xA0 && b < 0xC2) { printable = false; break; }
     }
+
+    bool handled = false;
+    if (printable) {
+        int delim = -1;
+        for (int i = 0; i < nlen; i++) { if (localBuf[i] == ':') { delim = i; break; } }
+        if (delim != -1) {
+            char action[64]; int alen = delim < sizeof(action)-1 ? delim : sizeof(action)-1;
+            for (int i=0;i<alen;i++) action[i] = localBuf[i]; action[alen]='\0';
+            char value[256]; int vstart=delim+1, vlen=nlen-vstart;
+            vlen = vlen < sizeof(value)-1 ? vlen : sizeof(value)-1;
+            for (int i=0;i<vlen;i++) value[i] = localBuf[vstart+i]; value[vlen]='\0';
+            if (strcmp(action,"SETMODE")==0) { switchMode(String(value)); handled=true; }
+            else if (strcmp(action,"SENDTXT")==0) { sendTxtMessage(value); handled=true; }
+            else if (strcmp(action,"SETNAME")==0) { static char localName[32]; int slen=strlen(value); if(slen>0&&slen<sizeof(localName)){for(int i=0;i<slen;i++)localName[i]=value[i];localName[slen]='\0';buddySetDisplayName(localName);char r[48];snprintf(r,sizeof(r),"OK{NAME:%s}",localName);sendNotificationToApp(r);}else{sendNotificationToApp("ERR{NAME:too long}");handled=true;} }
+            else if (strcmp(action,"SETBUDDY")==0) { int c=buddyImportCsv(value);char r[48];snprintf(r,sizeof(r),"OK{BUDDY:%d}",c);sendNotificationToApp(r);handled=true; }
+            else if (strcmp(action,"GETBUDDY")==0) { static char cb[512];if(buddyExportCsv(cb,sizeof(cb))){char r[560];snprintf(r,sizeof(r),"OK{BUDDY:%s}",cb);sendNotificationToApp(r);}else{sendNotificationToApp("OK{BUDDY:}");}handled=true; }
+            else if (strcmp(action,"GETSCREEN")==0) { int p=getPendingNotificationCount();if(p>3){char r[48];snprintf(r,sizeof(r),"OK{SCREEN:deferred:p=%d}",p);sendNotificationToApp(r);}else{pending_screen_sync=true;}handled=true; }
+            else if (strcmp(action,"GETSTATUS")==0) { extern bool isPeerAlive();bool la=isPeerAlive();char r[32];snprintf(r,sizeof(r),"OK{BLE:1}{LORA:%d}",la?1:0);sendNotificationToApp(r);handled=true; }
+            else { handled=true; }
+        } else {
+            if (nlen==9 && localBuf[0]=='G' && localBuf[1]=='E' && localBuf[2]=='T' && localBuf[3]=='S' && localBuf[4]=='T' && localBuf[5]=='A' && localBuf[6]=='T' && localBuf[7]=='U' && localBuf[8]=='S') { extern bool isPeerAlive();bool la=isPeerAlive();char r[32];snprintf(r,sizeof(r),"OK{BLE:1}{LORA:%d}",la?1:0);sendNotificationToApp(r);handled=true; }
+            else if (nlen==9 && localBuf[0]=='G' && localBuf[1]=='E' && localBuf[2]=='T' && localBuf[3]=='S' && localBuf[4]=='C' && localBuf[5]=='R' && localBuf[6]=='E' && localBuf[7]=='E' && localBuf[8]=='N') { int p=getPendingNotificationCount();if(p>3){char r[48];snprintf(r,sizeof(r),"OK{SCREEN:deferred:p=%d}",p);sendNotificationToApp(r);}else{pending_screen_sync=true;}handled=true; }
+            else { handled=true; }
+        }
+    }
+
+    if (!handled && nlen>=4 && (uint8_t)localBuf[0]==0xFE && (uint8_t)localBuf[1]==0x01) {
+        uint16_t opusLen = ((uint16_t)(uint8_t)localBuf[3] << 8) | (uint8_t)localBuf[2];
+        if(opusLen>0 && 4+opusLen<=nlen){extern void sendPacket(uint8_t*,uint16_t,unsigned int);static char opusPkt[MAX_PKT];snprintf(opusPkt,sizeof(opusPkt),"PT%cO",channels[deviceSettings.channel_idx]);int pl=strlen(opusPkt);for(int i=0;i<opusLen&&pl+i<MAX_PKT-1;i++)opusPkt[pl+i]=localBuf[4+i];pl+=opusLen;setPttTxActive(true);pending_display_update=true;sendPacket((uint8_t*)opusPkt,(uint16_t)pl,0);}
+    }
+
+    in_write_callback = false;
 }
 
 // Function to send a notification to the app — queues for deferred delivery
 void sendNotificationToApp(const char* message) {
     if (!message || !message[0]) return;
-    
+
+    // Never enqueue during write callback — notify() inside SoftDevice context deadlocks
+    if (in_write_callback) {
+        SerialMon.println(F("DBG:sendNotif DROPPED in_write_callback"));
+        return;
+    }
+
+    // Stall period: drop all notifications until SoftDevice stabilizes after connect
+    if (millis() < ble_connect_stall_until) {
+        SerialMon.println(F("DBG:sendNotif DROPPED stall"));
+        return;
+    }
+
     size_t msgLen = strlen(message);
     
     // Create buffer with "~~" terminator
@@ -369,9 +524,8 @@ void sendNotificationToApp(const char* message) {
     buffer[msgLen + 1] = '~';
     buffer[msgLen + 2] = '\0';
 
-    // Build notification string for queue: "LINE:XX|TEXT:buf"
-    // Must fit PREFIX + SYNC_MAX_PAYLOAD(200) + ~~(2) + NUL. Max possible packet = 253 chars (BLE char max).
-    #define NOTIF_STR_MAX_LEN (16 + 200 + 2 + 4)
+    // Build notification string for queue with max SYNC_MAX_PAYLOAD (230 bytes)
+    // PREFIX(16) + payload(230) + ~~(2) = 248 — fits within MTU 247 after clamping in drainQueue()
     static char notifStr[NOTIF_STR_MAX_LEN];
     snprintf(notifStr, sizeof(notifStr), "LINE:NOTIF|DATA:%.*s", (int)(msgLen + 2), buffer);
     

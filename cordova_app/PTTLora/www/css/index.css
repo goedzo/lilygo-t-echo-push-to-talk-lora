@@ -418,6 +418,28 @@ body {
     letter-spacing: 1px;
 }
 
+.refresh-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #5A7A96;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.refresh-btn:hover {
+    color: #8BB4D4;
+    background: rgba(90,122,150,0.1);
+}
+
+.refresh-btn:active {
+    color: #C8DCE8;
+}
+
 .screen-body {
     padding: 10px 14px;
     min-height: 180px;

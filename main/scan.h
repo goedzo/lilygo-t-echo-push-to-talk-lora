@@ -24,4 +24,8 @@ extern bool scanning;
 // Sync top channels into layout_state for drawScanLayout()
 void syncTopChannelsToLayout(void);
 
+// Rate limiting: only send scan data to central once per interval
+extern unsigned long scanLastNotifTime;
+#define SCAN_NOTIF_INTERVAL_MS 3000   // Only notify companion app every 3 seconds
+
 #endif // SCAN_H

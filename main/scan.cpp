@@ -17,6 +17,7 @@ float snrTotal = 0;
 bool scanning = false;
 unsigned long lastScanTime = 0;
 unsigned long scanInterval = 150;  // Time between samples in milliseconds
+unsigned long scanLastNotifTime = 0;  // Rate-limit: BLE notifications for scan data
 int displayLine = 2;  // Start at line 2 for displaying messages
 float enterFrequency = defaultFrequency; //If we exit scan, we must go back to the enter freq
 
@@ -32,8 +33,6 @@ void initTopChannels() {
     displayLine = 2;  // Reset the display line counter
     printTopChannels();
     syncTopChannelsToLayout();  // Clear layout state when reinitializing
-    //clearScreen();  // Clear the display before starting scan
-    updDisp(1, "Scanning...", true);  // Display initial message
 }
 
 // Add result to the top channels list
@@ -119,9 +118,6 @@ void handleFrequencyScan() {
                 }
                 // Start receiving
                 radio->startReceive();
-                char displayString[30];
-                snprintf(displayString, sizeof(displayString), ">Test %.2f MHz", currentFrequency);
-                updDisp(2, displayString, true);  // Print all info on one line
 
             }
 
@@ -148,14 +144,26 @@ void handleFrequencyScan() {
                 addResultToTopChannels(currentFrequency, avgRSSI, avgSNR);
 
                 printTopChannels();
-                syncTopChannelsToLayout();
+                // Rate-limit BLE sync: only push scan data to companion app every 3s
+                if (scanning && millis() - scanLastNotifTime >= SCAN_NOTIF_INTERVAL_MS) {
+                    syncTopChannelsToLayout();
+                    scanLastNotifTime = millis();
+                } else {
+                    // Still update layout state for local rendering, but skip BLE sync
+                    auto& S = layout_state;
+                    uint8_t count = MAX_TOP_CHANNELS;
+                    for (int i = 0; i < MAX_TOP_CHANNELS; i++) {
+                        if (topChannels[i].rssi <= -998) { count = (uint8_t)i; break; }
+                    }
+                    S.scan_channel_count = count;
+                    for (uint8_t i = 0; i < count; i++) {
+                        S.scan_channels[i].frequency = topChannels[i].frequency;
+                        S.scan_channels[i].quality   = topChannels[i].quality;
+                        S.scan_channels[i].rssi      = topChannels[i].rssi;
+                    }
+                }
 
-                // Display results for current frequency
-                char displayString[30];
-                updDisp(2, "", false);  // Clear the scanning line
-
-                snprintf(displayString, sizeof(displayString), "%.2f Q%d R%.1f", currentFrequency, calculateQuality(avgRSSI, avgSNR,true), avgRSSI);
-                updDisp(1, displayString, true);  // Print all info on one line
+                sendSerialToAppLn(String("SCAN ") + String(currentFrequency, 2) + "MHz Q" + String(calculateQuality(avgRSSI, avgSNR,true)) + " R" + String(avgRSSI, 1) + " S" + String(avgSNR, 1));
 
                 // Move to the next frequency
                 currentFrequency += stepSize;
@@ -167,7 +175,6 @@ void handleFrequencyScan() {
                 if (currentFrequency <= endFreq) {  
                     displayLine++;  // Move to the next line for the next result
                 } else {
-                    //stopScanFrequencies();
                     //Wrap around
                     currentFrequency=startFreq;
                     displayLine++;
@@ -198,14 +205,5 @@ void syncTopChannelsToLayout(void) {
 
 // Print the top 10 channels on the display (legacy — kept for debug)
 void printTopChannels() {
-    for (int i = 0; i < MAX_TOP_CHANNELS && i < 7; i++) {  // Limit display to 7 entries
-        char displayString[30];
-        snprintf(displayString, sizeof(displayString), "%.2f Q%d R%.1f", topChannels[i].frequency, topChannels[i].quality, topChannels[i].rssi);
-        if(i==6) {
-            updDisp(3 + i, displayString, true);  // Print frequency, quality, and RSSI on one line
-        }
-        else {
-            updDisp(3 + i, displayString, false);  // Print frequency, quality, and RSSI on one line
-        }
-    }
+    syncTopChannelsToLayout();
 }
