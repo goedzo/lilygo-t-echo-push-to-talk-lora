@@ -436,6 +436,11 @@ void onDisconnect(uint16_t conn_handle, uint8_t reason) {
     notif_head = 0;
     notif_tail = 0;
     ble_connect_stall_until = 0;
+    
+    // Reset drain failure state — prevents stall from blocking first messages after reconnect
+    drain_failed = false;
+    drain_fail_start = 0;
+    drain_stall_until = 0;
     sendSerialToAppLn("[BLE] disconnected");
 
     // Reset PTT states to prevent stale "SENDING" or "RECEIVING" indicators
