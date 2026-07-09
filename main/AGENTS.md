@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 9 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT, WP) — 16 source modules + crash_debug.h. Audio is entirely handled by the phone app; the T-Echo relays Opus frames via BLE ↔ LoRa only.
+Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 9 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT, WP) — 37 source modules + crash_debug.h. Audio is entirely handled by the phone app; the T-Echo relays Opus frames via BLE ↔ LoRa only.
 
 ## Ownership
 
@@ -10,21 +10,24 @@ Takes care of the T-Echo firmware (nRF52840, SX1262, BLE, 9 modes: BEACON, RAW, 
 - **Mode logic:** `main/app_modes.cpp/.h`
 - **Radio:** `main/lora.cpp/.h`
 - **Display:** `main/display.cpp/.h` (GxDEPG0150BN 1.54" e-paper, GxEPD2)
+- **Display Layout:** `main/display_layout.cpp/.h` — per-mode drawXxxLayout() functions
 - **Text Inbox:** `main/text_inbox.cpp/.h` — Scrollable message inbox stored in RTC RAM (8 messages × 256 bytes, address 0x200075C0) with sender/timestamp. 16-line scroll display on E-Paper. Auto-stored on incoming TXT/TXT_MULTI packets
 - **BLE GATT:** `main/ble.cpp/.h` — relays Opus frames from phone → LoRa, and received LoRa audio → phone via BLE notify (binary)
 - **Packet framing:** `main/packet.cpp/.h`
-- **BLE GATT:** `main/ble.cpp/.h`
 - **Settings (RTC):** `main/settings.cpp/.h` (PCF8563)
 - **GPS:** `main/gps.cpp/.h` (TinyGPSPlus)
 - **Battery:** `main/battery.cpp/.h`
-- **Packet framing:** `main/packet.cpp/.h`
 - **Scan/OTA:** `main/scan.cpp/.h` — Frequency scanner (top 10 channels by quality)
+- **Screen sync:** `main/screen_sync.cpp/.h` — syncs display state between device and companion app
+- **Buddy list:** `main/buddy_list.cpp/.h` — name→device_id buddy list (16 contacts, address 0x20007C00)
+- **Display refresh helpers:** `main/disp_refresh.cpp/.h`, `main/disp_timer.cpp/.h` — partial/full refresh control and non-blocking display updates
+- **Boot animation:** `main/boot_animation.cpp/.h` — device boot sequence rendering
 - **Pin definitions:** `main/utilities.h`
 - **Crash detection & debugging:** `main/crash_debug.h` — HardFault recorder, stack overflow guard, debug log buffer, heap tracker
 
 ## Local Contracts
 
-- Board: nRF52840 (LilyGO T-Echo PCA10056) targeting `adafruit:nrf52:feather52840`
+- Board: nRF52840 (LilyGO T-Echo PCA10056) targeting `adafruit:nrf52:pca10056`
 - **Default revision is active** — VERSION_1 pins are commented out in `utilities.h`
 - Active pins: ePaper_Miso=P1.6, LoRa_Dio0=P0.22, GreenLed_Pin=P1.1, RedLed_Pin=P1.3, BlueLed_Pin=P0.14
 - Compile via **Arduino CLI only** — PlatformIO is not functional for this firmware
@@ -51,8 +54,8 @@ Call `updDisp()` from app_modes or other modules that change state.
 ### Build instructions (Arduino CLI)
 
 ```bash
-arduino-cli compile -b adafruit:nrf52:feather52840 --build-path .pio/t-echo-build main
-arduino-cli upload -b adafruit:nrf52:feather52840 --port auto .pio/t-echo-build/main.bin
+arduino-cli compile -b adafruit:nrf52:pca10056 --build-path .pio/t-echo-build main
+arduino-cli upload -b adafruit:nrf52:pca10056 --port auto .pio/t-echo-build/main.bin
 ```
 
 **No platformio.ini exists on disk** — any references are stale. Use Arduino CLI only.
@@ -84,7 +87,7 @@ Rendering uses `firstPage()/nextPage()` page-loop pattern inside a shared `rende
 
 ### Mode logic (`app_modes`)
 
-Seven modes: RAW (raw packet dump), TXT (text messages — input via BLE app; inbox with scrollable message history on-device), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — Opus frames relayed from phone via BLE GATT to LoRa), BEACON (peer roster — broadcasts GPS/battery beacon, displays list of detected peers with distances and battery levels), WP (waypoint — touch to save current GPS as waypoint packet, broadcast on LoRa for 60s). Button/AceButton handles double-click for SF adjustment and long-press for power-off. MODE click in TXT mode toggles inbox/single-message view.
+Nine modes: RAW (raw packet dump), TXT (text messages — input via BLE app; inbox with scrollable message history on-device), RANGE (distance testing with GPS sender/receiver roles), TST (auto test beeps every 5s), PONG (manual ping-pong), SCAN (frequency scanner, top 10 channels), PTT (push-to-talk — Opus frames relayed from phone via BLE GATT to LoRa), BEACON (peer roster — broadcasts GPS/battery beacon, displays list of detected peers with distances and battery levels), WP (waypoint — touch to save current GPS as waypoint packet, broadcast on LoRa for 60s). Button/AceButton handles double-click for SF adjustment and long-press for power-off. MODE click in TXT mode toggles inbox/single-message view.
 
 ### Named Contacts / Call Sign System
 
@@ -107,12 +110,30 @@ Every beacon packet includes an optional `~CN{call_sign}` field (up to 16 ASCII 
 
 ### Button behavior (all modes)
 
-| Button | Action | Effect |
+| Button | Hold Duration | Effect |
 |---|---|---|
-| MODE (P1.9) — Single click | Cycle to next mode | Wraps around through all 9 |
-| MODE — Double click | Next spreading factor | Reinitializes LoRa with new SF |
-| MODE — Long press | Enter/exit settings mode | Cycles device settings |
-| TOUCH (P0.11) — Hold >5s | Power off | Shuts down peripherals → System OFF via softdevice or NRF_POWER |
+| MODE (P1.10) — Single click | <500ms | Cycle to next mode (wraps through all 9) |
+| MODE (P1.10) — Double click | Two clicks <500ms apart | Next spreading factor → reinitializes LoRa |
+| MODE (P1.10) — Hold | 5–10 seconds | Enter/exit settings mode |
+| MODE (P1.10) — Hold | >10 seconds | Power off → shuts down peripherals, System OFF |
+
+**Pin separation note:** P0.11 and P1.11 are **different pins**. `Touch_Pin = P0.11` (capacitive touch pad on the PCB), `ePaper_Backlight = P1.11` (e-paper LED backlight OUTPUT). They do not share a pin — unlike some reference examples (Display_lilygo.ino) where they used P0.11 for both backlight and touch, requiring mode reconfiguration.
+
+### Pin definitions (from utilities.h)
+
+- MODE_PIN = P1.10 (Button 2, red button on T-Echo)
+- TOUCH_PIN = P0.11 (capacitive touch pad — INPUT_PULLUP at boot in `setupAppModes()`)
+- ePaper_Backlight = P1.11 (OUTPUT, driven HIGH by display.cpp to power the e-paper LED)
+
+### Long-press timer on MODE (P1.10)
+
+`app_modes.cpp:182-197` uses a state machine tracking `holdDuration = millis() - btnPressTime` where `btnPressTime` is set when MODE_PIN goes LOW:
+- ≥500ms and <10s → toggles settings mode (`toggleSettingsMode()` at line 193)
+- ≥10s → powers off (`powerOff()` at line 196)
+
+### Touch input (P0.11)
+
+The touch pad (P0.11) can be tapped to change setting values while in settings mode — `updateCurrentSetting()` at `app_modes.cpp:404` detects falling edge (press) via `digitalRead(TOUCH_PIN)`. In non-settings modes, tap behavior is mode-specific: resets TST counters (line 265), syncs RAW counter (line 297), triggers PONG ping (line 303), toggles RANGE role (line 320).
 
 ### Radio (`lora`)
 
@@ -147,7 +168,7 @@ Usage: call `dbgLog("[mod] msg")` in critical paths. On crash, full register dum
 
 ## Verification
 
-1. **Build:** Run `build_scripts\01_build_firmware.bat` — must produce zero errors, ~30% flash / ~8% RAM on release build (crash_debug adds ~2KB). If it fails, fix the code and retry until clean.
+1. **Build:** Run `build_scripts\01_build_firmware.bat` — must produce zero errors on release build (crash_debug adds ~2KB). If it fails, fix the code and retry until clean.
 2. **Upload:** Run `build_scripts\02_upload_firmware.bat` with a **5-minute (300s) timeout** — ensures T-Echo enters DFU mode and receives the binary.
 3. **Validate output:** Confirm build shows zero errors and upload completes without error/timeout. If upload times out or fails, do not mark the task as complete.
 4. No automated tests exist; manual device testing is the only verification path beyond build/upload.

@@ -63,7 +63,8 @@ static void frame_blackFlash() {
     do {
         display->fillScreen(GxEPD_BLACK);
     } while (display->nextPage());
-    display->refresh(false);  // full refresh — panel settles to black
+    display->setPartialWindow(0, 12, 200, 184);
+    display->refresh(true);  // partial refresh instead of full
 }
 
 // ============================================================
@@ -97,7 +98,8 @@ static void frame_logo() {
         display->setCursor((200 - 60) / 2, logo_x + 56);
         display->print("T-Echo");
     } while (display->nextPage());
-    display->refresh(false);  // full — first content frame must be full
+    display->setPartialWindow(0, 12, 200, 184);
+    display->refresh(true);  // partial — first content frame
 }
 
 // ============================================================
@@ -181,8 +183,9 @@ void showBootAnimation(bool lora_ok, bool gps_ok) {
     } while (display->nextPage());
     delay(400);
     
-    // Final full refresh for crispness
-    display->refresh(false);
+    // Final partial refresh for speed (was full refresh for crispness)
+    display->setPartialWindow(0, 12, 200, 184);
+    display->refresh(true);
 }
 
 void showBootLogo() {
@@ -197,5 +200,6 @@ void showBootLogo() {
         display->setCursor((200 - 60) / 2, logo_x + 56);
         display->print("T-Echo");
     } while (display->nextPage());
-    display->refresh(false);
+    display->setPartialWindow(0, 12, 200, 184);
+    display->refresh(true);  // partial instead of full
 }

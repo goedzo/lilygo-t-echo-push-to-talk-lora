@@ -40,6 +40,15 @@ static volatile bool notif_queue_empty = true;
 // Track if we're inside the write callback — prevents SoftDevice deadlock
 static volatile bool in_write_callback = false;
 
+// Fragmented notification queue — holds split payloads for multi-MTU messages
+// Each item: "LINE:BLOB|S{seq}|T{total}|<data>~~" (header) or "LINE:BLOB|S{seq}|<data>~~" (continuation)
+#define BLOB_NOTIF_QUEUE_SIZE 32
+static char blob_notif_queue[BLOB_NOTIF_QUEUE_SIZE][NOTIF_SLOT_SIZE];
+static uint8_t blob_notif_len[BLOB_NOTIF_QUEUE_SIZE];
+static uint8_t blob_notif_head = 0;
+static uint8_t blob_notif_tail = 0;
+static volatile bool blob_notif_empty = true;
+
 // Stall queue/drain processing during connection handshake — SoftDevice needs time to stabilize
 uint32_t ble_connect_stall_until = 0;
 #define BLE_CONNECT_STALL_MS 1500
@@ -57,6 +66,36 @@ static uint32_t drain_stall_until = 0;
 // Notification string buffer size: PREFIX(16) + payload(230) + ~~(2) + margin = 252
 // Used by both sendSerialToApp() and sendNotificationToApp()
 #define NOTIF_STR_MAX_LEN (16 + 230 + 2 + 4)
+
+// Map Nordic softdevice error codes to human-readable names
+static const char* bleErrorName(int32_t err) {
+    switch ((uint32_t)err) {
+        case 0:        return "ERROR_NONE";
+        case 0x10001:  return "NRF_ERROR_SVC_HANDLER_ALLOC_FAILED";
+        case 0x10002:  return "NRF_ERROR_SOFTDEVICE_NOT_PRESENT";
+        case 0x10003:  return "NRF_ERROR_STACK_SIZE";
+        case 0x2001:   return "NRF_ERROR_INVALID_ADDR";
+        case 0x2002:   return "NRF_ERROR_NULL";
+        case 0x2003:   return "NRF_ERROR_INVALID_PARAM";
+        case 0x2004:   return "NRF_ERROR_INVALID_STATE";
+        case 0x2005:   return "NRF_ERROR_INVALID_LENGTH";
+        case 0x2006:   return "NRF_ERROR_INVALID_FLAGS";
+        case 0x2007:   return "NRF_ERROR_INVALID_DATA";
+        case 0x200B:   return "NRF_ERROR_NO_MEM";      // No memory available
+        case 0x3001:   return "NRF_ERROR_BUSY";
+        case 0x3008:   return "BLE_ERROR_INVALID_DB_IDX";
+        case 0x3009:   return "BLE_ERROR_INVALID_CONN_HANDLE";
+        case 0x300A:   return "BLE_ERROR_ATTR_DATA_SIZE"; // Attribute data too small
+        case 0x300B:   return "BLE_ERROR_UNSUPPORTED_PRF";
+        case 0x300C:   return "BLE_ERROR_INVALID_ADDR";
+        case 0x4001:   return "NRF_ERROR_COMMUNICATION";
+        default:       return "UNKNOWN_ERR";
+    }
+}
+
+// Fragmented notification — each fragment carries exactly 64 bytes of raw message data.
+// Fragment format: "LINE:BLOB|S{seq}|<raw_data>~~" (~79 bytes total per fragment)
+#define BLOB_NOTIF_QUEUE_SIZE 32 // slots for fragmented items
 
 // Deferred screen sync — avoid dropping in write callback (in_write_callback causes sendNotificationToApp to return immediately)
 static volatile bool pending_screen_sync = false;
@@ -105,8 +144,9 @@ static bool enqueue(const char* msg) {
     return true;
 }
 
+// Drain all pending text notifications — handles both regular queue and blob fragments
 static void drainQueue() {
-    if (notif_queue_empty) return;
+    if (notif_queue_empty && blob_notif_empty) return;
 
     // Stall silently during connection handshake — SoftDevice needs time to stabilize
     if (millis() < ble_connect_stall_until) return;
@@ -115,38 +155,75 @@ static void drainQueue() {
     if (drain_failed && millis() < drain_stall_until) return;
 
     // Drain all pending items — don't limit to 1 per call.
+    // Priority: drain blob fragments first, then regular notifications
     uint8_t iter = 0;
-    while (!notif_queue_empty) {
+    
+    while (!notif_queue_empty || !blob_notif_empty) {
         if (iter++ > 40) { SerialMon.println(F("[BLE] drainQueue: infinite loop detected, breaking")); break; }
 
-        uint8_t msg_len = notif_queue_len[notif_tail];
-        size_t total = msg_len + 2; // +2 for "~~"
+        // Prefer blob fragments when available (they're time-sensitive screen updates)
+        bool useBlob = !blob_notif_empty && notif_queue_empty;
         
-        // Clamp payload to max BLE MTU — anything beyond 247 bytes gets fragmented and lost
-        if (total > MAX_BLE_MTU) {
-            msg_len = (uint8_t)(MAX_BLE_MTU - 2);
+        uint8_t buffer[MAX_BLE_MTU];
+        uint8_t msg_len;
+        size_t total;
+        uint8_t idx;
+        
+        if (useBlob) {
+            msg_len = blob_notif_len[blob_notif_tail];
+            total = msg_len + 2; // +2 for "~~"
+            
+            // Clamp payload to max BLE MTU
+            if (total > MAX_BLE_MTU) {
+                msg_len = (uint8_t)(MAX_BLE_MTU - 2);
+                total = msg_len + 2;
+            }
+
+            if (msg_len == 0) {
+                blob_notif_empty = true;
+                blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
+                continue;
+            }
+
+            memcpy(buffer, blob_notif_queue[blob_notif_tail], msg_len);
+        } else {
+            idx = notif_tail;
+            msg_len = notif_queue_len[idx];
             total = msg_len + 2;
+            
+            // Clamp payload to max BLE MTU
+            if (total > MAX_BLE_MTU) {
+                msg_len = (uint8_t)(MAX_BLE_MTU - 2);
+                total = msg_len + 2;
+            }
+
+            // Sanity: skip empty slots
+            if (msg_len == 0) {
+                notif_queue_empty = true;
+                break;
+            }
+
+            memcpy(buffer, notif_queue[idx], msg_len);
+            buffer[msg_len] = '~';
+            buffer[msg_len + 1] = '~';
         }
-
-        static uint8_t buffer[MAX_BLE_MTU]; // Fixed-size — VLA on stack causes BLE deadlock
-
-        // Sanity: skip empty slots
-        if (msg_len == 0) {
-            notif_queue_empty = true;
-            break;
-        }
-
-        memcpy(buffer, notif_queue[notif_tail], msg_len);
-        buffer[msg_len] = '~';
-        buffer[msg_len + 1] = '~';
 
         // After stall timeout expires: clear stale item unconditionally to unblock queue
         if (drain_failed && millis() >= drain_stall_until) {
-            notif_queue[notif_tail][0] = '\0';
-            notif_queue_len[notif_tail] = 0;
-            notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
-            if (notif_head == notif_tail) {
-                notif_queue_empty = true;
+            if (useBlob) {
+                blob_notif_queue[blob_notif_tail][0] = '\0';
+                blob_notif_len[blob_notif_tail] = 0;
+                blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
+                if (blob_notif_head == blob_notif_tail) {
+                    blob_notif_empty = true;
+                }
+            } else {
+                notif_queue[idx][0] = '\0';
+                notif_queue_len[idx] = 0;
+                notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+                if (notif_head == notif_tail) {
+                    notif_queue_empty = true;
+                }
             }
             drain_failed = false;
             drain_stall_until = 0;
@@ -158,25 +235,58 @@ static void drainQueue() {
         if (ret == ERROR_NONE) {
             drain_failed = false;
             drain_stall_until = 0;
-            notif_queue[notif_tail][0] = '\0';
-            notif_queue_len[notif_tail] = 0;
-            notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
-            if (notif_head == notif_tail) {
-                notif_queue_empty = true;
+            if (useBlob) {
+                blob_notif_queue[blob_notif_tail][0] = '\0';
+                blob_notif_len[blob_notif_tail] = 0;
+                blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
+                if (blob_notif_head == blob_notif_tail) {
+                    blob_notif_empty = true;
+                }
+            } else {
+                notif_queue[idx][0] = '\0';
+                notif_queue_len[idx] = 0;
+                notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+                if (notif_head == notif_tail) {
+                    notif_queue_empty = true;
+                }
             }
         } else {
             // Track drain failures — set extended stall window to give central time to recover
             if (!drain_failed) {
+                // First failure: log the error name, return code, payload length, and first 4 bytes of payload
+                String msg = F("[BLE] drain fail: ");
+                msg += bleErrorName(ret);
+                msg += " code=";
+                msg += ret;
+                msg += " len=";
+                msg += total;
+                if (total >= 4) {
+                    msg += " data=";
+                    msg += (char)buffer[0];
+                    msg += (char)buffer[1];
+                    msg += (char)buffer[2];
+                    msg += (char)buffer[3];
+                }
+                sendSerialToAppLn(msg);
                 drain_failed = true;
                 drain_fail_start = millis();
                 drain_stall_until = millis() + DRAIN_STALL_MS;
             } else if (millis() - drain_fail_start > DRAIN_FAIL_TIMEOUT_MS) {
                 // Clear stale notification — nothing is consuming it
-                notif_queue[notif_tail][0] = '\0';
-                notif_queue_len[notif_tail] = 0;
-                notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
-                if (notif_head == notif_tail) {
-                    notif_queue_empty = true;
+                if (useBlob) {
+                    blob_notif_queue[blob_notif_tail][0] = '\0';
+                    blob_notif_len[blob_notif_tail] = 0;
+                    blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
+                    if (blob_notif_head == blob_notif_tail) {
+                        blob_notif_empty = true;
+                    }
+                } else {
+                    notif_queue[notif_tail][0] = '\0';
+                    notif_queue_len[notif_tail] = 0;
+                    notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+                    if (notif_head == notif_tail) {
+                        notif_queue_empty = true;
+                    }
                 }
                 drain_failed = false;
                 drain_stall_until = 0;
@@ -188,7 +298,52 @@ static void drainQueue() {
     }
 }
 
-// Binary notification helpers (for Opus frames)
+// Fragmented notification — splits payloads exceeding MTU across BLE notifications
+// All fragments share a uniform format so the companion app doesn't need special parsing:
+//   "LINE:BLOB|<raw_payload_data>~~"
+// The app strips the LINE:BLOB prefix, concatenates raw data in order (S0=first, S1=next...),
+// and reconstructs the original message before processing.
+bool sendFragmentedNotification(const char* message) {
+    if (!message || !message[0]) return false;
+
+    size_t msgLen = strlen(message);
+
+    // Single notification fits — use normal path
+    if (msgLen + 2 <= MAX_BLE_MTU) {
+        static char notifStr[NOTIF_STR_MAX_LEN];
+        snprintf(notifStr, sizeof(notifStr), "LINE:NOTIF|DATA:%.*s", (int)(msgLen + 2), message);
+        return enqueue(notifStr);
+    }
+
+    // Multi-fragment mode — each fragment carries exactly MAX_BLOB_DATA bytes of raw payload.
+    const int MAX_BLOB_DATA = 64; // ~64 bytes of original message data per fragment
+    
+    int totalFragments = (msgLen + MAX_BLOB_DATA - 1) / MAX_BLOB_DATA;
+    if (totalFragments > 255 || totalFragments < 2) return false;
+
+    for (int frag = 0; frag < totalFragments; frag++) {
+        int dataOff = frag * MAX_BLOB_DATA;
+        size_t remaining = msgLen - dataOff;
+        size_t dataSz = remaining > MAX_BLOB_DATA ? MAX_BLOB_DATA : remaining;
+
+        // Build fragment: "LINE:BLOB|S{seq}|<raw_data>~~"
+        char buf[NOTIF_SLOT_SIZE];
+        int off = sprintf(buf, "LINE:BLOB|S%d|", frag);
+        memcpy(buf + off, message + dataOff, dataSz);
+        off += (int)dataSz;
+        buf[off++] = '~';
+        buf[off++] = '~';
+        buf[off] = '\0';
+
+        blob_notif_queue[blob_notif_head][0] = '\0';
+        memcpy(blob_notif_queue[blob_notif_head], buf, (uint8_t)(off + 1));
+        blob_notif_len[blob_notif_head] = (uint8_t)off;
+        blob_notif_head = (blob_notif_head + 1) % BLOB_NOTIF_QUEUE_SIZE;
+        blob_notif_empty = false;
+    }
+
+    return true;
+}
 static bool binQueueFull() {
     uint8_t next = (bin_notif_head + 1) % BIN_NOTIF_QUEUE_SIZE;
     return next == bin_notif_tail;
@@ -329,11 +484,9 @@ void sendSerialToAppLn(const String& msg) {
 static void sendSerialFromQueue();  // forward decl
 void handleBLE() {
     static uint8_t handle_cnt = 0;
-    if (handle_cnt++ % 50 == 0) {
+    if (handle_cnt++ % 50 == 0 && ble_connected) {
         SerialMon.print(F("[BLE] handleBLE #"));
         SerialMon.print(handle_cnt);
-        SerialMon.print(" connected=");
-        SerialMon.print(ble_connected ? 1 : 0);
         SerialMon.print(" stall=");
         SerialMon.print(millis() < ble_connect_stall_until ? 1 : 0);
         SerialMon.print(" stall_until=");
@@ -488,6 +641,8 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
             else if (strcmp(action,"GETBUDDY")==0) { static char cb[512];if(buddyExportCsv(cb,sizeof(cb))){char r[560];snprintf(r,sizeof(r),"OK{BUDDY:%s}",cb);sendNotificationToApp(r);}else{sendNotificationToApp("OK{BUDDY:}");}handled=true; }
             else if (strcmp(action,"GETSCREEN")==0) { int p=getPendingNotificationCount();if(p>3){char r[48];snprintf(r,sizeof(r),"OK{SCREEN:deferred:p=%d}",p);sendNotificationToApp(r);}else{pending_screen_sync=true;}handled=true; }
             else if (strcmp(action,"GETSTATUS")==0) { extern bool isPeerAlive();bool la=isPeerAlive();char r[32];snprintf(r,sizeof(r),"OK{BLE:1}{LORA:%d}",la?1:0);sendNotificationToApp(r);handled=true; }
+            else if (strcmp(action,"GETSETTINGS")==0) { char buf[192];snprintf(buf,sizeof(buf),"OK{SETTINGS:SF=%d,BITRATE=%d,CHAN=%c,VOL=%d,BL=%d,BW=%d,CR=%d,FH=%d,HOUR=%d,MIN=%d,SEC=%d}",deviceSettings.spreading_factor,deviceSettings.bitrate_idx,channels[deviceSettings.channel_idx],deviceSettings.volume_level,deviceSettings.backlight?1:0,deviceSettings.bandwidth_idx,deviceSettings.coding_rate_idx,deviceSettings.frequency_hopping_enabled?1:0,deviceSettings.hours,deviceSettings.minutes,deviceSettings.seconds);sendNotificationToApp(buf);handled=true; }
+            else if (strcmp(action,"SETSETTINGS")==0) { extern void setupLoRa();char buf[256];int vlen=strlen(value);if(vlen>=sizeof(buf))vlen=sizeof(buf)-1;for(int i=0;i<vlen;i++)buf[i]=value[i];buf[vlen]='\0';bool needReinit=false;char*cp=buf;while(cp&&*cp){char*kp=strchr(cp,',');int klen=kp?kp-cp:vlen;if(klen>=64)klen=63;char key[64],val[64];memcpy(key,cp,klen);key[klen]='\0';if(!kp)break;char*eqp=strchr(key,'=');if(!eqp){cp=kp+1;continue;*eqp='\0';strncpy(val,eqp+1,sizeof(val)-1);val[sizeof(val)-1]='\0';if(strcmp(key,"SF")==0){deviceSettings.spreading_factor=atoi(val);}else if(strcmp(key,"BITRATE")==0){deviceSettings.bitrate_idx=atoi(val);needReinit=true;}else if(strcmp(key,"CHAN")==0){char c=toupper(val[0]);deviceSettings.channel_idx=c-'A';needReinit=true;}else if(strcmp(key,"VOL")==0){deviceSettings.volume_level=atoi(val);}else if(strcmp(key,"BL")==0){deviceSettings.backlight=!!atoi(val);}else if(strcmp(key,"BW")==0){deviceSettings.bandwidth_idx=atoi(val);needReinit=true;}else if(strcmp(key,"CR")==0){deviceSettings.coding_rate_idx=atoi(val);needReinit=true;}else if(strcmp(key,"FH")==0){deviceSettings.frequency_hopping_enabled=!!atoi(val);}else if(strcmp(key,"HOUR")==0){deviceSettings.hours=atoi(val);}else if(strcmp(key,"MIN")==0){deviceSettings.minutes=atoi(val);}else if(strcmp(key,"SEC")==0){deviceSettings.seconds=atoi(val);}}cp=kp?kp+1:nullptr;}if(needReinit)setupLoRa();sendNotificationToApp("OK{SETTINGS:saved}");handled=true; }
             else { handled=true; }
         } else {
             if (nlen==9 && localBuf[0]=='G' && localBuf[1]=='E' && localBuf[2]=='T' && localBuf[3]=='S' && localBuf[4]=='T' && localBuf[5]=='A' && localBuf[6]=='T' && localBuf[7]=='U' && localBuf[8]=='S') { extern bool isPeerAlive();bool la=isPeerAlive();char r[32];snprintf(r,sizeof(r),"OK{BLE:1}{LORA:%d}",la?1:0);sendNotificationToApp(r);handled=true; }
@@ -508,19 +663,48 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
 void sendNotificationToApp(const char* message) {
     if (!message || !message[0]) return;
 
-    // Never enqueue during write callback — notify() inside SoftDevice context deadlocks
-    if (in_write_callback) {
-        SerialMon.println(F("DBG:sendNotif DROPPED in_write_callback"));
-        return;
-    }
-
     // Stall period: drop all notifications until SoftDevice stabilizes after connect
     if (millis() < ble_connect_stall_until) {
         SerialMon.println(F("DBG:sendNotif DROPPED stall"));
         return;
     }
 
+    // In write callback: enqueue for later drain, don't drop.
+    // The queue will be drained in handleBLE() after the callback returns.
+    if (in_write_callback) {
+        size_t msgLen = strlen(message);
+        static char notifStr_wc[NOTIF_STR_MAX_LEN];
+        uint8_t buffer_wc[msgLen + 3];
+        memcpy(buffer_wc, message, msgLen);
+        buffer_wc[msgLen] = '~';
+        buffer_wc[msgLen + 1] = '~';
+        buffer_wc[msgLen + 2] = '\0';
+        snprintf(notifStr_wc, sizeof(notifStr_wc), "LINE:NOTIF|DATA:%.*s", (int)(msgLen + 2), buffer_wc);
+        
+        // Use fragmentation when the wrapped message exceeds MTU
+        if (strlen(notifStr_wc) > MAX_BLE_MTU) {
+            extern bool sendFragmentedNotification(const char*);
+            sendFragmentedNotification(message);
+        }
+        
+        if (!enqueue(notifStr_wc)) {
+            return; // queue full, nothing we can do in write callback anyway
+        }
+        // Clear stall state so handleBLE() will drain after this callback returns
+        ble_connect_stall_until = 0;
+        drain_failed = false;
+        drain_stall_until = 0;
+        if (drain_fail_start > 0) drain_fail_start = 0;
+        return;
+    }
+
     size_t msgLen = strlen(message);
+    
+    // Check if the wrapped message would exceed MTU — use fragmentation to avoid truncation
+    extern bool sendFragmentedNotification(const char*);
+    if (msgLen + 2 > MAX_BLE_MTU) {
+        sendFragmentedNotification(message);
+    }
     
     // Create buffer with "~~" terminator
     uint8_t buffer[msgLen + 3];
@@ -529,8 +713,7 @@ void sendNotificationToApp(const char* message) {
     buffer[msgLen + 1] = '~';
     buffer[msgLen + 2] = '\0';
 
-    // Build notification string for queue with max SYNC_MAX_PAYLOAD (230 bytes)
-    // PREFIX(16) + payload(230) + ~~(2) = 248 — fits within MTU 247 after clamping in drainQueue()
+    // Build notification string for queue — fits within MTU after this check
     static char notifStr[NOTIF_STR_MAX_LEN];
     snprintf(notifStr, sizeof(notifStr), "LINE:NOTIF|DATA:%.*s", (int)(msgLen + 2), buffer);
     

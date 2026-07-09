@@ -8,8 +8,8 @@ Takes care of the Android companion app: `cordova_app/PTTLora/`. A Cordova-based
 
 - **Build scripts:** `cordova_app/01_create_project.bat`, `cordova_app/02_build_project.bat`
 - **App source:** `cordova_app/PTTLora/` — Cordova project root
-  - `PTTLora/www/index.html` — entry page (mode selector with 7 mode pills: RAW, TXT, RANGE, TST, PONG, SCAN, PTT)
-  - `PTTLora/www/js/index.js` — BLE + LoRa message logic. Sends `"SENDTXT:{message}"` for TXT mode, `switchMode()` sends mode name via BLE GATT. Device name filter: `/^LilygoT-Echo-[A-F0-9]{8}$/`. Mode pills in index.html map 1:1 to firmware modes. Named contacts: alias set via `SETNAME:{name}` GATT, buddy list sync via `GETBUDDY`/`SETBUDDY`, stored as CSV "CN{name}|DI{id},".
+  - `PTTLora/www/index.html` — entry page (mode selector with pills: RAW, TXT, RANGE, TST, PONG, SCAN, PTT; BEACON and WP are firmware-only modes not exposed in the app UI)
+  - `PTTLora/www/js/index.js` — BLE + LoRa message logic. Sends `"SENDTXT:{message}"` for TXT mode, `switchMode()` sends mode name via BLE GATT. Device name filter: `/^LilygoT-Echo-[A-F0-9]{8}$/`. Mode pills in index.html map 1:1 to firmware modes. Named contacts: alias set via `SETNAME:{name}` GATT, buddy list sync via `GETBUDDY`/`SETBUDDY`, stored as CSV "CN{name}|DI{id},". Device settings panel: toggle via status bar gear button, fetches via `GETSETTINGS`, saves via `SETSETTINGS:KEY=val,...` (keyed format, partial updates supported).
   - `PTTLora/www/css/index.css` — styling
   - `PTTLora/www/img/logo.png` — app icon
   - `PTTLora/config.xml` — Cordova config
@@ -37,6 +37,10 @@ Takes care of the Android companion app: `cordova_app/PTTLora/`. A Cordova-based
 - LoRa message relay between phone and device
 - All firmware text notifications arrive wrapped as `LINE:NOTIF|DATA:{payload}~~` — the app strips the prefix before regex matching. Payloads use `~~` terminators for multi-message framing on a single notification.
 - Device serial monitoring arrives as `LINE:SERIAL|DATA:{log message}` — the companion app displays these as italic gray log lines in the console tab, labeled with the device's short ID. Firmware uses `sendSerialToAppLn()` to send these (appends `\n` automatically). The format is `LINE:SERIAL|DATA:` prefix + raw text payload (no `SERIAL:` wrapper needed anymore).
+- Device settings GATT actions:
+  - `GETSETTINGS` — no value. Response: `OK{SETTINGS:SF=12,BITRATE=2,CHAN=A,VOL=5,BL=1,BW=250000,CR=6,FH=1,HOUR=14,MIN=32,SEC=0}`
+  - `SETSETTINGS:{key=val,...}` — partial updates supported. Response: `OK{SETTINGS:saved}` or `ERR{SETTINGS:...}`
+  - Only changed fields need to be included in SETSETTINGS (order-independent keyed format). Unknown keys are ignored by both sides for forward compatibility.
 
 ## Verification
 

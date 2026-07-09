@@ -34,7 +34,6 @@ Takes care of all vendored Arduino libraries in `libraries/`. These third-party 
 
 - **Do not edit vendored libraries.** If a library needs changes, fork it upstream or vendor a patched copy.
 - Libraries must be copied to Arduino's `libraries` directory before building.
-- There is no `copy to arduino_libraries.txt` file — users should manually copy all folders.
 
 ## Work Guidance
 

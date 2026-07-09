@@ -161,7 +161,7 @@ void handleAppModes() {
             sendSerialToAppLn(String(F("[BTN] Released after ")) + holdDuration + F(" ms"));
 
             // Process button action immediately (before any display update)
-            if (holdDuration < 500) {
+            if (holdDuration < 2000) {
                 if (in_settings_mode) {
                     cycleSettings();
                 } else if (!strcmp(current_mode, "TXT") && txtInboxMsgCount > 0) {
@@ -171,6 +171,12 @@ void handleAppModes() {
                     s_deferred_mode_switch = true;
                     int nextIdx = (modeIndex + 1) % numModes;
                     s_pending_draw_mode = modes[nextIdx];  // Next mode (wraps around)
+                }
+            } else if (holdDuration >= 2000 && holdDuration < 10000) {
+                // Long press: enter/exit settings mode
+                if (!settingsToggled) {
+                    settingsToggled = true;
+                    toggleSettingsMode();
                 }
             }
 
@@ -187,7 +193,7 @@ void handleAppModes() {
 
         unsigned long holdDuration = millis() - btnPressTime;
 
-        if (holdDuration >= 500 && holdDuration < 10000 && !settingsToggled) {
+        if (holdDuration >= 2000 && holdDuration < 10000 && !settingsToggled) {
             settingsToggled = true;
             btnState = BTN_STATE_SETTINGS;
             toggleSettingsMode();
@@ -397,15 +403,15 @@ void handleAppModes() {
     if (in_settings_mode) {
         static uint8_t last_touch_state = 0;
         uint8_t touch_state = digitalRead(TOUCH_PIN) ? 0 : 1;
-        // Detect rising edge (touch release after debounce) to trigger update
-        if (touch_state && !last_touch_state) {
+        // Detect falling edge (touch press) to trigger update — capacitive pads reliably go LOW on touch
+        if (!touch_state && last_touch_state) {
             unsigned long currentTime = millis();
             if ((currentTime - lastTouchPressTime) > touchDebounceDelay) {
                 updateCurrentSetting();
             }
         }
-        // Track when the pin goes LOW (button pressed) to start debounce timer
-        if (!touch_state) {
+        // Track when the pin goes HIGH (released) to start debounce timer
+        if (touch_state) {
             lastTouchPressTime = millis();
         }
         last_touch_state = touch_state;
@@ -687,6 +693,9 @@ bool debouncedTouchPress() {
 void setupAppModes() {
     // Re-ensure MODE_PIN is INPUT_PULLUP — may have been changed by Bluefruit or LoRa init
     pinMode(MODE_PIN, INPUT_PULLUP);
+    
+    // Touch pad (P0.11) must be INPUT_PULLUP for capacitive sensing to work reliably
+    // nRF52 internal pull-up ~40-60kOhm — weak but sufficient for the T-Echo touch surface
     pinMode(TOUCH_PIN, INPUT_PULLUP);
 
     // Verify pull-up is working: should read HIGH (unpressed) at boot

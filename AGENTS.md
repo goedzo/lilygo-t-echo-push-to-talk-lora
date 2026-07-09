@@ -4,8 +4,8 @@
 
 | Directory | What it is |
 |---|---|
-| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino CLI. 16 source modules (+ crash_debug.h, utilities.h). Audio is phone-only — device relays Opus frames via BLE ↔ LoRa. 9 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT, WP. |
-| `main/` (device) | **LILYGO T-Echo** — FCC ID: 2ASYE-T-ECHO, Model: T-Echo. SoC: nRF52840. Flash: W25Q64 (SPI NOR). 1.54" GxDEPG0150BN e-paper (264×192). NFC antenna. Touch sensor (P0.11). 3x LEDs (Green P1.1, Red P1.3, Blue P0.14). SX1262 LoRa (433/868/915 MHz variants). |
+| `main/` | **Firmware** for LilyGO T-Echo (nRF52840). Arduino sketch (.ino + .cpp/.h files). Compiles via Arduino CLI. 37 source modules in main/ (including crash_debug.h, utilities.h, and layout modules not listed below). Audio is phone-only — device relays Opus frames via BLE ↔ LoRa. 9 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT, WP. |
+| `main/` (device) | **LILYGO T-Echo** — FCC ID: 2ASYE-T-ECHO, Model: T-Echo. SoC: nRF52840. Flash: W25Q64 (SPI NOR). 1.54" GxDEPG0150BN e-paper (264×192). NFC antenna. Touch sensor (P0.11, capacitive touch pad — separate from ePaper_Backlight at P1.11). 3x LEDs (Green P1.1, Red P1.3, Blue P0.14). SX1262 LoRa (433/868/915 MHz variants). |
 | `cordova_app/PTTLora/` | Android companion app built with **Cordova** (`cordova-android 13`). BLE plugin only. Build: `02_build_project.bat`. Output APK at `cordova_app/pttlora.apk`. GATT service UUID `"1235"`, char UUID `"ABCE"`. |
 | `lilygo_lora32_keyboard_bridge/main/` | Separate **bridge firmware** for a LilyGO LoRa32 board (ESP32-based) — relays BLE ↔ LoRa. Independent from the main firmware, but uses similar patterns. |
 | `libraries/` | Vendored Arduino libraries. 19 libs on disk (RadioLib, GxEPD2, Codec2, TinyGPSPlus, Adafruit-GFX-Library, etc.). Must be copied to Arduino's `libraries/` directory when building outside this repo. See `libraries/AGENTS.md` for full inventory. |
@@ -27,7 +27,7 @@ arduino-cli core install adafruit:nrf52@1.7.0
 arduino-cli lib install "RadioLib GxEPD2 AceButton TinyGPSPlus"
 ```
 
-Verified: **~29% flash, ~16-17% RAM** (release build including crash_debug + text inbox + waypoints).
+Verified: **~30% flash** on release build (including crash_debug + text inbox + waypoints).
 
 **Prerequisites**: Arduino CLI at `D:\Tools\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe` or in PATH. Adafruit nRF52 core 1.7.0 via `core update-index`.
 
@@ -186,7 +186,7 @@ If **any** file in `main/` was added, modified, deleted, or renamed:
 2. **Upload:** If the build succeeds, run `build_scripts\02_upload_firmware.bat` with a **5-minute (300s) timeout**
    - Ensures the T-Echo enters DFU mode and the binary flashes without hanging.
 3. **Validate output:** Confirm both steps completed successfully:
-   - Build output shows zero errors and reports flash/RAM usage (~30% / ~8%)
+    - Build output shows zero errors and reports flash/RAM usage
    - Upload completes without error (device receives the new firmware)
    - If upload times out or fails, note the failure — do **not** mark the task as complete.
 
@@ -200,7 +200,7 @@ When the user requests a durable behavior change, record it here or in the relev
 
 | Path | Scope |
 |---|---|
-| `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, 9 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT, WP) — 16 source modules + crash_debug.h |
+| `main/AGENTS.md` | T-Echo firmware (nRF52840, SX1262, BLE, 9 modes: BEACON, RAW, TXT, RANGE, TST, PONG, SCAN, PTT, WP) — 37 source modules + crash_debug.h |
 | `build_scripts/AGENTS.md` | Arduino CLI build/upload/CI scripts (primary automation path; PlatformIO not functional) |
 | `cordova_app/AGENTS.md` | Android companion app (Cordova android 13 + BLE plugin, GATT `"1235"` / `"ABCE"`) |
 | `lilygo_lora32_keyboard_bridge/AGENTS.md` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) — independent codebase |

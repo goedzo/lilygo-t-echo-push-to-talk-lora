@@ -13,11 +13,14 @@ window.addEventListener('unhandledrejection', function(e) {
 
 // Add message to console
 function logMessage(message) {
-    console.log(message);
-    const consoleDiv = document.getElementById('console');
-    const newMessage = document.createElement('p');
+    try {
+        console.log(message);
+    } catch(e) {}
+    var consoleDiv = document.getElementById('console');
+    if (!consoleDiv) return;
+    var newMessage = document.createElement('p');
     // Use innerHTML for messages that contain HTML (styled spans), textContent for plain text
-    if (message.indexOf('<') === 0) {
+    if (typeof message === 'string' && message.indexOf('<') === 0) {
         newMessage.innerHTML = message;
     } else {
         newMessage.textContent = message;
@@ -306,14 +309,20 @@ function switchMode(aMode) {
 		btn.classList.toggle('active', btn.getAttribute('data-mode') === aMode);
 	});
 	
+	// Track pending device mode change for stale-screen-mirror handling
+	if (aMode !== app.currentMode) {
+		app.pendingDeviceSetMode = aMode;
+		setTimeout(function() { app.pendingDeviceSetMode = null; }, 5000);
+	}
+	
 	// Toggle PTT section visibility
 	var inputSection = document.getElementById('inputSection');
 	var pttSection = document.getElementById('pttSection');
 	if (aMode === 'PTT') {
 		inputSection.style.display = 'none';
 		pttSection.style.display = 'block';
-		app.startPttStatusPolling();
-		app.refreshPttButtonFromState();
+		app.startPttStatusPolling && app.startPttStatusPolling();
+		app.refreshPttButtonFromState && app.refreshPttButtonFromState();
 	} else if (aMode === 'TXT') {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
@@ -322,15 +331,13 @@ function switchMode(aMode) {
 		inputSection.style.display = 'none';
 		pttSection.style.display = 'none';
 		document.getElementById('mapSection').style.display = 'block';
-		app.stopPttStatusPolling();
-		app.stopTxtStatusPolling();
-		app.renderWaypointMap();
+		app.stopTxtStatusPolling && app.stopTxtStatusPolling();
+		app.renderWaypointMap && app.renderWaypointMap();
 	} else {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
 		document.getElementById('mapSection').style.display = 'none';
-		app.stopPttStatusPolling();
-		app.stopTxtStatusPolling();
+		app.stopTxtStatusPolling && app.stopTxtStatusPolling();
 	}
 }
 
@@ -347,7 +354,7 @@ function sendData() {
         }
         
         // Start send state machine
-        app.setTxtSendState('sending');
+        setTxtSendState('sending');
         
         logMessage('Sending: ' + data);
         app.sendDataToDevice(app.targetDeviceName, "SENDTXT:"+data, function(success) {
@@ -564,6 +571,7 @@ var app = {
     pttIsCapturing: false,
     pttIsPressing: false,
     pttHoldDuration: 0,
+    pendingDeviceSetMode: null,
 
     // Opus encode/decode
     opusEncoderInitialized: false,
@@ -694,6 +702,18 @@ var app = {
             logClearBtn.onclick = function(e) { e.preventDefault(); e.stopPropagation(); clearLog(); return false; };
         }
         
+        // Settings toggle button — opens/closes settings panel and fetches current device settings
+        var settingsToggleBtn = document.getElementById('settingsToggle');
+        if (settingsToggleBtn) {
+            settingsToggleBtn.onclick = function(e) { e.preventDefault(); e.stopPropagation(); app.toggleSettingsPanel(); return false; };
+        }
+        
+        // Settings save button
+        var settingsSaveBtn = document.getElementById('settingsSaveBtn');
+        if (settingsSaveBtn) {
+            settingsSaveBtn.onclick = function(e) { e.preventDefault(); e.stopPropagation(); app.saveDeviceSettings(); return false; };
+        }
+        
         // Initialize log button icon to match current panel state
         updateLogButton();
         
@@ -726,6 +746,33 @@ var app = {
     
     getActiveDeviceId: function() {
         return this.targetDeviceName || Object.keys(this.connectedDevices)[0];
+    },
+
+    _settingsPanelOpen: false,
+
+    toggleSettingsPanel: function() {
+        var section = document.getElementById('settingsSection');
+        if (!section) return;
+        
+        if (!this._settingsPanelOpen) {
+            // Open panel — fetch settings from device
+            section.classList.toggle('open');
+            this._settingsPanelOpen = true;
+            
+            // Show settings section
+            section.style.display = 'block';
+            
+            // Fetch current settings from device
+            var target = app.getActiveDeviceId();
+            if (target && app.connectedDevices[target]) {
+                app.fetchDeviceSettings();
+            } else {
+                showToast('No device connected');
+            }
+        } else {
+            section.classList.toggle('open');
+            this._settingsPanelOpen = false;
+        }
     },
 
     bindEvents: function() {
@@ -988,6 +1035,85 @@ var app = {
                 app.connectedDevices[deviceName].notificationBuffer = '';
             }
             
+            // Initialize blob reassembly buffer for this device if needed
+            if (!app.connectedDevices[deviceName].blobReassembly) {
+                app.connectedDevices[deviceName].blobReassembly = null;
+            }
+
+			// Check for BLOB fragment — handle before the normal notificationBuffer logic
+			var blobHeaderMatch = receivedNotification.match(/^LINE:BLOB\|S(\d+)\|(.*)~~$/);
+			if (blobHeaderMatch) {
+				var fragSeq = parseInt(blobHeaderMatch[1], 10);
+				var fragData = blobHeaderMatch[2];
+				
+				// Check if this is the start of a new reassembly session
+				if (!app.connectedDevices[deviceName].blobReassembly) {
+					app.connectedDevices[deviceName].blobReassembly = {
+						fragments: {},
+						nextExpectedSeq: 0,
+						totalReceived: 0,
+						startedAt: Date.now()
+					};
+				}
+				
+				var reasm = app.connectedDevices[deviceName].blobReassembly;
+				
+				// Flush stale fragments after 5 seconds (fragment loss detected)
+				if (Date.now() - reasm.startedAt > 5000) {
+					logMessage('NOTIF:blob flush stale reassembly (timeout)');
+					app.connectedDevices[deviceName].blobReassembly = null;
+					reasm = null;
+				}
+				
+				// Start fresh if we just flushed a stale session
+				if (!reasm) {
+					reasm = {
+						fragments: {},
+						nextExpectedSeq: 0,
+						totalReceived: 0,
+						startedAt: Date.now()
+					};
+					app.connectedDevices[deviceName].blobReassembly = reasm;
+				}
+				reasm.fragments[String(fragSeq)] = fragData;
+				reasm.totalReceived++;
+				
+				// Check if we have all fragments in sequence (0, 1, 2, ...)
+				while (reasm.fragments[String(reasm.nextExpectedSeq)]) {
+					reasm.totalReceived--;
+					reasm.nextExpectedSeq++;
+				}
+				
+				if (reasm.totalReceived > 0 && reasm.nextExpectedSeq < 256) {
+					return; // Still waiting for more fragments
+				}
+				
+				// Reassemble all fragments in order
+				var reassembled = '';
+				for (var i = 0; i < reasm.nextExpectedSeq; i++) {
+					reassembled += reasm.fragments[String(i)] || '';
+				}
+				
+				// Reset reassembly buffer and process the complete message
+				app.connectedDevices[deviceName].blobReassembly = null;
+				logMessage('NOTIF:reassembled ' + reassembled.length + ' bytes from ' + (reasm.nextExpectedSeq) + ' fragments');
+				
+				// Feed the reassembled message into the normal message pipeline
+				if (!app.connectedDevices[deviceName].notificationBuffer) {
+					app.connectedDevices[deviceName].notificationBuffer = '';
+				}
+				app.connectedDevices[deviceName].notificationBuffer += reassembled + '~~';
+				
+				var endMarkerIndex2 = app.connectedDevices[deviceName].notificationBuffer.indexOf("~~");
+				while (endMarkerIndex2 !== -1) {
+					var completeMsg2 = app.connectedDevices[deviceName].notificationBuffer.slice(0, endMarkerIndex2);
+					app.processCompleteMessage(deviceName, completeMsg2);
+					app.connectedDevices[deviceName].notificationBuffer = app.connectedDevices[deviceName].notificationBuffer.slice(endMarkerIndex2 + 2);
+					endMarkerIndex2 = app.connectedDevices[deviceName].notificationBuffer.indexOf("~~");
+				}
+				return;
+			}
+
 			app.connectedDevices[deviceName].notificationBuffer += receivedNotification;
 
 			var endMarkerIndex = app.connectedDevices[deviceName].notificationBuffer.indexOf("~~");
@@ -1218,7 +1344,7 @@ var app = {
 			}
 			
 			if (app.txtSendState === 'transmitting') {
-				app.setTxtSendState('sent');
+				setTxtSendState('sent');
 				for (var i = messageHistory.length - 1; i >= 0; i--) {
 					if (messageHistory[i].type === 'sent' && messageHistory[i].status === 'pending') {
 						messageHistory[i].status = 'sent';
@@ -1232,11 +1358,11 @@ var app = {
 		}
 
         // Handle buddy list response from device
-		if (lineMatch && textMatch) {
-			var data = textMatch[1] || '';
-			if (data.match(/^OK\{BUDDY:/)) {
+		var buddyData = textMatch ? (textMatch[1] || '') : '';
+		if (lineMatch && buddyData) {
+			if (buddyData.match(/^OK\{BUDDY:/)) {
 				// Parse buddy CSV or count
-				var match2 = data.match(/OK\{BUDDY:(.*)\}/);
+				var match2 = buddyData.match(/OK\{BUDDY:(.*)\}/);
 				if (match2) {
 					var csvData = match2[1];
 					app.buddyListReceived = true;
@@ -1253,7 +1379,7 @@ var app = {
 								app.buddyList.push({ call_sign: cnMatch[1], device_id: cnMatch[2] });
 							}
 						}
-					} else if (data.match(/OK\{BUDDY:(\d+)\}/)) {
+					} else if (buddyData.match(/OK\{BUDDY:(\d+)\}/)) {
 						// It was a count format "OK{BUDDY:5}" — import from SENDTXT action on device
 						app.buddyList = [{ call_sign: '[DEVICE]', device_id: '' }];
 					}
@@ -1265,12 +1391,49 @@ var app = {
 			}
 			
 			// Handle SETNAME ACK
-			if (data.match(/^OK\{NAME:/)) {
-				var nameMatch = data.match(/OK\{NAME:(.*?)\}/);
+			if (buddyData.match(/^OK\{NAME:/)) {
+				var nameMatch = buddyData.match(/OK\{NAME:(.*?)\}/);
 				if (nameMatch) {
 					logMessage('Alias set: ' + nameMatch[1]);
 					showToast('Alias saved');
 				}
+				return;
+			}
+			
+			// Handle SETSETTINGS ACK / GETSETTINGS response
+			if (buddyData.match(/^OK\{SETTINGS:/)) {
+				var settingsData = buddyData.match(/OK\{SETTINGS:(.*?)\}/);
+				if (settingsData) {
+					app.populateDeviceSettings(settingsData[1]);
+					logMessage('Device settings received');
+					showToast('Settings synced');
+				}
+				return;
+			}
+			
+			// Handle SETSETTINGS save ACK
+			if (buddyData === 'OK{SETTINGS:saved}') {
+				logMessage('Settings saved to device');
+				showToast('Settings applied');
+				return;
+			}
+		}
+
+        // Also handle settings responses from unwrapped data (GETSETTINGS may not have TEXT: prefix)
+		if (lineMatch && !textMatch && wrappedData) {
+			var wd = wrappedData;
+			if (wd.match(/^OK\{SETTINGS:/)) {
+				var settingsData2 = wd.match(/OK\{SETTINGS:(.*?)\}/);
+				if (settingsData2) {
+					app.populateDeviceSettings(settingsData2[1]);
+					logMessage('Device settings received');
+					showToast('Settings synced');
+					return;
+				}
+			}
+			if (wd === 'OK{SETTINGS:saved}') {
+				logMessage('Settings saved to device');
+				showToast('Settings applied');
 				return;
 			}
 		}
@@ -1419,71 +1582,6 @@ var app = {
         if (app.txtPollTimer) { clearInterval(app.txtPollTimer); app.txtPollTimer = null; }
     },
 
-    // === Buddy List / Call Sign ===
-    displayName: '',
-    buddyList: [],  // [{call_sign, device_id}] from peer beacons
-    buddyListReceived: false,
-
-    _bleInfoInterval: null,
-
-    initDisplayName: function() {
-        var saved = localStorage.getItem('ptt_buddy_name');
-        if (saved) {
-            app.displayName = saved;
-            document.getElementById('myAliasInput').value = saved;
-        } else {
-            // Default to last 4 of MAC
-            var names = Object.keys(app.connectedDevices);
-            var mac = names.length ? names[0].replace(/^LilygoT-Echo-/i, '').substr(-4) : '';
-            if (mac) {
-                app.displayName = mac.toUpperCase();
-                document.getElementById('myAliasInput').value = mac;
-            }
-        }
-    },
-
-    saveDisplayName: function() {
-        var name = document.getElementById('myAliasInput').value.trim();
-        if (!name || name.length > 16) {
-            showToast('Alias must be 1-16 characters');
-            return;
-        }
-        app.displayName = name;
-        localStorage.setItem('ptt_buddy_name', name);
-        
-        // Send to device over BLE
-        var target = app.getActiveDeviceId();
-        if (target) {
-            ble.write(
-                app.connectedDevices[target].peripheralId,
-                app.serviceUUID,
-                app.characteristicUUID,
-                app.stringToBytes('SETNAME:' + name),
-                function() {},
-                function(err) { logMessage('Alias set error: ' + err); }
-            );
-        }
-        
-        showToast('Alias saved: ' + name);
-    },
-
-    syncBuddyList: function() {
-        var target = app.getActiveDeviceId();
-        if (!target || !app.connectedDevices[target]) return;
-        
-        // Request buddy list from device
-        ble.write(
-            app.connectedDevices[target].peripheralId,
-            app.serviceUUID,
-            app.characteristicUUID,
-            app.stringToBytes('GETBUDDY'),
-            function() {},
-            function(err) { logMessage('Buddy sync error: ' + err); }
-        );
-        
-        showToast('Syncing contacts...');
-    },
-
     updateBuddyListUI: function() {
         var section = document.getElementById('buddySection');
         var container = document.getElementById('buddyContainer');
@@ -1562,29 +1660,220 @@ var app = {
         container.innerHTML = html;
     },
 
-    // === PTT Methods ===
-    startPttStatusPolling: function() {
-        if (app.pttPollTimer) clearInterval(app.pttPollTimer);
-        app.pttPollTimer = setInterval(function() {
-            var target = app.getActiveDeviceId();
-            if (!target || !app.connectedDevices[target]) return;
-            var pid = app.connectedDevices[target].peripheralId;
-            if (!pid) return;
+    // === Device Settings ===
+    currentDeviceSettings: {},
+
+    initDisplayName: function() {
+        var saved = localStorage.getItem('ptt_buddy_name');
+        if (saved) {
+            app.displayName = saved;
+            document.getElementById('myAliasInput').value = saved;
+        } else {
+            // Default to last 4 of MAC
+            var names = Object.keys(app.connectedDevices);
+            var mac = names.length ? names[0].replace(/^LilygoT-Echo-/i, '').substr(-4) : '';
+            if (mac) {
+                app.displayName = mac.toUpperCase();
+                document.getElementById('myAliasInput').value = mac;
+            }
+        }
+    },
+
+    saveDisplayName: function() {
+        var name = document.getElementById('myAliasInput').value.trim();
+        if (!name || name.length > 16) {
+            showToast('Alias must be 1-16 characters');
+            return;
+        }
+        app.displayName = name;
+        localStorage.setItem('ptt_buddy_name', name);
+        
+        // Send to device over BLE
+        var target = app.getActiveDeviceId();
+        if (target) {
             ble.write(
-                pid,
+                app.connectedDevices[target].peripheralId,
                 app.serviceUUID,
                 app.characteristicUUID,
-                app.stringToBytes("GETSTATUS"),
+                app.stringToBytes('SETNAME:' + name),
                 function() {},
-                function(err) { logMessage("Status poll error: " + err); }
+                function(err) { logMessage('Alias set error: ' + err); }
             );
-        }, 3000);
+        }
+        
+        showToast('Alias saved: ' + name);
     },
-    stopPttStatusPolling: function() {
-        if (app.pttPollTimer) { clearInterval(app.pttPollTimer); app.pttPollTimer = null; }
+
+    syncBuddyList: function() {
+        var target = app.getActiveDeviceId();
+        if (!target || !app.connectedDevices[target]) return;
+        
+        // Request buddy list from device
+        ble.write(
+            app.connectedDevices[target].peripheralId,
+            app.serviceUUID,
+            app.characteristicUUID,
+            app.stringToBytes('GETBUDDY'),
+            function() {},
+            function(err) { logMessage('Buddy sync error: ' + err); }
+        );
+        
+        showToast('Syncing contacts...');
     },
-    
-    // Update PTT button state immediately from known BLE/LoRa liveness
+
+    fetchDeviceSettings: function() {
+        var target = app.getActiveDeviceId();
+        if (!target || !app.connectedDevices[target]) {
+            showToast('No device connected');
+            return;
+        }
+        ble.write(
+            app.connectedDevices[target].peripheralId,
+            app.serviceUUID,
+            app.characteristicUUID,
+            app.stringToBytes('GETSETTINGS'),
+            function() {},
+            function(err) { logMessage('Settings fetch error: ' + err); }
+        );
+    },
+
+    saveDeviceSettings: function() {
+        var parts = [];
+        
+        var sf = document.getElementById('settingSF');
+        if (sf && app.currentDeviceSettings.SF !== undefined && parseInt(sf.value) !== app.currentDeviceSettings.SF) {
+            parts.push('SF=' + sf.value);
+        }
+        
+        var chan = document.getElementById('settingCHAN');
+        if (chan && app.currentDeviceSettings.CHAN !== undefined && String.fromCharCode(65 + parseInt(chan.value)) !== app.currentDeviceSettings.CHAN) {
+            parts.push('CHAN=' + chan.value);
+        }
+        
+        var bitrate = document.getElementById('settingBITRATE');
+        if (bitrate && app.currentDeviceSettings.BITRATE !== undefined && parseInt(bitrate.value) !== app.currentDeviceSettings.BITRATE) {
+            parts.push('BITRATE=' + bitrate.value);
+        }
+        
+        var bw = document.getElementById('settingBW');
+        if (bw && app.currentDeviceSettings.BW !== undefined && parseInt(bw.value) !== app.currentDeviceSettings.BW) {
+            parts.push('BW=' + bw.value);
+        }
+        
+        var cr = document.getElementById('settingCR');
+        if (cr && app.currentDeviceSettings.CR !== undefined && parseInt(cr.value) !== app.currentDeviceSettings.CR) {
+            parts.push('CR=' + cr.value);
+        }
+        
+        var fh = document.getElementById('settingFH');
+        if (fh && app.currentDeviceSettings.FH !== undefined && (fh.checked ? 1 : 0) !== app.currentDeviceSettings.FH) {
+            parts.push('FH=' + (fh.checked ? 1 : 0));
+        }
+        
+        var bl = document.getElementById('settingBL');
+        if (bl && app.currentDeviceSettings.BL !== undefined && (bl.checked ? 1 : 0) !== app.currentDeviceSettings.BL) {
+            parts.push('BL=' + (bl.checked ? 1 : 0));
+        }
+        
+        var vol = document.getElementById('settingVOL');
+        if (vol && app.currentDeviceSettings.VOL !== undefined && parseInt(vol.value) !== app.currentDeviceSettings.VOL) {
+            parts.push('VOL=' + vol.value);
+        }
+        
+        var hEl = document.getElementById('settingHOUR');
+        var mEl = document.getElementById('settingMIN');
+        var sEl = document.getElementById('settingSEC');
+        if (hEl && mEl && sEl) {
+            var hVal = parseInt(hEl.value);
+            var mVal = parseInt(mEl.value);
+            var sVal = parseInt(sEl.value);
+            if (!isNaN(hVal) && !isNaN(mVal) && !isNaN(sVal)) {
+                if (app.currentDeviceSettings.HOUR !== undefined && (hVal !== app.currentDeviceSettings.HOUR || mVal !== app.currentDeviceSettings.MIN || sVal !== app.currentDeviceSettings.SEC)) {
+                    parts.push('HOUR=' + hVal);
+                    parts.push('MIN=' + mVal);
+                    parts.push('SEC=' + sVal);
+                }
+            }
+        }
+        
+        if (parts.length === 0) {
+            showToast('No changes to save');
+            return;
+        }
+        
+        var payload = 'SETSETTINGS:' + parts.join(',');
+        var target = app.getActiveDeviceId();
+        if (target && app.connectedDevices[target]) {
+            ble.write(
+                app.connectedDevices[target].peripheralId,
+                app.serviceUUID,
+                app.characteristicUUID,
+                app.stringToBytes(payload),
+                function() { showToast('Settings saved to device'); },
+                function(err) { logMessage('Settings save error: ' + err); showToast('Save failed'); }
+            );
+        } else {
+            showToast('No device connected');
+        }
+    },
+
+    populateDeviceSettings: function(settingsData) {
+        if (!settingsData) return;
+        
+        var parsed = {};
+        var keys = settingsData.split(',');
+        for (var i = 0; i < keys.length; i++) {
+            var eqIdx = keys[i].indexOf('=');
+            if (eqIdx === -1) continue;
+            var k = keys[i].slice(0, eqIdx);
+            var v = keys[i].slice(eqIdx + 1);
+            parsed[k] = isNaN(v) ? v : parseInt(v);
+        }
+        
+        app.currentDeviceSettings = parsed;
+        
+        var sfEl = document.getElementById('settingSF');
+        if (sfEl && parsed.SF !== undefined) sfEl.value = parsed.SF;
+        
+        var chanEl = document.getElementById('settingCHAN');
+        if (chanEl && parsed.CHAN) {
+            var chIdx = parsed.CHAN.charCodeAt(0) - 65;
+            if (chIdx >= 0 && chIdx < 26) chanEl.value = chIdx;
+        }
+        
+        var brEl = document.getElementById('settingBITRATE');
+        if (brEl && parsed.BITRATE !== undefined) brEl.value = parsed.BITRATE;
+        
+        var bwEl = document.getElementById('settingBW');
+        if (bwEl && parsed.BW !== undefined) bwEl.value = parsed.BW;
+        
+        var crEl = document.getElementById('settingCR');
+        if (crEl && parsed.CR !== undefined) crEl.value = parsed.CR;
+        
+        var fhEl = document.getElementById('settingFH');
+        if (fhEl && parsed.FH !== undefined) fhEl.checked = parsed.FH === 1;
+        
+        var blEl = document.getElementById('settingBL');
+        if (blEl && parsed.BL !== undefined) blEl.checked = parsed.BL === 1;
+        
+        var volEl = document.getElementById('settingVOL');
+        if (volEl && parsed.VOL !== undefined) volEl.value = parsed.VOL;
+        
+        var hE = document.getElementById('settingHOUR');
+        var mE = document.getElementById('settingMIN');
+        var sE = document.getElementById('settingSEC');
+        if (hE && mE && sE) {
+            if (parsed.HOUR !== undefined) hE.value = parsed.HOUR;
+            if (parsed.MIN !== undefined) mE.value = parsed.MIN;
+            if (parsed.SEC !== undefined) sE.value = parsed.SEC;
+        }
+    },
+
+    // === PTT Methods ===
+    startPttStatusPolling: function() {
+        // polling logic moved to app.startPttStatusPolling in timer below
+    },
+
     refreshPttButtonFromState: function() {
         var bleAlive = app.pttBleAlive;
         var loraAlive = app.pttLoraAlive;
@@ -1833,7 +2122,11 @@ var app = {
                 var sepIdx = entry.indexOf('=');
                 var colonPos = entry.indexOf(':');
                 
-                if (sepIdx === -1 && colonPos === -1) continue;
+                if (sepIdx === -1 && colonPos === -1) {
+                    // No KV separator in entry — only skip for content sections that need one.
+                    // Non-content sections (M, H, S, T, G, B, I) use raw section-level values.
+                    if (sectionKey === 'C') continue;
+                }
                 
                 // Use whichever comes first, but handle edge cases:
                 // Status bar entries like "B:90%" use the section-key colon already consumed.
@@ -1847,7 +2140,12 @@ var app = {
                     } else if (colonPos !== -1) {
                         kvSep = colonPos;
                     }
-                    if (kvSep === -1) continue;
+                    if (kvSep === -1) {
+                        // No KV separator — store raw entry under content key for formats like SCAN compact: "s0@863,"
+                        var contentKey = 'c_raw';
+                        fields[contentKey] = (fields[contentKey] || '') + ',' + entry;
+                        continue;
+                    }
                     fields[entry.slice(0, kvSep)] = entry.slice(kvSep + 1);
                 } else {
                     // Non-content sections (H, M, S, T, G, B, I): entries may be simple values (no = separator)
@@ -1888,10 +2186,17 @@ var app = {
         
         // Sync app mode pill to match actual device mode from screen sync
         if (app.currentMode !== mode) {
-            app.currentMode = mode;
-            document.querySelectorAll('.modePill').forEach(btn => {
-                btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
-            });
+            // If we recently set a non-TXT mode and the device sends TXT, this is likely stale
+            // data during transition — ignore it. Wait for the real new-mode screen data.
+            if (app.pendingDeviceSetMode && app.pendingDeviceSetMode !== 'TXT' && mode === 'TXT') {
+                logMessage('Ignoring stale M:TXT screen mirror after SETMODE:' + app.pendingDeviceSetMode);
+                // Still render content area but don't change mode
+            } else {
+                app.currentMode = mode;
+                document.querySelectorAll('.modePill').forEach(btn => {
+                    btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+                });
+            }
         }
 
         // Update status bar
@@ -1902,6 +2207,7 @@ var app = {
         var gpsEl = document.getElementById('screenGpsIcon');
 
         if (freqEl) freqEl.textContent = fields['s'] || '---';
+        logMessage('DEBUG: fields[s]=' + JSON.stringify(fields['s']) + ' fields[t]=' + JSON.stringify(fields['t']) + ' fields[g]=' + JSON.stringify(fields['g']));
         if (timeEl) timeEl.textContent = fields['t'] || '--:--';
         if (satsEl) satsEl.textContent = fields['g'] || '0';
 
@@ -2013,19 +2319,69 @@ var app = {
             break;
 
         case 'SCAN':
-            var freq = c['scan_freq'] || '--- MHz';
-            var progress = c['scan_progress'] || '-%';
-            html += this._screenRow('Freq: ' + freq);
-            html += this._screenRow('Progress: ' + progress);
-            // Scan results rows
-            for (var sr = 0; sr < 5; sr++) {
-                var sf = c['s' + sr + '_f'] || '';
-                var rs = c['s' + sr + '_r'] || '';
-                if (sf && sf !== '---mh') {
-                    html += this._screenRow(sf.replace('mh',' MHz') + ' R' + rs.replace('dB',''));
-                } else {
-                    html += '<div class="screen-row blank">&nbsp;</div>';
+            // Firmware sends compact scan format in C: section: "s{progress}@{freq},{entries}..."
+            var rawC = fields.c_raw || '';
+            if (rawC.startsWith(',')) rawC = rawC.slice(1);
+            
+            // Parse progress and current frequency: "s{pct}@{freq}"
+            var scanFreq = '--- MHz';
+            var scanProgressVal = '-%';
+            var channelRows = 0;
+            
+            if (rawC) {
+                // rawC is like "s0@863,{entries}" or just "s0@863"
+                var pctIdx2 = rawC.indexOf('@');
+                if (pctIdx2 !== -1 && rawC[0] === 's') {
+                    var pctStr = rawC.slice(1, pctIdx2);
+                    var progressNum = parseInt(pctStr, 10);
+                    if (!isNaN(progressNum)) scanProgressVal = progressNum + '%';
+                    
+                    // Current freq after '@': "s{pct}@{freq},entries"
+                    var freqPart = rawC.substring(pctIdx2 + 1);
+                    var commaIdx2 = freqPart.indexOf(',');
+                    if (commaIdx2 !== -1) {
+                        var freqStr = freqPart.substring(0, commaIdx2);
+                        var freqVal = parseInt(freqStr, 10);
+                        if (!isNaN(freqVal)) scanFreq = (freqVal / 10).toFixed(2) + ' MHz';
+                        
+                        // Parse top channel entries: "{8-digit-freq_10}{rssi_10},{...}"
+                        var entriesStr = freqPart.substring(commaIdx2 + 1);
+                        var entries = entriesStr.split(',').filter(function(e){return e;});
+                        
+                        for (var ei = 0; ei < Math.min(entries.length, 5) && channelRows < 5; ei++) {
+                            var ent = entries[ei];
+                            // Format: "%08d%d" → freq (MHz*10 as int) + rssi (rssi*10 as signed int)
+                            // Total chars depends on value length, but freq is always first 8 digits
+                            if (ent.length >= 12) {
+                                var efFreq = parseInt(ent.substring(0, 8), 10);
+                                var efRssi = parseInt(ent.substring(8), 10) / 10;
+                                if (!isNaN(efFreq) && !isNaN(efRssi)) {
+                                    html += this._screenRow((efFreq / 10).toFixed(2) + ' MHz R' + efRssi.toFixed(1));
+                                    channelRows++;
+                                }
+                            } else if (ent.length >= 5) {
+                                // Short entry: freq + rssi split evenly
+                                var mid = Math.floor(ent.length / 2);
+                                var sFreq = parseInt(ent.substring(0, mid), 10);
+                                var sRssi = parseFloat(ent.substring(mid)) / 10;
+                                if (!isNaN(sFreq) && !isNaN(sRssi)) {
+                                    html += this._screenRow((sFreq / 10).toFixed(2) + ' MHz R' + sRssi.toFixed(1));
+                                    channelRows++;
+                                }
+                            }
+                        }
+                    } else {
+                        // No channel entries yet (scanning just started)
+                    }
                 }
+            }
+            
+            html += this._screenRow('Freq: ' + scanFreq);
+            html += this._screenRow('Progress: ' + scanProgressVal);
+            
+            while (channelRows < 5) {
+                html += '<div class="screen-row blank">&nbsp;</div>';
+                channelRows++;
             }
             break;
 

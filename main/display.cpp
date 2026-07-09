@@ -223,7 +223,8 @@ void setupDisplay() {
     } while (display->nextPage());
 
     sendSerialToAppLn("[Display] doing full refresh...");
-    display->refresh(false);
+    display->setPartialWindow(0, 12, 200, 184);
+    display->refresh(true);  // partial instead of full to avoid long wait at boot
     sendSerialToAppLn("[Display] COMPLETE - e-paper should be updating now");
     
     s_boot_complete_ms = millis();
@@ -310,24 +311,13 @@ void printTimeIcon(bool updateScreen) {}
 void printStatusOnApp() {}
 void sleepDisplay() {}
 
-// Call when mode switches — next draw will use full refresh, then revert to partial
+// No-op: full refresh disabled to avoid long waiting times.
 void forceFullRefresh() {
-    s_need_full_refresh = true;
+    // s_need_full_refresh = true;
 }
 
-// Called by layout functions — returns true if this render should be full, then resets flag
+// Always returns false — all draws use partial refresh (non-blocking waveform, ~0.8s)
 bool pendingFullRefresh() {
-    // Force full refresh for 3s after boot completes. During this window the e-paper panel is
-    // still stabilizing — partial updates corrupt the image (ghosting, blank body area) when
-    // the app connects via BLE and triggers a draw too quickly.
-    if (s_boot_complete_ms > 0 && (millis() - s_boot_complete_ms) < 3000) {
-        return true;
-    }
-
-    if (s_need_full_refresh) {
-        s_need_full_refresh = false;
-        return true;
-    }
     return false;
 }
 

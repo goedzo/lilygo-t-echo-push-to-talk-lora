@@ -177,15 +177,9 @@ void drawBottomStatusbar() {
 typedef void (*drawFn)();
 
 static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
-    if (use_full_refresh) {
-        display->setFullWindow();
-    } else {
-        // Partial window: covers header (y=12) through bottom statusbar area (y=196)
-        display->setPartialWindow(0, 12, disp_width, 184);
-        // Also tell the SSD1681 GRAM controller where to refresh — GxEPD2's setPartialWindow()
-        // stores coords internally but triggerEpdRefresh() sends raw commands that need them.
-        epdSetGRAMWindow(0, 12, disp_width, 184);
-    }
+    // Always use partial window — full refresh disabled to avoid long waiting times.
+    display->setPartialWindow(0, 12, disp_width, 184);
+    epdSetGRAMWindow(0, 12, disp_width, 184);
 
     display->firstPage();
     do {
@@ -193,8 +187,8 @@ static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
         drawContent();
     } while (display->nextPage());
 
-    // Trigger non-blocking waveform transfer — wall-clock time identical to blocking refresh
-    triggerEpdRefresh(use_full_refresh);
+    // Always use partial waveform transfer — ~0.8s instead of ~3.8s
+    triggerEpdRefresh(false);
 }
 
 // ── Default layout: header row + bottom status bar ──
