@@ -232,7 +232,11 @@ static void drainQueue() {
 
         int32_t ret = bleCharacteristic.notify(buffer, total);
 
+        // Pace notifications: 50ms gap between each to avoid overwhelming the BLE connection event loop
         if (ret == ERROR_NONE) {
+            uint32_t next_send_at = millis() + 50;
+            while (millis() < next_send_at) { /* wait */ }
+
             drain_failed = false;
             drain_stall_until = 0;
             if (useBlob) {
@@ -543,10 +547,12 @@ void handleBLE() {
         drainQueue();
     } else {
         static uint32_t last_summary = 0;
-        if (millis() - last_summary > 2000) {
+        if (ble_connected && millis() - last_summary > 2000) {
             last_summary = millis();
             uint8_t queue_count = (notif_head >= notif_tail) ? (notif_head - notif_tail) : (NOTIF_QUEUE_SIZE - notif_tail + notif_head);
-            SerialMon.print(F("[BLE] summary: connected=0 empty="));
+            SerialMon.print(F("[BLE] summary: connected="));
+            SerialMon.print(ble_connected ? 1 : 0);
+            SerialMon.print(" empty=");
             SerialMon.print(notif_queue_empty ? 1 : 0);
             SerialMon.print(" head=");
             SerialMon.print(notif_head);
