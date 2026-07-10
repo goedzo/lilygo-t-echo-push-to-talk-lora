@@ -1008,7 +1008,6 @@ var app = {
             lastNotifKey = notifKey;
             lastNotifTime = nowMs;
 
-			logMessage('NOTIF:raw=' + data.byteLength + 'b');
 			var byteArray = new Uint8Array(data);
 			
 			// Check for binary Opus frame prefix (raw BLE notify, no text wrapping)
@@ -2121,12 +2120,6 @@ var app = {
                 // Values may contain colons (time: 14:32) so we only split the first one.
                 var sepIdx = entry.indexOf('=');
                 var colonPos = entry.indexOf(':');
-                
-                if (sepIdx === -1 && colonPos === -1) {
-                    // No KV separator in entry — only skip for content sections that need one.
-                    // Non-content sections (M, H, S, T, G, B, I) use raw section-level values.
-                    if (sectionKey === 'C') continue;
-                }
                 
                 // Use whichever comes first, but handle edge cases:
                 // Status bar entries like "B:90%" use the section-key colon already consumed.

@@ -2,6 +2,7 @@
 #include <bluefruit.h>
 
 extern uint32_t ble_connect_stall_until;
+extern volatile bool cccd_subscribed;  // True after central subscribes to notify characteristic
 
 void setupBLE();
 void handleBLE();
