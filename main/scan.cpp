@@ -6,6 +6,7 @@
 
 extern void sendSerialToApp(const String& msg);
 extern void sendSerialToAppLn(const String& msg);
+extern void sendScreenSyncIfDirty();
 
 #define MAX_TOP_CHANNELS 10
 
@@ -148,6 +149,8 @@ void handleFrequencyScan() {
                 if (scanning && millis() - scanLastNotifTime >= SCAN_NOTIF_INTERVAL_MS) {
                     syncTopChannelsToLayout();
                     scanLastNotifTime = millis();
+                    // Push screen sync to companion app so the app display updates during scanning
+                    sendScreenSyncIfDirty();
                 } else {
                     // Still update layout state for local rendering, but skip BLE sync
                     auto& S = layout_state;

@@ -309,6 +309,11 @@ function switchMode(aMode) {
 		btn.classList.toggle('active', btn.getAttribute('data-mode') === aMode);
 	});
 	
+	// Request screen sync so the app updates immediately after device switches modes
+	setTimeout(function() {
+		app.sendDataToDevice(targetDeviceName, 'GETSCREEN');
+	}, 100);
+	
 	// Track pending device mode change for stale-screen-mirror handling
 	if (aMode !== app.currentMode) {
 		app.pendingDeviceSetMode = aMode;
@@ -1468,6 +1473,18 @@ var app = {
 			var syncData = syncSource.slice(lineMatch[0].length);
 			logMessage('SCREEN:MIRROR data=' + JSON.stringify(syncData).substring(0, 300));
 			var fields = app.parseScreenMirrorFields(syncData);
+			
+			// Extract channel and spreading factor from H field (format: "chn:A spf:8") to update Device Settings panel
+			if (fields.h) {
+				var hMatch = fields.h.match(/chn:([A-Fa-f])/);
+				var sfMatch = fields.h.match(/spf:(\d+)/);
+				var fakeSettings = '';
+				if (hMatch && sfMatch) {
+					fakeSettings = 'CHAN=' + hMatch[1].toUpperCase() + ',SF=' + sfMatch[1];
+					app.populateDeviceSettings(fakeSettings);
+				}
+			}
+			
 			app.renderScreenMirror(syncData);
 			
 			// BLE liveness update from screen mirror — if the device sends screen data,

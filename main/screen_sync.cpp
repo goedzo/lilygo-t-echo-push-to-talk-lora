@@ -239,7 +239,8 @@ void sendScreenSync() {
     // Only push if something OTHER than battery changed.
     // Battery ADC noise causes tiny percentage swings (134→135%) that map to the same icon level.
     // Time gives one update/minute anyway — no need to flood on battery-only changes.
-    if (!batt_changed) {
+    // EXCEPT: scan mode always needs updates (progress bar and top channels change continuously)
+    if (!batt_changed && strcmp(current_mode, "SCAN") != 0) {
         last_batt_idx = bat_idx;
         last_sync_ms = now;
         return;
@@ -303,6 +304,13 @@ void sendScreenSyncForced() {
     
     // Send via BLE — reuses existing sendScreenSync payload generation
     // but without any throttle or battery-change filtering
+    
+    // If a normal dirty sync is pending, clear it — the forced sync we're about to send
+    // will carry the latest screen state anyway. The periodic sync will fire again next interval.
+    if (screen_dirty) {
+        screen_dirty = false;
+    }
+    
     extern void sendNotificationToApp(const char* message);
     int p = getPendingNotificationCount();
     if (p >= 14) {

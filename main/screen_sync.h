@@ -1,10 +1,10 @@
 #ifndef SCREEN_SYNC_H
 #define SCREEN_SYNC_H
 
-// Maximum size of a single sync payload (BLE GATT characteristic max is 253 bytes)
-// Payload must fit in: PREFIX(16) + SYNC_MAX_PAYLOAD + ~~(2) + margin <= 247 (negotiated MTU)
-// So max payload = 247 - 16 - 2 - 4 = 225, use 230 for safety with clamping in drainQueue()
-#define SYNC_MAX_PAYLOAD 230
+// Maximum size of a single sync payload (local stack buffer).
+// sendNotificationToApp() handles fragmentation when the wrapped message exceeds MTU.
+// 1024 covers every mode including BEACON with max roster + WP broadcast duration.
+#define SYNC_MAX_PAYLOAD 1024
 
 void sendScreenSync();
 void sendScreenSyncIfDirty();
