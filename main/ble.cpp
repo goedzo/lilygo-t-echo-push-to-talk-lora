@@ -194,6 +194,23 @@ static void drainQueue() {
     // Stall silently after drain failure — prevents hammering notify() when central can't keep up
     if (drain_failed && millis() < drain_stall_until) return;
 
+    // Clear stale stall state if timeout expired and CCCD is now subscribed again
+    if (drain_failed && millis() >= drain_stall_until) {
+        if (cccd_subscribed) {
+            drain_failed = false;
+            drain_stall_until = 0;
+            drain_fail_start = 0;
+        } else {
+            // Still no CCCD — clear everything and break
+            notif_queue_empty = true;
+            blob_notif_empty = true;
+            notif_low_queue_empty = true;
+            drain_failed = false;
+            drain_stall_until = 0;
+            return;
+        }
+    }
+
     // Drain all pending items — don't limit to 1 per call.
     // Priority order: blob fragments -> high-priority notifications -> low-priority notifications
     uint8_t iter = 0;
@@ -305,28 +322,22 @@ static void drainQueue() {
         // Without CCCD subscription, sd_ble_gatts_h_notify() returns NRF_ERROR_INVALID_STATE (code=1)
         // This is the root cause of continuous drain failures on reconnection
         if (!cccd_subscribed) {
-            // Log first failure to understand why we're stuck — this is expected during handshake
-            static uint8_t no_cccd_count = 0;
-            if (no_cccd_count++ == 0) {
-                SerialMon.print(F("[BLE] drainQueue: cccd not subscribed, breaking. pri="));
-                SerialMon.print(notif_queue_empty ? 1 : 0);
-                SerialMon.print(" low=");
-                SerialMon.print(notif_low_queue_empty ? 1 : 0);
-                SerialMon.print(" blob=");
-                SerialMon.println(blob_notif_empty ? 1 : 0);
-            }
+            // Clear all queues and reset drain state — nothing will receive these messages
+            // until central writes CCCD again. Without this, stale items block the queue forever.
+            notif_queue_empty = true;
+            blob_notif_empty = true;
+            notif_low_queue_empty = true;
+            drain_failed = false;
+            drain_stall_until = 0;
             break;
         }
 
-        int32_t ret = bleCharacteristic.notify(buffer, total);
+            int32_t ret = bleCharacteristic.notify(buffer, total);
 
-        if (ret == ERROR_NONE) {
-            // One successful drain per call — let handleBLE() pace via its natural call frequency (~15/sec).
-            // The 10ms gap prevents the BLE TX queue from overflowing during connection event gaps.
-            uint32_t next_send_at = millis() + 10;
-            while (millis() < next_send_at) { /* wait */ }
-
-            drain_failed = false;
+            if (ret == ERROR_NONE) {
+                const char* src = useBlob ? "BLOB" : (useLow ? "LOW" : "PRI");
+                sendSerialToAppLn(String("[BLE] SENT ") + src + " len=" + String(total));
+                drain_failed = false;
             drain_stall_until = 0;
             if (useBlob) {
                 blob_notif_queue[blob_notif_tail][0] = '\0';
@@ -359,7 +370,6 @@ static void drainQueue() {
             // Treating it as success prevents unnecessary drain failure logs and stale item clearing.
             if (ret == 1) {
                 if (!drain_failed) {
-                    SerialMon.println(F("[BLE] notify returned 1 — known Bluefruit52Lib quirk, treating as success"));
                     drain_failed = true;   // One-time suppress: prevents re-logging on this item
                     drain_fail_start = millis();
                 }
@@ -391,26 +401,23 @@ static void drainQueue() {
 
             // Track actual drain failures — set extended stall window to give central time to recover
             if (!drain_failed) {
-                // First failure: log the error name, return code, payload length, and first 120 bytes of payload
-                String msg = F("[BLE] drain fail: ");
+                const char* src = useBlob ? "BLOB" : (useLow ? "LOW" : "PRI");
+                String msg = F("[BLE] FAIL ");
+                msg += src;
+                msg += ": ";
                 msg += bleErrorName(ret);
                 msg += " code=";
                 msg += ret;
                 msg += " len=";
                 msg += total;
-                msg += " cccd=";
-                msg += cccd_subscribed ? 1 : 0;
-                msg += " data_len=";
-                msg += (total > 247) ? 247 : total;
-                if (total >= 4) {
-                    msg += " data=";
-                    // Print first 120 printable chars of the payload for identification
-                    int printLen = (total - 2) < 120 ? (int)(total - 2) : 120;
-                    for (int i = 0; i < printLen && i < total; i++) {
-                        uint8_t b = buffer[i];
-                        if (b >= 32 && b < 127) msg += (char)b;
-                        else msg += '.';
-                    }
+                SerialMon.println(msg);
+                // Print the full payload for identification of what failed to send
+                msg = F("[BLE] FAIL payload: ");
+                int printLen = (total - 2) < 240 ? (int)(total - 2) : 240;
+                for (int i = 0; i < printLen && i < total; i++) {
+                    uint8_t b = buffer[i];
+                    if (b >= 32 && b < 127) msg += (char)b;
+                    else msg += '.';
                 }
                 SerialMon.println(msg);  // USB-only — do NOT enqueue to notification queue
                 drain_failed = true;
@@ -637,24 +644,10 @@ static void sendSerialFromQueue();  // forward decl
 void handleBLE() {
     static uint8_t handle_cnt = 0;
     if (handle_cnt++ % 50 == 0 && ble_connected) {
-        SerialMon.print(F("[BLE] handleBLE #"));
-        SerialMon.print(handle_cnt);
-        SerialMon.print(" stall=");
-        SerialMon.print(millis() < ble_connect_stall_until ? 1 : 0);
-        SerialMon.print(" stall_until=");
-        SerialMon.print(ble_connect_stall_until);
-        SerialMon.print(" now=");
-        SerialMon.print(millis());
-        SerialMon.print(" pending_disp=");
-        SerialMon.print(pending_display_update ? 1 : 0);
-        SerialMon.print(" pending_sync=");
-        SerialMon.print(pending_screen_sync ? 1 : 0);
-        SerialMon.print(" drain_fail=");
-        SerialMon.print(drain_failed ? 1 : 0);
-        SerialMon.println();
+        // no-op: was a diagnostic heartbeat, removed — it fires even when there's nothing to send
     }
 
-    // Stall queue/drain during connection handshake — SoftDevice needs time to stabilize
+    // Stall queue/drain during connection handshake
     if (millis() < ble_connect_stall_until) {
         sendSerialFromQueue();
         return;
@@ -693,28 +686,10 @@ void handleBLE() {
     }
 
     if (ble_connected) {
-        uint8_t queue_count = (notif_head >= notif_tail) ? (notif_head - notif_tail) : (4 - notif_tail + notif_head);
-        if (queue_count > 0) {
-            SerialMon.print(F("[BLE] calling drainQueue: pri="));
-            SerialMon.println(queue_count);
-        }
         drainQueue();
     } else {
-        static uint32_t last_summary = 0;
-        if (millis() - last_summary > 2000) {
-            last_summary = millis();
-            uint8_t pri_count = (notif_head >= notif_tail) ? (notif_head - notif_tail) : (4 - notif_tail + notif_head);
-            uint8_t low_count = (notif_low_head >= notif_low_tail) ? (notif_low_head - notif_low_tail) : (NOTIF_LOW_QUEUE_SIZE - notif_low_tail + notif_low_head);
-            SerialMon.print(F("[BLE] summary: pri="));
-            SerialMon.print(pri_count);
-            SerialMon.print(" low=");
-            SerialMon.print(low_count);
-            SerialMon.print(" drain_failed=");
-            SerialMon.print(drain_failed ? 1 : 0);
-            SerialMon.println();
-        }
+        // Heartbeat summary removed — was noisy diagnostic, not actionable
     }
-    sendSerialFromQueue();
     drainBinaryQueue();
 }
 
@@ -765,9 +740,6 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
     // Mark CCCD as subscribed — Bluefruit52Lib calls this callback when the central writes the CCCD
     // This enables drain to proceed after the connection is established and the phone subscribes
     cccd_subscribed = true;
-    SerialMon.print(F("[BLE] onCharacteristicWritten: cccd=true len="));
-    SerialMon.println(len);
-
     in_write_callback = true;
 
     // Copy bytes to local buffer FIRST — never iterate callback pointer through SoftDevice context
@@ -787,6 +759,18 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
         if (b >= 0xA0 && b < 0xC2) { printable = false; break; }
     }
 
+    // Log first 16 printable bytes every 5s for visibility into what commands the app sends
+    static uint32_t last_cmd_log_ms = 0;
+    if (millis() - last_cmd_log_ms > 5000) {
+        last_cmd_log_ms = millis();
+        sendSerialToAppLn(String("[BLE] write cb len=") + nlen);
+        if (nlen <= 32 && printable) {
+            String hexStr = "data=";
+            for (int i=0;i<nlen&&i<32;i++) { char tmp[4];snprintf(tmp,sizeof(tmp),"%02X",(uint8_t)localBuf[i]);hexStr+=tmp;}
+            sendSerialToAppLn(hexStr);
+        }
+    }
+
     bool handled = false;
     if (printable) {
         int delim = -1;
@@ -797,7 +781,7 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
             char value[256]; int vstart=delim+1, vlen=nlen-vstart;
             vlen = vlen < sizeof(value)-1 ? vlen : sizeof(value)-1;
             for (int i=0;i<vlen;i++) value[i] = localBuf[vstart+i]; value[vlen]='\0';
-            if (strcmp(action,"SETMODE")==0) { switchMode(String(value)); handled=true; }
+            if (strcmp(action,"SETMODE")==0) { switchMode(String(value)); pending_screen_sync=true; handled=true; }
             else if (strcmp(action,"SENDTXT")==0) { sendTxtMessage(value); handled=true; }
             else if (strcmp(action,"SETNAME")==0) { static char localName[32]; int slen=strlen(value); if(slen>0&&slen<sizeof(localName)){for(int i=0;i<slen;i++)localName[i]=value[i];localName[slen]='\0';buddySetDisplayName(localName);char r[48];snprintf(r,sizeof(r),"OK{NAME:%s}",localName);sendNotificationToApp(r);}else{sendNotificationToApp("ERR{NAME:too long}");handled=true;} }
             else if (strcmp(action,"SETBUDDY")==0) { int c=buddyImportCsv(value);char r[48];snprintf(r,sizeof(r),"OK{BUDDY:%d}",c);sendNotificationToApp(r);handled=true; }
@@ -817,6 +801,12 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
     if (!handled && nlen>=4 && (uint8_t)localBuf[0]==0xFE && (uint8_t)localBuf[1]==0x01) {
         uint16_t opusLen = ((uint16_t)(uint8_t)localBuf[3] << 8) | (uint8_t)localBuf[2];
         if(opusLen>0 && 4+opusLen<=nlen){extern void sendPacket(uint8_t*,uint16_t,unsigned int);static char opusPkt[MAX_PKT];snprintf(opusPkt,sizeof(opusPkt),"PT%cO",channels[deviceSettings.channel_idx]);int pl=strlen(opusPkt);for(int i=0;i<opusLen&&pl+i<MAX_PKT-1;i++)opusPkt[pl+i]=localBuf[4+i];pl+=opusLen;setPttTxActive(true);pending_display_update=true;sendPacket((uint8_t*)opusPkt,(uint16_t)pl,0);}
+    }
+
+    static uint32_t last_action_log_ms = 0;
+    if (millis() - last_action_log_ms > 5000) {
+        last_action_log_ms = millis();
+        sendSerialToAppLn(String("[BLE] pending_sync=") + (pending_screen_sync ? "1" : "0") + " pending_disp=" + (pending_display_update ? "1" : "0"));
     }
 
     in_write_callback = false;
@@ -867,6 +857,7 @@ void sendNotificationToApp(const char* message) {
     extern bool sendFragmentedNotification(const char*);
     if (msgLen + 2 > MAX_BLE_MTU) {
         sendFragmentedNotification(message);
+        return;  // Fragmented — skip regular enqueue path entirely
     }
     
     // Create buffer with "~~" terminator
