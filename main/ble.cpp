@@ -31,25 +31,31 @@ volatile bool cccd_subscribed = false;
 // Deferred display update flag — avoids calling display functions inside SoftDevice callback context
 static volatile bool pending_display_update = false;
 
-// Notification queue — defer BLE notify calls to loop() to avoid hard faults
-// Increased from 8→16 and 256→320 bytes per slot to handle high-frequency SCAN data
-#define NOTIF_QUEUE_SIZE 16
-#define NOTIF_SLOT_SIZE  320
-#define BIN_NOTIF_QUEUE_SIZE 4
-static char notif_queue[NOTIF_QUEUE_SIZE][NOTIF_SLOT_SIZE];
-static uint8_t notif_queue_len[NOTIF_QUEUE_SIZE];
+// High-priority notification queue — screen sync, binary audio, fragmented notifications (drops when full)
+static char notif_queue[4][320];
+static uint8_t notif_queue_len[4];
 static uint8_t notif_head = 0;
 static uint8_t notif_tail = 0;
 static volatile bool notif_queue_empty = true;
+
+// Low-priority notification queue — serial log / debug messages (drops when full)
+#define NOTIF_LOW_QUEUE_SIZE 16
+#define NOTIF_LOW_SLOT_SIZE 320
+static char notif_low_queue[NOTIF_LOW_QUEUE_SIZE][NOTIF_LOW_SLOT_SIZE];
+static uint8_t notif_low_queue_len[NOTIF_LOW_QUEUE_SIZE];
+static uint8_t notif_low_head = 0;
+static uint8_t notif_low_tail = 0;
+static volatile bool notif_low_queue_empty = true;
 
 // Track if we're inside the write callback — prevents SoftDevice deadlock
 static volatile bool in_write_callback = false;
 
 // Fragmented notification queue — holds split payloads for multi-MTU messages
 // Each item: "LINE:BLOB|S{seq}|T{total}|<data>~~" (header) or "LINE:BLOB|S{seq}|<data>~~" (continuation)
-#define BLOB_NOTIF_QUEUE_SIZE 32
-static char blob_notif_queue[BLOB_NOTIF_QUEUE_SIZE][NOTIF_SLOT_SIZE];
-static uint8_t blob_notif_len[BLOB_NOTIF_QUEUE_SIZE];
+#define BLOB_4 32
+#define NOTIF_SLOT_SIZE 320
+static char blob_notif_queue[BLOB_4][NOTIF_SLOT_SIZE];
+static uint8_t blob_notif_len[BLOB_4];
 static uint8_t blob_notif_head = 0;
 static uint8_t blob_notif_tail = 0;
 static volatile bool blob_notif_empty = true;
@@ -107,7 +113,7 @@ static const char* bleErrorName(int32_t err) {
 
 // Fragmented notification — each fragment carries exactly 64 bytes of raw message data.
 // Fragment format: "LINE:BLOB|S{seq}|<raw_data>~~" (~79 bytes total per fragment)
-#define BLOB_NOTIF_QUEUE_SIZE 32 // slots for fragmented items
+#define BLOB_4 32 // slots for fragmented items
 
 // Deferred screen sync — avoid dropping in write callback (in_write_callback causes sendNotificationToApp to return immediately)
 static volatile bool pending_screen_sync = false;
@@ -116,54 +122,58 @@ static volatile bool pending_screen_sync = false;
 extern void sendSerialToAppLn(const String& msg);
 
 // Binary notification queue for Opus frames (raw bytes, no text wrapping)
-static uint8_t bin_notif_queue[BIN_NOTIF_QUEUE_SIZE][128];
-static uint8_t bin_notif_len[BIN_NOTIF_QUEUE_SIZE];
+#define BINARY_NOTIF_QUEUE_SIZE 4
+static uint8_t bin_notif_queue[BINARY_NOTIF_QUEUE_SIZE][128];
+static uint8_t bin_notif_len[BINARY_NOTIF_QUEUE_SIZE];
 static uint8_t bin_notif_head = 0;
 static uint8_t bin_notif_tail = 0;
 
-// Return count of pending notifications in queue
+// Return count of pending notifications in queue (high-priority only — low-priority is background)
 int getPendingNotificationCount() {
     if (notif_queue_empty) return 0;
-    int count = notif_head >= notif_tail ? (notif_head - notif_tail) : (NOTIF_QUEUE_SIZE - notif_tail + notif_head);
-    if (count == 0 && !notif_queue_empty) count = NOTIF_QUEUE_SIZE - 1;
+    int count = notif_head >= notif_tail ? (notif_head - notif_tail) : (4 - notif_tail + notif_head);
+    if (count == 0 && !notif_queue_empty) count = 4 - 1;
     return count;
 }
 
-static bool queueFull() {
-    uint8_t next = (notif_head + 1) % NOTIF_QUEUE_SIZE;
+static bool priQueueFull() {
+    uint8_t next = (notif_head + 1) % 4;
     return next == notif_tail;
 }
 
-static bool enqueue(const char* msg) {
-    if (queueFull()) return false;
+// Enqueue low-priority (serial/log) messages. Drops silently when full — never blocks high-priority slots.
+static bool enqueueLow(const char* msg) {
+    uint8_t next = (notif_low_head + 1) % NOTIF_LOW_QUEUE_SIZE;
+    if (next == notif_low_tail) return false;  // Drop silently when full
     size_t len = strlen(msg);
-    if (len >= NOTIF_SLOT_SIZE) return false;
+    if (len >= NOTIF_LOW_SLOT_SIZE - 1) return false;
+    memcpy(notif_low_queue[notif_low_head], msg, len + 1);
+    notif_low_queue_len[notif_low_head] = (uint8_t)(len + 1);
+    notif_low_head = next;
+    notif_low_queue_empty = false;
+    return true;
+}
+
+// Enqueue high-priority messages only. Returns false if full — no silent drop (caller must handle).
+static bool enqueue(const char* msg) {
+    if (priQueueFull()) return false;
+    size_t len = strlen(msg);
+    if (len >= NOTIF_SLOT_SIZE - 1) return false;
     memcpy(notif_queue[notif_head], msg, len + 1);
     notif_queue_len[notif_head] = (uint8_t)(len + 1);
-    notif_head = (notif_head + 1) % NOTIF_QUEUE_SIZE;
+    notif_head = (notif_head + 1) % 4;
     notif_queue_empty = false;
-    
-    // Debug: log enqueue for LINE:SERIAL messages
-    if (strncmp(msg, "LINE:SERIAL", 11) == 0) {
-        SerialMon.print(F("[BLE] enqueue head="));
-        SerialMon.print(notif_head);
-        SerialMon.print(" len=");
-        SerialMon.print(len);
-        SerialMon.print(" stall_until=");
-        SerialMon.print(drain_stall_until ? drain_stall_until : 0);
-        SerialMon.println();
-    }
     return true;
 }
 
 // Drain all pending text notifications — handles both regular queue and blob fragments
 static void drainQueue() {
-    if (notif_queue_empty && blob_notif_empty) return;
+    if (notif_queue_empty && blob_notif_empty && notif_low_queue_empty) return;
 
     // Stall silently during connection handshake — SoftDevice needs time to stabilize
     if (millis() < ble_connect_stall_until) return;
 
-    // After stall period expires, wait extra for CCCD subscription before first drain attempt.
+    // After stall period expires, wait extra for CCCD subscription before attempting drain.
     // The phone app must enable notifications (CCCD write) after connecting; draining before that
     // wastes queue slots on messages the central can't receive and may cause UNKNOWN_ERR on notify().
     if (millis() < post_stall_wait_until) {
@@ -171,8 +181,7 @@ static void drainQueue() {
         if (post_stall_log++ == 0) {
             SerialMon.print(F("[BLE] post-stall wait: cccd="));
             SerialMon.print(cccd_subscribed ? 1 : 0);
-            SerialMon.print(" pending=");
-            SerialMon.println(getPendingNotificationCount());
+            SerialMon.println();
         }
         return;
     }
@@ -186,19 +195,23 @@ static void drainQueue() {
     if (drain_failed && millis() < drain_stall_until) return;
 
     // Drain all pending items — don't limit to 1 per call.
-    // Priority: drain blob fragments first, then regular notifications
+    // Priority order: blob fragments -> high-priority notifications -> low-priority notifications
     uint8_t iter = 0;
     
-    while (!notif_queue_empty || !blob_notif_empty) {
+    while (!notif_queue_empty || !blob_notif_empty || !notif_low_queue_empty) {
         if (iter++ > 40) { SerialMon.println(F("[BLE] drainQueue: infinite loop detected, breaking")); break; }
 
-        // Prefer blob fragments when available (they're time-sensitive screen updates)
-        bool useBlob = !blob_notif_empty && notif_queue_empty;
+        // Prefer blob fragments when available (time-sensitive screen updates)
+        bool useBlob = !blob_notif_empty && notif_queue_empty && notif_low_queue_empty;
+        
+        // Use low-priority queue only when high queues are empty
+        bool useLow = notif_low_queue_empty ? false : (!notif_queue_empty ? false : !blob_notif_empty ? false : true);
         
         uint8_t buffer[MAX_BLE_MTU];
         uint8_t msg_len;
         size_t total;
         uint8_t idx;
+        bool drained = false;
         
         if (useBlob) {
             msg_len = blob_notif_len[blob_notif_tail];
@@ -212,11 +225,29 @@ static void drainQueue() {
 
             if (msg_len == 0) {
                 blob_notif_empty = true;
-                blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
+                blob_notif_tail = (blob_notif_tail + 1) % BLOB_4;
                 continue;
             }
 
             memcpy(buffer, blob_notif_queue[blob_notif_tail], msg_len);
+        } else if (useLow) {
+            idx = notif_low_tail;
+            msg_len = notif_low_queue_len[idx];
+            total = msg_len + 2;
+            
+            if (total > MAX_BLE_MTU) {
+                msg_len = (uint8_t)(MAX_BLE_MTU - 2);
+                total = msg_len + 2;
+            }
+
+            if (msg_len == 0) {
+                notif_low_queue_empty = true;
+                continue;
+            }
+
+            memcpy(buffer, notif_low_queue[idx], msg_len);
+            buffer[msg_len] = '~';
+            buffer[msg_len + 1] = '~';
         } else {
             idx = notif_tail;
             msg_len = notif_queue_len[idx];
@@ -245,6 +276,7 @@ static void drainQueue() {
                 // CCCD not written — nothing we can do, just drain the entire queue and exit
                 notif_queue_empty = true;
                 blob_notif_empty = true;
+                notif_low_queue_empty = true;
                 drain_failed = false;
                 drain_stall_until = 0;
                 break;
@@ -252,14 +284,14 @@ static void drainQueue() {
             if (useBlob) {
                 blob_notif_queue[blob_notif_tail][0] = '\0';
                 blob_notif_len[blob_notif_tail] = 0;
-                blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
+                blob_notif_tail = (blob_notif_tail + 1) % BLOB_4;
                 if (blob_notif_head == blob_notif_tail) {
                     blob_notif_empty = true;
                 }
             } else {
                 notif_queue[idx][0] = '\0';
                 notif_queue_len[idx] = 0;
-                notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+                notif_tail = (notif_tail + 1) % 4;
                 if (notif_head == notif_tail) {
                     notif_queue_empty = true;
                 }
@@ -276,16 +308,12 @@ static void drainQueue() {
             // Log first failure to understand why we're stuck — this is expected during handshake
             static uint8_t no_cccd_count = 0;
             if (no_cccd_count++ == 0) {
-                SerialMon.print(F("[BLE] drainQueue: cccd not subscribed, breaking. head="));
-                SerialMon.print(notif_head);
-                SerialMon.print(" tail=");
-                SerialMon.print(notif_tail);
-                SerialMon.print(" empty=");
+                SerialMon.print(F("[BLE] drainQueue: cccd not subscribed, breaking. pri="));
                 SerialMon.print(notif_queue_empty ? 1 : 0);
-                SerialMon.print(" blob_empty=");
-                SerialMon.print(blob_notif_empty ? 1 : 0);
-                SerialMon.print(" stall_until=");
-                SerialMon.println(ble_connect_stall_until);
+                SerialMon.print(" low=");
+                SerialMon.print(notif_low_queue_empty ? 1 : 0);
+                SerialMon.print(" blob=");
+                SerialMon.println(blob_notif_empty ? 1 : 0);
             }
             break;
         }
@@ -303,14 +331,21 @@ static void drainQueue() {
             if (useBlob) {
                 blob_notif_queue[blob_notif_tail][0] = '\0';
                 blob_notif_len[blob_notif_tail] = 0;
-                blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
+                blob_notif_tail = (blob_notif_tail + 1) % BLOB_4;
                 if (blob_notif_head == blob_notif_tail) {
                     blob_notif_empty = true;
+                }
+            } else if (useLow) {
+                notif_low_queue[notif_low_tail][0] = '\0';
+                notif_low_queue_len[notif_low_tail] = 0;
+                notif_low_tail = (notif_low_tail + 1) % NOTIF_LOW_QUEUE_SIZE;
+                if (notif_low_head == notif_low_tail) {
+                    notif_low_queue_empty = true;
                 }
             } else {
                 notif_queue[idx][0] = '\0';
                 notif_queue_len[idx] = 0;
-                notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+                notif_tail = (notif_tail + 1) % 4;
                 if (notif_head == notif_tail) {
                     notif_queue_empty = true;
                 }
@@ -328,21 +363,28 @@ static void drainQueue() {
                     drain_failed = true;   // One-time suppress: prevents re-logging on this item
                     drain_fail_start = millis();
                 }
-                if (useBlob) {
-                    blob_notif_queue[blob_notif_tail][0] = '\0';
-                    blob_notif_len[blob_notif_tail] = 0;
-                    blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
-                    if (blob_notif_head == blob_notif_tail) {
-                        blob_notif_empty = true;
-                    }
-                } else {
-                    notif_queue[idx][0] = '\0';
-                    notif_queue_len[idx] = 0;
-                    notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
-                    if (notif_head == notif_tail) {
-                        notif_queue_empty = true;
-                    }
+            if (useBlob) {
+                blob_notif_queue[blob_notif_tail][0] = '\0';
+                blob_notif_len[blob_notif_tail] = 0;
+                blob_notif_tail = (blob_notif_tail + 1) % BLOB_4;
+                if (blob_notif_head == blob_notif_tail) {
+                    blob_notif_empty = true;
                 }
+            } else if (useLow) {
+                notif_low_queue[notif_low_tail][0] = '\0';
+                notif_low_queue_len[notif_low_tail] = 0;
+                notif_low_tail = (notif_low_tail + 1) % NOTIF_LOW_QUEUE_SIZE;
+                if (notif_low_head == notif_low_tail) {
+                    notif_low_queue_empty = true;
+                }
+            } else {
+                notif_queue[idx][0] = '\0';
+                notif_queue_len[idx] = 0;
+                notif_tail = (notif_tail + 1) % 4;
+                if (notif_head == notif_tail) {
+                    notif_queue_empty = true;
+                }
+            }
                 // Only drain one item per call — pacing is critical to avoid overwhelming the BLE link
                 break;
             }
@@ -379,14 +421,21 @@ static void drainQueue() {
                 if (useBlob) {
                     blob_notif_queue[blob_notif_tail][0] = '\0';
                     blob_notif_len[blob_notif_tail] = 0;
-                    blob_notif_tail = (blob_notif_tail + 1) % BLOB_NOTIF_QUEUE_SIZE;
+                    blob_notif_tail = (blob_notif_tail + 1) % BLOB_4;
                     if (blob_notif_head == blob_notif_tail) {
                         blob_notif_empty = true;
+                    }
+                } else if (useLow) {
+                    notif_low_queue[notif_low_tail][0] = '\0';
+                    notif_low_queue_len[notif_low_tail] = 0;
+                    notif_low_tail = (notif_low_tail + 1) % NOTIF_LOW_QUEUE_SIZE;
+                    if (notif_low_head == notif_low_tail) {
+                        notif_low_queue_empty = true;
                     }
                 } else {
                     notif_queue[notif_tail][0] = '\0';
                     notif_queue_len[notif_tail] = 0;
-                    notif_tail = (notif_tail + 1) % NOTIF_QUEUE_SIZE;
+                    notif_tail = (notif_tail + 1) % 4;
                     if (notif_head == notif_tail) {
                         notif_queue_empty = true;
                     }
@@ -441,14 +490,14 @@ bool sendFragmentedNotification(const char* message) {
         blob_notif_queue[blob_notif_head][0] = '\0';
         memcpy(blob_notif_queue[blob_notif_head], buf, (uint8_t)(off + 1));
         blob_notif_len[blob_notif_head] = (uint8_t)off;
-        blob_notif_head = (blob_notif_head + 1) % BLOB_NOTIF_QUEUE_SIZE;
+        blob_notif_head = (blob_notif_head + 1) % BLOB_4;
         blob_notif_empty = false;
     }
 
     return true;
 }
 static bool binQueueFull() {
-    uint8_t next = (bin_notif_head + 1) % BIN_NOTIF_QUEUE_SIZE;
+    uint8_t next = (bin_notif_head + 1) % BINARY_NOTIF_QUEUE_SIZE;
     return next == bin_notif_tail;
 }
 
@@ -457,7 +506,7 @@ static bool enqueueBinary(const uint8_t* data, uint8_t len) {
     if (binQueueFull()) return false;
     memcpy(bin_notif_queue[bin_notif_head], data, len);
     bin_notif_len[bin_notif_head] = len;
-    bin_notif_head = (bin_notif_head + 1) % BIN_NOTIF_QUEUE_SIZE;
+    bin_notif_head = (bin_notif_head + 1) % BINARY_NOTIF_QUEUE_SIZE;
     return true;
 }
 
@@ -480,7 +529,7 @@ static void drainBinaryQueue() {
     
     if (ret == ERROR_NONE) {
         bin_notif_len[idx] = 0;
-        bin_notif_tail = (bin_notif_tail + 1) % BIN_NOTIF_QUEUE_SIZE;
+        bin_notif_tail = (bin_notif_tail + 1) % BINARY_NOTIF_QUEUE_SIZE;
     }
 }
 
@@ -575,7 +624,7 @@ void sendSerialToApp(const String& msg) {
     // Use the existing notification queue — it already handles wrapping, ~~ terminators, and drain timing
     static char notifStr[NOTIF_STR_MAX_LEN];
     snprintf(notifStr, sizeof(notifStr), "LINE:SERIAL|DATA:%s", msg.c_str());
-    enqueue(notifStr);
+    enqueueLow(notifStr);
 }
 
 void sendSerialToAppLn(const String& msg) {
@@ -638,37 +687,28 @@ void handleBLE() {
     if (pending_screen_sync) {
         pending_screen_sync = false;
         
-        // Call the real screen sync function instead of dummy data
-        extern void sendScreenSync();
-        sendScreenSync();
+        // Send screen sync — high-priority queue has room since serial logs go to low-priority queue now
+        extern void sendScreenSyncForced();
+        sendScreenSyncForced();
     }
 
     if (ble_connected) {
-        SerialMon.print(F("[BLE] calling drainQueue: connected="));
-        SerialMon.print(ble_connected ? 1 : 0);
-        SerialMon.print(" empty=");
-        SerialMon.print(notif_queue_empty ? 1 : 0);
-        SerialMon.print(" head=");
-        SerialMon.print(notif_head);
-        SerialMon.print(" tail=");
-        SerialMon.print(notif_tail);
-        SerialMon.println();
+        uint8_t queue_count = (notif_head >= notif_tail) ? (notif_head - notif_tail) : (4 - notif_tail + notif_head);
+        if (queue_count > 0) {
+            SerialMon.print(F("[BLE] calling drainQueue: pri="));
+            SerialMon.println(queue_count);
+        }
         drainQueue();
     } else {
         static uint32_t last_summary = 0;
-        if (ble_connected && millis() - last_summary > 2000) {
+        if (millis() - last_summary > 2000) {
             last_summary = millis();
-            uint8_t queue_count = (notif_head >= notif_tail) ? (notif_head - notif_tail) : (NOTIF_QUEUE_SIZE - notif_tail + notif_head);
-            SerialMon.print(F("[BLE] summary: connected="));
-            SerialMon.print(ble_connected ? 1 : 0);
-            SerialMon.print(" empty=");
-            SerialMon.print(notif_queue_empty ? 1 : 0);
-            SerialMon.print(" head=");
-            SerialMon.print(notif_head);
-            SerialMon.print(" tail=");
-            SerialMon.print(notif_tail);
-            SerialMon.print(" count=");
-            SerialMon.print(queue_count);
+            uint8_t pri_count = (notif_head >= notif_tail) ? (notif_head - notif_tail) : (4 - notif_tail + notif_head);
+            uint8_t low_count = (notif_low_head >= notif_low_tail) ? (notif_low_head - notif_low_tail) : (NOTIF_LOW_QUEUE_SIZE - notif_low_tail + notif_low_head);
+            SerialMon.print(F("[BLE] summary: pri="));
+            SerialMon.print(pri_count);
+            SerialMon.print(" low=");
+            SerialMon.print(low_count);
             SerialMon.print(" drain_failed=");
             SerialMon.print(drain_failed ? 1 : 0);
             SerialMon.println();
@@ -762,14 +802,14 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
             else if (strcmp(action,"SETNAME")==0) { static char localName[32]; int slen=strlen(value); if(slen>0&&slen<sizeof(localName)){for(int i=0;i<slen;i++)localName[i]=value[i];localName[slen]='\0';buddySetDisplayName(localName);char r[48];snprintf(r,sizeof(r),"OK{NAME:%s}",localName);sendNotificationToApp(r);}else{sendNotificationToApp("ERR{NAME:too long}");handled=true;} }
             else if (strcmp(action,"SETBUDDY")==0) { int c=buddyImportCsv(value);char r[48];snprintf(r,sizeof(r),"OK{BUDDY:%d}",c);sendNotificationToApp(r);handled=true; }
             else if (strcmp(action,"GETBUDDY")==0) { static char cb[512];if(buddyExportCsv(cb,sizeof(cb))){char r[560];snprintf(r,sizeof(r),"OK{BUDDY:%s}",cb);sendNotificationToApp(r);}else{sendNotificationToApp("OK{BUDDY:}");}handled=true; }
-            else if (strcmp(action,"GETSCREEN")==0) { int p=getPendingNotificationCount();if(p>3){char r[48];snprintf(r,sizeof(r),"OK{SCREEN:deferred:p=%d}",p);sendNotificationToApp(r);}else{pending_screen_sync=true;}handled=true; }
+            else if (strcmp(action,"GETSCREEN")==0) { pending_screen_sync=true;handled=true; }
             else if (strcmp(action,"GETSTATUS")==0) { extern bool isPeerAlive();bool la=isPeerAlive();char r[32];snprintf(r,sizeof(r),"OK{BLE:1}{LORA:%d}",la?1:0);sendNotificationToApp(r);handled=true; }
             else if (strcmp(action,"GETSETTINGS")==0) { char buf[192];snprintf(buf,sizeof(buf),"OK{SETTINGS:SF=%d,BITRATE=%d,CHAN=%c,VOL=%d,BL=%d,BW=%d,CR=%d,FH=%d,HOUR=%d,MIN=%d,SEC=%d}",deviceSettings.spreading_factor,deviceSettings.bitrate_idx,channels[deviceSettings.channel_idx],deviceSettings.volume_level,deviceSettings.backlight?1:0,deviceSettings.bandwidth_idx,deviceSettings.coding_rate_idx,deviceSettings.frequency_hopping_enabled?1:0,deviceSettings.hours,deviceSettings.minutes,deviceSettings.seconds);sendNotificationToApp(buf);handled=true; }
             else if (strcmp(action,"SETSETTINGS")==0) { extern void setupLoRa();char buf[256];int vlen=strlen(value);if(vlen>=sizeof(buf))vlen=sizeof(buf)-1;for(int i=0;i<vlen;i++)buf[i]=value[i];buf[vlen]='\0';bool needReinit=false;char*cp=buf;while(cp&&*cp){char*kp=strchr(cp,',');int klen=kp?kp-cp:vlen;if(klen>=64)klen=63;char key[64],val[64];memcpy(key,cp,klen);key[klen]='\0';if(!kp)break;char*eqp=strchr(key,'=');if(!eqp){cp=kp+1;continue;*eqp='\0';strncpy(val,eqp+1,sizeof(val)-1);val[sizeof(val)-1]='\0';if(strcmp(key,"SF")==0){deviceSettings.spreading_factor=atoi(val);}else if(strcmp(key,"BITRATE")==0){deviceSettings.bitrate_idx=atoi(val);needReinit=true;}else if(strcmp(key,"CHAN")==0){char c=toupper(val[0]);deviceSettings.channel_idx=c-'A';needReinit=true;}else if(strcmp(key,"VOL")==0){deviceSettings.volume_level=atoi(val);}else if(strcmp(key,"BL")==0){deviceSettings.backlight=!!atoi(val);}else if(strcmp(key,"BW")==0){deviceSettings.bandwidth_idx=atoi(val);needReinit=true;}else if(strcmp(key,"CR")==0){deviceSettings.coding_rate_idx=atoi(val);needReinit=true;}else if(strcmp(key,"FH")==0){deviceSettings.frequency_hopping_enabled=!!atoi(val);}else if(strcmp(key,"HOUR")==0){deviceSettings.hours=atoi(val);}else if(strcmp(key,"MIN")==0){deviceSettings.minutes=atoi(val);}else if(strcmp(key,"SEC")==0){deviceSettings.seconds=atoi(val);}}cp=kp?kp+1:nullptr;}if(needReinit)setupLoRa();sendNotificationToApp("OK{SETTINGS:saved}");handled=true; }
             else { handled=true; }
         } else {
             if (nlen==9 && localBuf[0]=='G' && localBuf[1]=='E' && localBuf[2]=='T' && localBuf[3]=='S' && localBuf[4]=='T' && localBuf[5]=='A' && localBuf[6]=='T' && localBuf[7]=='U' && localBuf[8]=='S') { extern bool isPeerAlive();bool la=isPeerAlive();char r[32];snprintf(r,sizeof(r),"OK{BLE:1}{LORA:%d}",la?1:0);sendNotificationToApp(r);handled=true; }
-            else if (nlen==9 && localBuf[0]=='G' && localBuf[1]=='E' && localBuf[2]=='T' && localBuf[3]=='S' && localBuf[4]=='C' && localBuf[5]=='R' && localBuf[6]=='E' && localBuf[7]=='E' && localBuf[8]=='N') { int p=getPendingNotificationCount();if(p>3){char r[48];snprintf(r,sizeof(r),"OK{SCREEN:deferred:p=%d}",p);sendNotificationToApp(r);}else{pending_screen_sync=true;}handled=true; }
+            else if (nlen==9 && localBuf[0]=='G' && localBuf[1]=='E' && localBuf[2]=='T' && localBuf[3]=='S' && localBuf[4]=='C' && localBuf[5]=='R' && localBuf[6]=='E' && localBuf[7]=='E' && localBuf[8]=='N') { pending_screen_sync=true;handled=true; }
             else { handled=true; }
         }
     }

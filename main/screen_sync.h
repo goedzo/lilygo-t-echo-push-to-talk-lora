@@ -8,6 +8,7 @@
 
 void sendScreenSync();
 void sendScreenSyncIfDirty();
+void sendScreenSyncForced();
 void markScreenDirty();
 int getPendingNotificationCount();
 
