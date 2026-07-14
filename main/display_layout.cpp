@@ -1,4 +1,5 @@
 #include "display_layout.h"
+#include "utilities.h"  // for ePaper_Busy pin definition
 #include "app_modes.h"
 #include "battery.h"
 #include "gps.h"
@@ -8,7 +9,7 @@
 #include "text_inbox.h"
 #include "scan.h"
 #include "screen_sync.h"
-#include "disp_refresh.h"  // For triggerEpdRefresh + epdSetGRAMWindow
+#include "disp_refresh.h"  // For triggerEpdRefresh + epdSetGRAMWindow + epdWriteAndRefreshRect
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/Org_01.h>
@@ -169,17 +170,25 @@ void drawBottomStatusbar() {
 }
 
 // ── Internal: common page-loop for all layouts.
-//     use_full_refresh=true  → setFullWindow() + non-blocking waveform (~3.8s wall-clock)
-//     use_full_refresh=false → setPartialWindow(y=12, h=184) + non-blocking waveform (~0.7s)
-//     After drawing completes, triggers the waveform transfer via stepEpdRefresh().
-//     Call stepEpdRefresh() from main loop to advance the waveform cycle step-by-step.
+//     use_full_refresh=true  → write content to GRAM + full waveform (~3.8s, no flicker)
+//     use_full_refresh=false → two-step GRAM write: white→refresh→black→refresh (~1.6s, no flicker)
+//     Writes directly to SSD1681 GRAM (not GxEPD2 buffer model):
+//       Step 1: Write WHITE bytes to the full partial region in GRAM → trigger refresh (~0.8s)
+//       Step 2: Write actual content to GRAM via firstPage/nextPage → trigger refresh (~0.8s)
 // ──
+
 typedef void (*drawFn)();
 
-static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
-    // Always use partial window — full refresh disabled to avoid long waiting times.
-    display->setPartialWindow(0, 12, disp_width, 184);
-    epdSetGRAMWindow(0, 12, disp_width, 184);
+static void renderPartialWithWhiteout(drawFn drawContent) {
+    uint16_t x = 0, y = 12, w = disp_width, h = 184;
+
+    // Step 1: White-out the region in GRAM → partial refresh to clear ghosting.
+    epdWriteAndRefreshRect(x, y, w, h, 0xFF);
+
+    // Step 2: Write content via GxEPD2 buffer → write to GRAM → trigger refresh.
+    // First set the GRAM pointer for this region.
+    display->setPartialWindow(x, y, w, h);
+    epdSetGRAMWindow(x, y, w, h);
 
     display->firstPage();
     do {
@@ -187,8 +196,25 @@ static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
         drawContent();
     } while (display->nextPage());
 
-    // Always use partial waveform transfer — ~0.8s instead of ~3.8s
     triggerEpdRefresh(false);
+}
+
+static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
+    if (use_full_refresh) {
+        // Full refresh: write content to GRAM → full waveform.
+        epdSetGRAMWindow(0, 12, disp_width, 184);
+        display->setFullWindow();
+
+        display->firstPage();
+        do {
+            display->fillScreen(GxEPD_WHITE);
+            drawContent();
+        } while (display->nextPage());
+
+        triggerEpdRefresh(false);
+    } else {
+        renderPartialWithWhiteout(drawContent);
+    }
 }
 
 // ── Default layout: header row + bottom status bar ──
@@ -531,6 +557,15 @@ void drawTxtSingleLayout() {
             drawSecondaryRow("No messages yet", 56);
         }
 
+        // Show peer/peer channel liveness status at y=130 (like BEACON's distance readout)
+        display->fillRect(12, 128, disp_width - 24, 14, GxEPD_WHITE);
+        extern bool isPeerAlive();
+        if (isPeerAlive()) {
+            drawPrimaryValue("\u2713 On channel", &FreeMonoBold9pt7b, 16, 128);
+        } else {
+            drawSecondaryRow("No one on channel", 130);
+        }
+
         drawBottomStatusbar();
     };
 
@@ -563,7 +598,7 @@ void drawTxtInboxLayout() {
 
         // Message list rows (starting at y=50)
         int rosterStartY = 50;
-        int maxRows = (disp_height - 84) / 10;
+        int maxRows = (disp_height - 104) / 10;  // leave room for peer status line
 
         char inbox_msg_buf[INBOX_MAX_MSG_LEN + 1];
 
@@ -577,6 +612,15 @@ void drawTxtInboxLayout() {
             display->setFont(&FreeMonoBold9pt7b);
             display->setTextColor(GxEPD_BLACK);
             display->print(inbox_msg_buf);
+        }
+
+        // Peer/peer channel liveness status at bottom of message list (above statusbar)
+        display->fillRect(12, 160, disp_width - 24, 14, GxEPD_WHITE);
+        extern bool isPeerAlive();
+        if (isPeerAlive()) {
+            drawPrimaryValue("\u2713 On channel", &FreeMonoBold9pt7b, 16, 160);
+        } else {
+            drawSecondaryRow("No one on channel", 162);
         }
 
         drawBottomStatusbar();

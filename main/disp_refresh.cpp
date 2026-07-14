@@ -208,6 +208,57 @@ bool stepEpdRefresh() {
     return false;
 }
 
+bool epdWriteAndRefreshRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t color_byte) {
+    // Power on the display
+    _epd_write_command(0x22);
+    _epd_write_data(0xf8);
+    _epd_write_command(0x20);
+    while (digitalRead(ePaper_Busy) == LOW) {}  // wait for power-on
+
+    // Set GRAM address window
+    _epd_write_command(0x11);
+    _epd_write_data(0x03);
+
+    _epd_write_command(0x44);
+    _epd_write_data(uint8_t((x / 8) & 0xFF));
+    _epd_write_data(((x + w - 1) / 8) & 0xFF);
+
+    _epd_write_command(0x45);
+    _epd_write_data(uint8_t(y % 256));
+    _epd_write_data(uint8_t(y / 256));
+    _epd_write_data(((y + h - 1) % 256));
+    _epd_write_data(((y + h - 1) / 256));
+
+    _epd_write_command(0x4e);
+    _epd_write_data(uint8_t((x / 8) & 0xFF));
+
+    _epd_write_command(0x4f);
+    _epd_write_data(uint8_t(y % 256));
+    _epd_write_data(uint8_t(y / 256));
+
+    // Calculate data size: w pixels needs ceil(w/8) bytes per row, h rows
+    uint32_t bytes_per_row = (w + 7) / 8;
+    uint32_t total_bytes = bytes_per_row * h;
+
+    // Write color data to GRAM (command 0x24 = current buffer)
+    _epd_write_command(0x24);
+    for (uint32_t i = 0; i < total_bytes; i++) {
+        _epd_write_data(color_byte);
+    }
+
+    // Trigger partial waveform refresh
+    _epd_write_command(0x22);
+    _epd_write_data(0xfc);  // immediate power off after
+    _epd_write_command(0x20);
+
+    // Wait for BUSY pin (HIGH = done)
+    uint32_t start = millis();
+    while (digitalRead(ePaper_Busy) == LOW) {
+        if (millis() - start > 8000) break;  // safety timeout
+    }
+    return true;
+}
+
 void epdPowerOffNow() {
     _epd_write_command(0x22);
     _epd_write_data(0x83);
