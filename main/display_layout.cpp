@@ -9,13 +9,9 @@
 #include "text_inbox.h"
 #include "scan.h"
 #include "screen_sync.h"
-#include "disp_refresh.h"  // For triggerEpdRefresh + epdSetGRAMWindow + epdWriteAndRefreshRect
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/Org_01.h>
-
-// Extern for pendingFullRefresh() from display.cpp
-extern bool pendingFullRefresh();
 
 // ── LayoutState definition ──
 LayoutState layout_state;
@@ -172,48 +168,34 @@ void drawBottomStatusbar() {
 // ── Internal: common page-loop for all layouts.
 //     use_full_refresh=true  → write content to GRAM + full waveform (~3.8s, no flicker)
 //     use_full_refresh=false → two-step GRAM write: white→refresh→black→refresh (~1.6s, no flicker)
-//     Writes directly to SSD1681 GRAM (not GxEPD2 buffer model):
-//       Step 1: Write WHITE bytes to the full partial region in GRAM → trigger refresh (~0.8s)
-//       Step 2: Write actual content to GRAM via firstPage/nextPage → trigger refresh (~0.8s)
+// ── Internal: common page-loop for all layouts.
+//     use_full_refresh=true  → full panel refresh (~2.5s, no ghosting)
+//     use_full_refresh=false → partial update via nextPage() (~0.8s, clean)
+// Both paths use GxEPD2's tested writeImage + refresh LUT internally.
 // ──
 
 typedef void (*drawFn)();
 
-static void renderPartialWithWhiteout(drawFn drawContent) {
-    uint16_t x = 0, y = 12, w = disp_width, h = 184;
-
-    // Step 1: White-out the region in GRAM → partial refresh to clear ghosting.
-    epdWriteAndRefreshRect(x, y, w, h, 0xFF);
-
-    // Step 2: Write content via GxEPD2 buffer → write to GRAM → trigger refresh.
-    // First set the GRAM pointer for this region.
-    display->setPartialWindow(x, y, w, h);
-    epdSetGRAMWindow(x, y, w, h);
-
-    display->firstPage();
-    do {
-        display->fillScreen(GxEPD_WHITE);
-        drawContent();
-    } while (display->nextPage());
-
-    triggerEpdRefresh(false);
-}
-
 static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
     if (use_full_refresh) {
-        // Full refresh: write content to GRAM → full waveform.
-        epdSetGRAMWindow(0, 12, disp_width, 184);
+        // Full refresh: set full window → page loop → nextPage() pushes to GRAM + waveform
         display->setFullWindow();
 
         display->firstPage();
         do {
             display->fillScreen(GxEPD_WHITE);
             drawContent();
-        } while (display->nextPage());
+        } while (display->nextPage());  // nextPage() calls epd2.writeImageForFullRefresh() + refresh(false)
 
-        triggerEpdRefresh(false);
     } else {
-        renderPartialWithWhiteout(drawContent);
+        // Partial update: set full screen partial window → page loop → nextPage() pushes to GRAM + waveform
+        display->setPartialWindow(0, 0, disp_width, disp_height);
+
+        display->firstPage();
+        do {
+            display->fillScreen(GxEPD_WHITE);
+            drawContent();
+        } while (display->nextPage());  // nextPage() calls epd2.writeImage() + refresh(x,y,w,h)
     }
 }
 

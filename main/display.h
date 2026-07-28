@@ -35,6 +35,11 @@ extern const uint16_t bat10_icon[16];
 extern const uint16_t bat0_icon[16];
 
 // Stubs — rendering moved to display_layout; definitions in display.cpp keep callers linking
+
+// GPS icons — extern for layout module to reference
+extern const uint16_t gpsok_icon[16];
+extern const uint16_t gpsnofix_icon[16];
+
 void updDisp(uint8_t line, const char* msg, bool updateScreen = true);
 void updModeAndChannelDisplay();
 void printStatusIcons();
@@ -45,10 +50,5 @@ void enablePartialUpdates(bool en);
 void forceFullRefresh();
 bool pendingFullRefresh();
 void sleepDisplay();
-
-// ── Non-blocking waveform transfer (from disp_refresh) ──
-bool isEpdRefreshing();
-void triggerEpdRefresh(bool full_refresh);
-bool stepEpdRefresh();  // Returns true on first call after DONE
 
 #endif

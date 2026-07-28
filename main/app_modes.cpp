@@ -51,7 +51,7 @@ uint8_t  txtInboxScrollPage = 0;
 uint8_t  txtInboxMsgCount = 0;
 bool     txtShowInbox = false;
 
-// Beacon mode distance tracking
+
 double beacon_display_dist = -1;
 String beacon_display_name;
 unsigned long beacon_last_distance_update = 0;
@@ -471,12 +471,17 @@ void handlePacket(Packet packet) {
                strncpy(layout_state.raw_hex_line1, packet.content.c_str(), sizeof(layout_state.raw_hex_line1) - 1);
                layout_state.raw_hex_line1[sizeof(layout_state.raw_hex_line1) - 1] = '\0';
                drawRawLayout();
-           } else {
-               // TST mode — update test counters for drawTstLayout()
-               layout_state.tst_sent = test_message_counter;
-               layout_state.tst_rcvd = pckt_count;
-               drawTstLayout();
-           }
+            } else {
+                // TST mode — update test counters for drawTstLayout()
+                layout_state.tst_sent = test_message_counter;
+                layout_state.tst_rcvd = pckt_count;
+                if (radio) {
+                    layout_state.tst_last_rssi = radio->getRSSI();
+                    layout_state.tst_last_snr = radio->getSNR();
+                    layout_state.tst_last_time_on_air = timeOnAir;
+                }
+                drawTstLayout();
+            }
            markScreenDirty();
        } 
       else if (current_mode == "PTT" && packet.type == "PTT") {
@@ -652,6 +657,11 @@ void handlePacket(Packet packet) {
                   // Update range layout state and render
                   layout_state.range_distance_m = (int)range_stable_dist;
                   layout_state.range_sender = range_role_sender;
+                  if (radio) {
+                      layout_state.range_last_rssi = radio->getRSSI();
+                      layout_state.range_last_snr = radio->getSNR();
+                      layout_state.range_last_time_on_air = timeOnAir;
+                  }
                   drawRangeLayout();
 
               }

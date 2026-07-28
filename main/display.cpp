@@ -6,7 +6,6 @@
 #include "gps.h"
 #include "lora.h"
 #include "ble.h"
-#include "disp_refresh.h"
 
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
 #include <GxIO/GxIO.h>
@@ -18,10 +17,6 @@
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include "display.h"
-
-// ── Display SPI reference (set during setup for non-blocking refresh) ──
-static SPIClass* s_disp_spi = nullptr;
-static SPISettings s_disp_spi_settings;
 
 int disp_top_margin = 12;
 int disp_bottom_margin = 3;
@@ -174,61 +169,35 @@ GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>* display = nullptr;
 
 // ── Partial/full refresh control ──
 static bool s_need_full_refresh = true;  // default: start with full refresh
-static uint32_t s_boot_complete_ms = 0;
 
 void printline(const char* msg) {
     display->print(msg);
 }
 
 void setupDisplay() {
-    sendSerialToAppLn("[Display] starting e-paper init...");
-
-    pinMode(ePaper_Backlight, OUTPUT);
-    digitalWrite(ePaper_Backlight, HIGH);
-    enableBacklight(true);
-    sendSerialToAppLn("[Display] backlight ON");
-
     dispPort = new SPIClass(
         NRF_SPIM2, ePaper_Miso, ePaper_Sclk, ePaper_Mosi);
 
-    s_disp_spi = dispPort;  // Save for non-blocking waveform transfer
-    initDispRefresh(dispPort, s_disp_spi_settings);  // Initialize non-blocking refresh system
+    dispPort->begin();
+    
+    // Create SPI settings with speed, data order, and mode
+    SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);  // 4 MHz speed, MSB first, SPI mode 0
 
-    GxEPD2_150_BN epd(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
-    display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(epd);
+    // Now let's create the display class
+    display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
 
-    sendSerialToAppLn("[Display] calling init with reset_duration=300...");
-    display->init(0, true, 300, false, *dispPort, s_disp_spi_settings);
-    sendSerialToAppLn("[Display] init() returned OK");
+    // init(115200, true, 20, ...) — reset_duration=20 matches the proven T-Echo working value.
+    display->init(115200, true, 20, false, *dispPort, spiSettings);
+    display->setRotation(3); // Set display rotation
+    enableBacklight(true);
 
-    delay(200);
-    sendSerialToAppLn("[Display] post-reset delay done");
-
-    display->setRotation(3);
-    sendSerialToAppLn("[Display] rotation set, clearing screen...");
-
+    // Use the same single refresh pattern as the old working code: clearScreen + setFullWindow + fillScreen.
+    // GxEPD2's clearScreen writes 0xFF buffer then calls refresh(false) internally (one full refresh).
     display->clearScreen();
-    sendSerialToAppLn("[Display] clearScreen returned OK");
-
     display->setFullWindow();
     display->fillScreen(GxEPD_WHITE);
     display->setTextColor(GxEPD_BLACK);
     display->setFont(&FreeMonoBold9pt7b);
-
-    display->firstPage();
-    do {
-        display->fillScreen(GxEPD_WHITE);
-        display->setCursor(10, 40);
-        display->print("T-Echo Ready!");
-    } while (display->nextPage());
-
-    sendSerialToAppLn("[Display] doing full refresh...");
-    display->setPartialWindow(0, 12, 200, 184);
-    display->refresh(true);  // partial instead of full to avoid long wait at boot
-    sendSerialToAppLn("[Display] COMPLETE - e-paper should be updating now");
-    
-    s_boot_complete_ms = millis();
-    forceFullRefresh();
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {
@@ -289,41 +258,181 @@ void drawModeIcon(const char* mode) {
 }
 
 void showError(const char* error_msg) {
-    sendSerialToAppLn("[Display] Error: " + String(error_msg));
+    // Display error message on bottom line
+    updDisp(9, error_msg);
 }
 
+// ── Line-by-line display buffer (old working method) ──
+char disp_buf[20][80] = { "" };
+int displayLines = sizeof(disp_buf) / sizeof(disp_buf[0]);
+
 void clearScreen() {
-    // No-op: rendering is now done via firstPage()/nextPage() in layout functions.
-    // Calling refresh here causes unwanted e-paper flashes when switching modes.
-    // Clearing is now integrated into drawDefaultLayout() and per-mode layouts.
+    for (int i = 0; i < displayLines; i++) {
+        updDisp(i, "", false);
+    }
+    updDisp(0, "", true);
 }
 
 void enableBacklight(bool en) {
     digitalWrite(ePaper_Backlight, en);
 }
 
-// ── Stub implementations — rendering moved to display_layout ──
-void updDisp(uint8_t line, const char* msg, bool updateScreen) {}
-void printStatusIcons() {}
-void printGPSIcon() {}
-void printFrequencyIcon(bool updateScreen) {}
-void printTimeIcon(bool updateScreen) {}
-void printStatusOnApp() {}
-void sleepDisplay() {}
-
-// No-op: full refresh disabled to avoid long waiting times.
+// ── Partial/full refresh control ──
 void forceFullRefresh() {
-    // s_need_full_refresh = true;
+    s_need_full_refresh = true;
 }
 
-// Always returns false — all draws use partial refresh (non-blocking waveform, ~0.8s)
 bool pendingFullRefresh() {
+    if (s_need_full_refresh) {
+        s_need_full_refresh = false;
+        return true;
+    }
     return false;
 }
 
-// ── Replaces old line-by-line rendering with layout system ──
-#include "display_layout.h"
+// ── OLD working rendering method: line-by-line with displayWindow ──
+void updDisp(uint8_t line, const char* msg, bool updateScreen) {
+    if (line < displayLines && strcmp(disp_buf[line], msg) != 0) {  
+        strncpy(disp_buf[line], msg, sizeof(disp_buf[line]) - 1);
+        disp_buf[line][sizeof(disp_buf[line]) - 1] = '\0';
+
+        drawModeIcon(current_mode);
+
+        // Clear only the part where the updated line is
+        if (line < 2) {
+            display->fillRect(20, disp_top_margin + (line * disp_font_height)-disp_window_offset, disp_width, disp_font_height, GxEPD_WHITE);
+            display->setCursor(20, disp_top_margin + line * disp_font_height);
+        } else {
+            display->fillRect(0, disp_top_margin + (line * disp_font_height)-disp_window_offset, disp_width, disp_font_height, GxEPD_WHITE);
+            display->setCursor(0, disp_top_margin + line * disp_font_height);
+        }
+
+        display->setTextColor(GxEPD_BLACK);
+        display->setFont(&FreeMonoBold9pt7b);
+
+        printline(disp_buf[line]);
+
+        if (updateScreen) {
+            // Push entire screen using GxEPD2_BW's internal displayWindow path.
+            // The buffer was already drawn to by fillRect/print above, so we push what's there.
+            display->displayWindow(0, 0, disp_width, disp_height);
+        }
+
+        char formattedMessage[100];
+        if (line < 10) {
+            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
+        } else {
+            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
+        }
+        sendNotificationToApp(formattedMessage);
+    } else {
+        char formattedMessage[100];
+        if (line < 10) {
+            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
+        } else {
+            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
+        }
+        sendNotificationToApp(formattedMessage);
+    }
+}
+
+void printStatusIcons();
+void printGPSIcon();
+void printFrequencyIcon(bool);
+void printTimeIcon(bool);
+void printStatusOnApp();
 
 void updModeAndChannelDisplay() {
-    drawDefaultLayout();
+    // Full screen redraw on mode change — matching old working behavior.
+    // fillScreen(WHITE) fills the GxEPD2 buffer with white, then we draw all elements.
+    display->fillScreen(GxEPD_WHITE);
+    drawModeIcon(current_mode);
+
+    printStatusIcons();
+    if (!in_settings_mode) {
+        char displayString[20];
+        snprintf(displayString, sizeof(displayString), "Mode: %s", current_mode);
+        updDisp(1, displayString, true);  // triggers full screen push at end
+    } else {
+        char buf[30];
+        if (current_mode == "PTT") {
+            snprintf(buf, sizeof(buf), "chn:%c %dbps", channels[deviceSettings.channel_idx], getBitrateFromIndex(deviceSettings.bitrate_idx));
+        } else {
+            snprintf(buf, sizeof(buf), "chn:%c spf:%d", channels[deviceSettings.channel_idx], deviceSettings.spreading_factor);
+        }
+        updDisp(0, buf, true);  // triggers full screen push at end
+    }
+}
+
+void printStatusIcons() {
+    uint8_t batteryPercentage = getBatteryPercentage();
+    if (batteryPercentage > 90) {
+        drawIcon(bat100_icon, disp_width - disp_icon_width - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    } else if (batteryPercentage > 80) {
+        drawIcon(bat80_icon, disp_width - disp_icon_width - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    } else if (batteryPercentage > 60) {
+        drawIcon(bat60_icon, disp_width - disp_icon_width - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    } else if (batteryPercentage > 40) {
+        drawIcon(bat40_icon, disp_width - disp_icon_width - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    } else if (batteryPercentage > 20) {
+        drawIcon(bat20_icon, disp_width - disp_icon_width - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    } else if (batteryPercentage > 10) {
+        drawIcon(bat10_icon, disp_width - disp_icon_width - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    } else if (batteryPercentage > 3) {
+        drawIcon(bat0_icon, disp_width - disp_icon_width - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    } else if (batteryPercentage > 0) {
+        drawIcon(bat0_icon, disp_width - disp_icon_width - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    }
+    printGPSIcon();
+    printFrequencyIcon();
+    printTimeIcon();
+}
+
+void printGPSIcon() {
+    if (gps_status == NO_GPS) {
+        // No GPS Module installed
+    } else if (gps_status == GPS_ERROR) {
+        showError("GPS Hardware error");
+    } else if (gps_status == GPS_INIT || gps_status == GPS_TIME) {
+        drawIcon(gpsnofix_icon, disp_width - (3 * disp_icon_width) - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    } else if (gps_status == GPS_LOC) {
+        drawIcon(gpsok_icon, disp_width - (3 * disp_icon_width) - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin, disp_icon_height, disp_icon_width, GxEPD_WHITE, GxEPD_BLACK);
+    }
+
+    display->fillRect(disp_width - (2 * disp_icon_width) - 1, disp_height - disp_icon_height - (2 * disp_bottom_margin) - disp_window_offset, 26, disp_font_height, GxEPD_WHITE);
+    display->setCursor(disp_width - (2 * disp_icon_width) - disp_right_margin, disp_height - disp_icon_height - disp_bottom_margin);
+    display->setTextColor(GxEPD_BLACK);
+    display->setFont(&FreeMonoBold9pt7b);
+    display->print(gps_satellites);
+}
+
+void printFrequencyIcon(bool updateScreen) {
+    display->fillRect(0, disp_height - disp_icon_height - (2 * disp_bottom_margin) - disp_window_offset + disp_font_height, 78, disp_font_height, GxEPD_WHITE);
+    display->setCursor(0, disp_height - disp_icon_height - disp_bottom_margin + disp_font_height);
+    display->setTextColor(GxEPD_BLACK);
+    display->setFont(&FreeMonoBold9pt7b);
+    char displayString[10];
+    snprintf(displayString, sizeof(displayString), "%.2f", currentFrequency);
+    display->print(displayString);
+    if (updateScreen) {
+        display->displayWindow(0, 0, disp_width, disp_height);
+    }
+}
+
+void printTimeIcon(bool updateScreen) {
+    RTC_Date dateTime = rtc.getDateTime();
+    char time_str[9];
+    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", dateTime.hour, dateTime.minute, dateTime.second);
+    display->fillRect(5 * disp_font_height + 3, disp_height - disp_icon_height - (2 * disp_bottom_margin) - disp_window_offset + disp_font_height - 4, 39, disp_font_height, GxEPD_WHITE);
+    display->setCursor(5 * disp_font_height + 3, disp_height - disp_icon_height - disp_bottom_margin - 4 + disp_font_height);
+    display->setTextColor(GxEPD_BLACK);
+    display->setFont(&Org_01);
+    display->print(time_str);
+    if (updateScreen) {
+        display->displayWindow(0, 0, disp_width, disp_height);
+    }
+}
+
+void printStatusOnApp() {
+    // Stub — handled by screen_sync in main loop
 }
