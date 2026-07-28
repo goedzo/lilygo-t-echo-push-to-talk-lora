@@ -238,6 +238,11 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
         }
         
         sendSerialToAppLn(F("Type determined: BEACON"));
+    } else if (strncmp((char*)buffer, "TX", 2) == 0 && index >= 3) {
+        type = "TXT";
+        channel = buffer[2];  // Set the channel (A, B, C, etc.)
+        sendSerialToApp(F("Type determined: TXT on channel "));
+        sendSerialToAppLn((String)channel);
     } else if (strncmp((char*)buffer, "PR", 2) == 0 && index >= 3) {
         type = "PRB";  // Probe discovery packet
         channel = '\0';  // Probes don't use channel field

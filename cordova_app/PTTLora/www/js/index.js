@@ -655,6 +655,11 @@ var app = {
             badge.textContent = 'Target: ' + this.getShortDeviceId(deviceName);
             badge.className = 'status-badge connected';
         }
+        
+        // Fetch the new target's current screen state so the UI reflects it immediately
+        setTimeout(function() {
+            app.sendDataToDevice(deviceName, 'GETSCREEN');
+        }, 100);
     },
 
     initialize: function() {
@@ -761,7 +766,7 @@ var app = {
         
         if (!this._settingsPanelOpen) {
             // Open panel — fetch settings from device
-            section.classList.toggle('open');
+            section.classList.add('open');
             this._settingsPanelOpen = true;
             
             // Show settings section
@@ -775,7 +780,9 @@ var app = {
                 showToast('No device connected');
             }
         } else {
-            section.classList.toggle('open');
+            // Close panel — fully hide the section
+            section.classList.remove('open');
+            section.style.display = 'none';
             this._settingsPanelOpen = false;
         }
     },
@@ -803,11 +810,11 @@ var app = {
         }
         
         if (connectedCount > 0) {
-            logMessage('Already have ' + connectedCount + ' connected device(s), skipping scan');
-            return;
+            logMessage('Already have ' + connectedCount + ' connected device(s), continuing scan for more...');
+        } else {
+            logMessage("Scanning for BLE devices...");
         }
-
-        logMessage("Scanning for BLE devices...");
+        
         var serviceUUIDs = ["1235"];
         updateBleInfoStrip({ deviceState: 'scanning' });
         ble.startScan(serviceUUIDs, function(device) {
@@ -1166,6 +1173,26 @@ var app = {
             }
         }
 
+        // Handle settings responses from LINE:NOTIF|DATA: wrapped data
+        // These payloads don't have LINE:/TEXT:/STATUS prefixes, so the NOTIF stripping
+        // above sets lineMatch to null. Check wrappedData directly for settings patterns.
+        if (wrappedData) {
+            var wdSettings = wrappedData.match(/^OK\{SETTINGS:(.*?)\}/);
+            if (wdSettings && !wdSettings[1].match(/:saved$/)) {
+                // GETSETTINGS response with actual settings data
+                app.populateDeviceSettings(wdSettings[1]);
+                logMessage('Device settings received');
+                showToast('Settings synced');
+                return;
+            }
+            if (wrappedData === 'OK{SETTINGS:saved}') {
+                // SETSETTINGS save ACK
+                logMessage('Settings saved to device');
+                showToast('Settings applied');
+                return;
+            }
+        }
+
         // Handle LINE:SERIAL — device SerialMon log relay lines
         var serialData = '';
         if (lineMatch && lineMatch[1] === 'SERIAL') {
@@ -1423,25 +1450,6 @@ var app = {
 			}
 		}
 
-        // Also handle settings responses from unwrapped data (GETSETTINGS may not have TEXT: prefix)
-		if (lineMatch && !textMatch && wrappedData) {
-			var wd = wrappedData;
-			if (wd.match(/^OK\{SETTINGS:/)) {
-				var settingsData2 = wd.match(/OK\{SETTINGS:(.*?)\}/);
-				if (settingsData2) {
-					app.populateDeviceSettings(settingsData2[1]);
-					logMessage('Device settings received');
-					showToast('Settings synced');
-					return;
-				}
-			}
-			if (wd === 'OK{SETTINGS:saved}') {
-				logMessage('Settings saved to device');
-				showToast('Settings applied');
-				return;
-			}
-		}
-
 		// Handle Waypoint received from device
 		if (lineMatch && lineMatch[1] === 'WP') {
 			var dataMarker = message.indexOf('|DATA:');
@@ -1485,7 +1493,7 @@ var app = {
 				}
 			}
 			
-			app.renderScreenMirror(syncData);
+			app.renderScreenMirror(syncData, deviceName);
 			
 			// BLE liveness update from screen mirror — if the device sends screen data,
 			// BLE is confirmed alive. This serves as fallback when GETSTATUS responses
@@ -1880,8 +1888,11 @@ var app = {
         var sE = document.getElementById('settingSEC');
         if (hE && mE && sE) {
             if (parsed.HOUR !== undefined) hE.value = parsed.HOUR;
+            else if (!hE.value || hE.value === '') { var now = new Date(); hE.value = String(now.getHours()).padStart(2, '0'); }
             if (parsed.MIN !== undefined) mE.value = parsed.MIN;
+            else if (!mE.value || mE.value === '') { var now = new Date(); mE.value = String(now.getMinutes()).padStart(2, '0'); }
             if (parsed.SEC !== undefined) sE.value = parsed.SEC;
+            else if (!sE.value || sE.value === '') { var now = new Date(); sE.value = String(now.getSeconds()).padStart(2, '0'); }
         }
     },
 
@@ -2175,11 +2186,14 @@ var app = {
         return fields;
     },
 
-    renderScreenMirror: function(syncData) {
+    renderScreenMirror: function(syncData, sourceDeviceName) {
         if (!syncData) return;
         
         var fields = this.parseScreenMirrorFields(syncData);
         this._screenMirrorData = fields;
+
+        // Determine which device this screen mirror came from
+        var isTargetDevice = !sourceDeviceName || sourceDeviceName === app.targetDeviceName;
 
         var modeBadge = document.getElementById('screenModeBadge');
         var modeNameEl = document.getElementById('screenModeName');
@@ -2193,20 +2207,45 @@ var app = {
         if (modeBadge) modeBadge.textContent = mode;
         if (modeNameEl) modeNameEl.textContent = mode;
         if (chanSfEl) chanSfEl.textContent = fields['h'] || 'chn:A spf:7';
-        
-        // Sync app mode pill to match actual device mode from screen sync
-        if (app.currentMode !== mode) {
-            // If we recently set a non-TXT mode and the device sends TXT, this is likely stale
-            // data during transition — ignore it. Wait for the real new-mode screen data.
-            if (app.pendingDeviceSetMode && app.pendingDeviceSetMode !== 'TXT' && mode === 'TXT') {
-                logMessage('Ignoring stale M:TXT screen mirror after SETMODE:' + app.pendingDeviceSetMode);
-                // Still render content area but don't change mode
-            } else {
-                app.currentMode = mode;
-                document.querySelectorAll('.modePill').forEach(btn => {
-                    btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
-                });
+
+        // Only update the global mode pill if this screen mirror is from our target device.
+        // When multiple devices are connected, non-target devices can still send screen data
+        // during a mode switch — updating the pill from those would overwrite the correct state.
+        if (isTargetDevice) {
+            // Sync app mode pill to match actual device mode from screen sync
+            if (app.currentMode !== mode) {
+                // If we recently set a non-TXT mode and the device sends TXT, this is likely stale
+                // data during transition — ignore it. Wait for the real new-mode screen data.
+                if (app.pendingDeviceSetMode && app.pendingDeviceSetMode !== 'TXT' && mode === 'TXT') {
+                    logMessage('Ignoring stale M:TXT screen mirror after SETMODE:' + app.pendingDeviceSetMode);
+                    // Still render content area but don't change mode
+                } else {
+                    app.currentMode = mode;
+                    document.querySelectorAll('.modePill').forEach(btn => {
+                        btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+                    });
+                    // When connecting to a device already in PTT mode, show the PTT section UI
+                    if (mode === 'PTT') {
+                        var inputSection = document.getElementById('inputSection');
+                        var pttSection = document.getElementById('pttSection');
+                        if (inputSection) inputSection.style.display = 'none';
+                        if (pttSection) pttSection.style.display = 'block';
+                        app.startPttStatusPolling && app.startPttStatusPolling();
+                        app.refreshPttButtonFromState && app.refreshPttButtonFromState();
+                    }
+                }
+            } else if (app.currentMode === 'PTT') {
+                // Device was already in PTT mode when app started — ensure section stays visible
+                var _inputSection = document.getElementById('inputSection');
+                var _pttSection = document.getElementById('pttSection');
+                if (_inputSection) _inputSection.style.display = 'none';
+                if (_pttSection) {
+                    _pttSection.style.display = 'block';
+                }
             }
+        } else {
+            var srcShortId = this.getShortDeviceId(sourceDeviceName) || sourceDeviceName;
+            logMessage(srcShortId + ' screen data received (non-target, ignoring mode sync)');
         }
 
         // Update status bar
@@ -2294,6 +2333,12 @@ var app = {
 
         case 'TXT':
             var msgCount = parseInt(c['txt_inbox_count']) || 0;
+            var loraAlive = c['txt_lora_alive'] ? true : false;
+            if (loraAlive) {
+                html += this._screenRow('<span class="status-badge connected">✓ On channel</span>');
+            } else {
+                html += this._screenRow('✗ No one on channel');
+            }
             if (c['txt_show_inbox'] === '1') {
                 var scrollPage = parseInt(c['txt_scroll_page']) || 0;
                 html += this._screenRow('Inbox: P ' + (scrollPage + 1) + '/' + Math.ceil(Math.max(msgCount, 1) / 8));
@@ -2329,69 +2374,81 @@ var app = {
             break;
 
         case 'SCAN':
-            // Firmware sends compact scan format in C: section: "s{progress}@{freq},{entries}..."
+            // Compact scan format in C: section: "s{progress}@{freq},{ch1_f}{ch1_r},..."
             var rawC = fields.c_raw || '';
             if (rawC.startsWith(',')) rawC = rawC.slice(1);
             
-            // Parse progress and current frequency: "s{pct}@{freq}"
-            var scanFreq = '--- MHz';
-            var scanProgressVal = '-%';
-            var channelRows = 0;
+            var scanFreq = '---.--MHz';
+            var scanProgressVal = 0;
+            var channelEntries = [];
             
             if (rawC) {
-                // rawC is like "s0@863,{entries}" or just "s0@863"
+                // rawC is like "s{pct}@{freq},{entries}"
                 var pctIdx2 = rawC.indexOf('@');
                 if (pctIdx2 !== -1 && rawC[0] === 's') {
                     var pctStr = rawC.slice(1, pctIdx2);
                     var progressNum = parseInt(pctStr, 10);
-                    if (!isNaN(progressNum)) scanProgressVal = progressNum + '%';
+                    if (!isNaN(progressNum)) scanProgressVal = progressNum;
                     
                     // Current freq after '@': "s{pct}@{freq},entries"
                     var freqPart = rawC.substring(pctIdx2 + 1);
                     var commaIdx2 = freqPart.indexOf(',');
                     if (commaIdx2 !== -1) {
                         var freqStr = freqPart.substring(0, commaIdx2);
-                        var freqVal = parseInt(freqStr, 10);
-                        if (!isNaN(freqVal)) scanFreq = (freqVal / 10).toFixed(2) + ' MHz';
+                        var freqVal = parseFloat(freqStr);
+                        if (!isNaN(freqVal)) scanFreq = freqVal.toFixed(2) + 'MHz';
                         
-                        // Parse top channel entries: "{8-digit-freq_10}{rssi_10},{...}"
+                        // Parse top channel entries: "{8-digit-freq_100}{rssi_10},{...}"
                         var entriesStr = freqPart.substring(commaIdx2 + 1);
                         var entries = entriesStr.split(',').filter(function(e){return e;});
                         
-                        for (var ei = 0; ei < Math.min(entries.length, 5) && channelRows < 5; ei++) {
+                        for (var ei = 0; ei < Math.min(entries.length, 5); ei++) {
                             var ent = entries[ei];
-                            // Format: "%08d%d" → freq (MHz*10 as int) + rssi (rssi*10 as signed int)
-                            // Total chars depends on value length, but freq is always first 8 digits
                             if (ent.length >= 12) {
-                                var efFreq = parseInt(ent.substring(0, 8), 10);
+                                var efFreq = parseFloat(ent.substring(0, 8)) / 100;
                                 var efRssi = parseInt(ent.substring(8), 10) / 10;
                                 if (!isNaN(efFreq) && !isNaN(efRssi)) {
-                                    html += this._screenRow((efFreq / 10).toFixed(2) + ' MHz R' + efRssi.toFixed(1));
-                                    channelRows++;
+                                    channelEntries.push({ freq: efFreq.toFixed(2), rssi: efRssi });
                                 }
                             } else if (ent.length >= 5) {
-                                // Short entry: freq + rssi split evenly
                                 var mid = Math.floor(ent.length / 2);
-                                var sFreq = parseInt(ent.substring(0, mid), 10);
+                                var sFreq = parseFloat(ent.substring(0, mid)) / 10;
                                 var sRssi = parseFloat(ent.substring(mid)) / 10;
                                 if (!isNaN(sFreq) && !isNaN(sRssi)) {
-                                    html += this._screenRow((sFreq / 10).toFixed(2) + ' MHz R' + sRssi.toFixed(1));
-                                    channelRows++;
+                                    channelEntries.push({ freq: sFreq.toFixed(2), rssi: sRssi });
                                 }
                             }
                         }
                     } else {
-                        // No channel entries yet (scanning just started)
+                        var noCommaFreq = parseFloat(freqPart);
+                        if (!isNaN(noCommaFreq)) scanFreq = noCommaFreq.toFixed(2) + 'MHz';
                     }
                 }
             }
             
-            html += this._screenRow('Freq: ' + scanFreq);
-            html += this._screenRow('Progress: ' + scanProgressVal);
+            // Progress bar: device shows it as a white-filled-on-black bar with percentage text
+            var totalBarWidth = 180;
+            var filledWidth = Math.round((scanProgressVal / 100) * totalBarWidth);
+            var progressBarHtml;
+            if (scanProgressVal > 0) {
+                progressBarHtml = '<div class="scan-progress-bar"><div class="scan-progress-filled" style="width:' + filledWidth + 'px;"></div><span class="scan-progress-text">' + scanProgressVal + '%</span></div>';
+            } else {
+                progressBarHtml = '<div class="scan-progress-bar"><div class="scan-progress-empty">&nbsp;</div><span class="scan-progress-none">---%</span></div>';
+            }
             
-            while (channelRows < 5) {
-                html += '<div class="screen-row blank">&nbsp;</div>';
-                channelRows++;
+            html += this._screenRow('Freq: ' + scanFreq);
+            html += '<div class="screen-row scan-progress-row">' + progressBarHtml + '</div>';
+            html += '<div class="screen-row scan-top-channels-header">Top Channels</div>';
+            
+            for (var ci = 0; ci < 5; ci++) {
+                if (ci < channelEntries.length) {
+                    var ch = channelEntries[ci];
+                    // Quality estimate from RSSI: same as device calculateQuality() thresholds
+                    var quality = this._estimateScanQuality(ch.rssi);
+                    html += this._screenRow(ch.freq + 'MHz Q' + quality + ' R' + ch.rssi.toFixed(0) + 'dBm');
+                } else {
+                    html += '<div class="screen-row blank">&nbsp;</div>';
+                }
             }
             break;
 
@@ -2460,5 +2517,17 @@ var app = {
         }
         var target = app.targetDeviceName || keys[0];
         app.sendDataToDevice(target, 'GETSCREEN');
+    },
+
+    _estimateScanQuality: function(rssi) {
+        // Match the device's calculateQuality thresholds for RSSI/SNR
+        // Device uses SNR as primary factor; approximate with RSSI alone
+        var q = 1;
+        if (rssi > -40) q = 5;
+        else if (rssi > -50) q = 4;
+        else if (rssi > -60) q = 3;
+        else if (rssi > -70) q = 2;
+        else q = 1;
+        return q;
     }
 };

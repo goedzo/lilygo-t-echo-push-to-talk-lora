@@ -107,6 +107,8 @@ Verification path: 1) Build firmware via Arduino CLI (zero errors) → 2) Flash 
 
 Do not rely on memory. Re-read the applicable DOX chain in the current session before editing.
 
+Every agent must verify its assumptions by looking at the source code before making any changes — confirm understanding of the current solution and identify the best path forward rather than guessing from documentation or memory alone.
+
 ## Update After Editing
 
 Every meaningful change requires a DOX pass before the task is done.
@@ -205,3 +207,41 @@ When the user requests a durable behavior change, record it here or in the relev
 | `cordova_app/AGENTS.md` | Android companion app (Cordova android 13 + BLE plugin, GATT `"1235"` / `"ABCE"`) |
 | `lilygo_lora32_keyboard_bridge/AGENTS.md` | Bridge firmware (ESP32 LoRa32 ↔ BLE relay) — independent codebase |
 | `libraries/AGENTS.md` | Vendored Arduino libraries — 19 libs on disk, full inventory in that doc |
+
+
+## Writing Style & Documentation Guidelines (Anti-Slop)
+
+When writing Markdown, code comments, docstrings, PR descriptions, commit messages, or error messages, adhere to the following rules:
+
+### 1. Word Choice & Terminology
+- **One Name Per Concept:** Use consistent terms. Do not rotate synonyms (e.g., use strictly `user`, do not rotate between `user`, `client`, and `customer`).
+- **No Marketing Fluff:** Do not use hype words or subjective adjectives (`seamless`, `robust`, `powerful`, `cutting-edge`, `effortless`, `intuitive`, `delve`).
+- **No Phrasal Verbs:** Use direct, single verbs. 
+  - Say `start` (not *spin up*)
+  - Say `remove` (not *take off*)
+  - Say `contact` (not *reach out*)
+  - Say `explore` (not *dive into*)
+
+### 2. Grammar & Structure
+- **Sentence Length Caps:**
+  - Max **20 words** for step-by-step instructions or procedures.
+  - Max **25 words** for descriptive/explanatory sentences.
+- **Punctuation Bans:** Never use em dashes (`—`) or semicolons (`;`). Split ideas into separate, standalone sentences.
+- **Active Verbs (No Nominalization):** Use direct active verbs instead of turning verbs into nouns.
+  - Say **"Analyze the log"** (not *"Perform an analysis of the log"*)
+  - Say **"Help"** (not *"Provide assistance"*)
+- **No Hedging:** Remove helper verb stacks like *"It is important to note that..."* or *"This may potentially help to..."*. State facts directly.
+
+## Reasoning & Problem-Solving Guidelines
+
+### 1. Execution Workflow
+1. **Investigate:** Read relevant files and trace code paths before modifying anything.
+2. **Diagnose:** Identify the root cause. Do not patch symptoms (e.g., adding a null check around a deeper state corruption bug).
+3. **Plan:** State the fix strategy in 2-3 brief bullet points before executing file edits.
+4. **Execute:** Apply changes.
+5. **Verify:** Run existing tests or linter checks to ensure no regressions.
+
+### 2. Code Changes & Architecture
+- **Minimal Diffs:** Solve the immediate problem with the smallest required code change. Do not perform unrequested refactoring or add unneeded abstractions (YAGNI).
+- **Edge Cases:** Always handle empty states, null inputs, network failures, and boundary conditions explicitly.
+- **Architectural Integrity:** Respect existing code patterns. If a task requires violating current conventions or introduces security risks, flag it to the user before editing.

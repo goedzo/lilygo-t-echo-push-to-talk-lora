@@ -1,3 +1,4 @@
+#define DISABLE_DIAGNOSTIC_OUTPUT
 #include "utilities.h"
 #include <stdint.h>
 #include "settings.h"
@@ -191,13 +192,9 @@ void setupDisplay() {
     display->setRotation(3); // Set display rotation
     enableBacklight(true);
 
-    // Use the same single refresh pattern as the old working code: clearScreen + setFullWindow + fillScreen.
-    // GxEPD2's clearScreen writes 0xFF buffer then calls refresh(false) internally (one full refresh).
-    display->clearScreen();
-    display->setFullWindow();
-    display->fillScreen(GxEPD_WHITE);
-    display->setTextColor(GxEPD_BLACK);
-    display->setFont(&FreeMonoBold9pt7b);
+    // Use clearScreen() which does buffer fill + full waveform in ONE step.
+    // Then draw with page-loop for content.
+    display->clearScreen();  // fills buffer + triggers one full refresh (cleans panel)
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {

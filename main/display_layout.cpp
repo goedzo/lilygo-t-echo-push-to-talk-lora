@@ -178,24 +178,20 @@ typedef void (*drawFn)();
 
 static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
     if (use_full_refresh) {
-        // Full refresh: set full window → page loop → nextPage() pushes to GRAM + waveform
         display->setFullWindow();
-
         display->firstPage();
         do {
             display->fillScreen(GxEPD_WHITE);
             drawContent();
-        } while (display->nextPage());  // nextPage() calls epd2.writeImageForFullRefresh() + refresh(false)
+        } while (display->nextPage());
 
     } else {
-        // Partial update: set full screen partial window → page loop → nextPage() pushes to GRAM + waveform
         display->setPartialWindow(0, 0, disp_width, disp_height);
-
         display->firstPage();
         do {
             display->fillScreen(GxEPD_WHITE);
             drawContent();
-        } while (display->nextPage());  // nextPage() calls epd2.writeImage() + refresh(x,y,w,h)
+        } while (display->nextPage());
     }
 }
 
@@ -217,8 +213,6 @@ void drawDefaultLayout() {
 
     renderPageLoop(drawContent, full);
 }
-
-// ── Per-mode: BEACON — peer roster + distance (Split Rows layout) ──
 void drawBeaconLayout() {
     bool full = pendingFullRefresh();
 

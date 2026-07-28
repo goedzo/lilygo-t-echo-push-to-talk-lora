@@ -356,6 +356,62 @@ body {
     color: transparent;
 }
 
+/* SCAN mode progress bar */
+.scan-progress-row {
+    padding: 2px 4px;
+    min-height: 16px;
+}
+
+.scan-progress-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    background: #0D1520;
+    border-radius: 3px;
+    height: 16px;
+    overflow: hidden;
+}
+
+.scan-progress-filled {
+    height: 100%;
+    background: #C8DCE8;
+    border-radius: 3px 0 0 3px;
+    min-width: 2px;
+}
+
+.scan-progress-empty {
+    width: 100%;
+    height: 100%;
+}
+
+.scan-progress-none {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: #3D5A73;
+}
+
+.scan-progress-text {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: #E8ECF1;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.scan-top-channels-header {
+    background: #0D1520;
+    color: #C8DCE8;
+    font-weight: 700;
+    padding: 3px 4px;
+    border-radius: 2px;
+    text-align: center;
+}
+
 .screen-tx {
     color: #EF4444;
     font-weight: 700;

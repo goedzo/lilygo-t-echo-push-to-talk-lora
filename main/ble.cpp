@@ -201,12 +201,8 @@ static void drainQueue() {
             drain_stall_until = 0;
             drain_fail_start = 0;
         } else {
-            // Still no CCCD — clear everything and break
-            notif_queue_empty = true;
-            blob_notif_empty = true;
-            notif_low_queue_empty = true;
-            drain_failed = false;
-            drain_stall_until = 0;
+            // Still no CCCD — pause draining but keep queued items intact.
+            // The phone app will write CCCD at some point, and the next drain cycle will send them.
             return;
         }
     }
@@ -287,16 +283,11 @@ static void drainQueue() {
             buffer[msg_len + 1] = '~';
         }
 
-        // After stall timeout expires: clear stale item unconditionally to unblock queue
+        // After stall timeout expires: pause draining but keep items intact
         if (drain_failed && millis() >= drain_stall_until) {
             if (!cccd_subscribed) {
-                // CCCD not written — nothing we can do, just drain the entire queue and exit
-                notif_queue_empty = true;
-                blob_notif_empty = true;
-                notif_low_queue_empty = true;
-                drain_failed = false;
-                drain_stall_until = 0;
-                break;
+                // CCCD not written — don't drop queue items; wait for central to subscribe
+                return;
             }
             if (useBlob) {
                 blob_notif_queue[blob_notif_tail][0] = '\0';
@@ -320,16 +311,9 @@ static void drainQueue() {
 
         // Check if central has subscribed to this characteristic before attempting notify
         // Without CCCD subscription, sd_ble_gatts_h_notify() returns NRF_ERROR_INVALID_STATE (code=1)
-        // This is the root cause of continuous drain failures on reconnection
         if (!cccd_subscribed) {
-            // Clear all queues and reset drain state — nothing will receive these messages
-            // until central writes CCCD again. Without this, stale items block the queue forever.
-            notif_queue_empty = true;
-            blob_notif_empty = true;
-            notif_low_queue_empty = true;
-            drain_failed = false;
-            drain_stall_until = 0;
-            break;
+            // Don't drop queue items — just pause and wait for the phone app to subscribe to CCCD.
+            return;
         }
 
             int32_t ret = bleCharacteristic.notify(buffer, total);
@@ -789,7 +773,7 @@ void onCharacteristicWritten(uint16_t conn_handle, BLECharacteristic* chr, uint8
             else if (strcmp(action,"GETSCREEN")==0) { pending_screen_sync=true;handled=true; }
             else if (strcmp(action,"GETSTATUS")==0) { extern bool isPeerAlive();bool la=isPeerAlive();char r[32];snprintf(r,sizeof(r),"OK{BLE:1}{LORA:%d}",la?1:0);sendNotificationToApp(r);handled=true; }
             else if (strcmp(action,"GETSETTINGS")==0) { char buf[192];snprintf(buf,sizeof(buf),"OK{SETTINGS:SF=%d,BITRATE=%d,CHAN=%c,VOL=%d,BL=%d,BW=%d,CR=%d,FH=%d,HOUR=%d,MIN=%d,SEC=%d}",deviceSettings.spreading_factor,deviceSettings.bitrate_idx,channels[deviceSettings.channel_idx],deviceSettings.volume_level,deviceSettings.backlight?1:0,deviceSettings.bandwidth_idx,deviceSettings.coding_rate_idx,deviceSettings.frequency_hopping_enabled?1:0,deviceSettings.hours,deviceSettings.minutes,deviceSettings.seconds);sendNotificationToApp(buf);handled=true; }
-            else if (strcmp(action,"SETSETTINGS")==0) { extern void setupLoRa();char buf[256];int vlen=strlen(value);if(vlen>=sizeof(buf))vlen=sizeof(buf)-1;for(int i=0;i<vlen;i++)buf[i]=value[i];buf[vlen]='\0';bool needReinit=false;char*cp=buf;while(cp&&*cp){char*kp=strchr(cp,',');int klen=kp?kp-cp:vlen;if(klen>=64)klen=63;char key[64],val[64];memcpy(key,cp,klen);key[klen]='\0';if(!kp)break;char*eqp=strchr(key,'=');if(!eqp){cp=kp+1;continue;*eqp='\0';strncpy(val,eqp+1,sizeof(val)-1);val[sizeof(val)-1]='\0';if(strcmp(key,"SF")==0){deviceSettings.spreading_factor=atoi(val);}else if(strcmp(key,"BITRATE")==0){deviceSettings.bitrate_idx=atoi(val);needReinit=true;}else if(strcmp(key,"CHAN")==0){char c=toupper(val[0]);deviceSettings.channel_idx=c-'A';needReinit=true;}else if(strcmp(key,"VOL")==0){deviceSettings.volume_level=atoi(val);}else if(strcmp(key,"BL")==0){deviceSettings.backlight=!!atoi(val);}else if(strcmp(key,"BW")==0){deviceSettings.bandwidth_idx=atoi(val);needReinit=true;}else if(strcmp(key,"CR")==0){deviceSettings.coding_rate_idx=atoi(val);needReinit=true;}else if(strcmp(key,"FH")==0){deviceSettings.frequency_hopping_enabled=!!atoi(val);}else if(strcmp(key,"HOUR")==0){deviceSettings.hours=atoi(val);}else if(strcmp(key,"MIN")==0){deviceSettings.minutes=atoi(val);}else if(strcmp(key,"SEC")==0){deviceSettings.seconds=atoi(val);}}cp=kp?kp+1:nullptr;}if(needReinit)setupLoRa();sendNotificationToApp("OK{SETTINGS:saved}");handled=true; }
+             else if (strcmp(action,"SETSETTINGS")==0) { extern void setupLoRa();char buf[256];int vlen=strlen(value);if(vlen>=sizeof(buf))vlen=sizeof(buf)-1;for(int i=0;i<vlen;i++)buf[i]=value[i];buf[vlen]='\0';bool needReinit=false;char*cp=buf;while(cp&&*cp){char*kp=strchr(cp,',');int klen=kp?kp-cp:vlen;if(klen>=64)klen=63;char key[64],val[64];memcpy(key,cp,klen);key[klen]='\0';char*eqp=strchr(key,'=');if(!eqp){cp=kp?kp+1:nullptr;continue;*eqp='\0';strncpy(val,eqp+1,sizeof(val)-1);val[sizeof(val)-1]='\0';if(strcmp(key,"SF")==0){deviceSettings.spreading_factor=atoi(val);}else if(strcmp(key,"BITRATE")==0){deviceSettings.bitrate_idx=atoi(val);needReinit=true;}else if(strcmp(key,"CHAN")==0){char c=toupper(val[0]);deviceSettings.channel_idx=c-'A';needReinit=true;}else if(strcmp(key,"VOL")==0){deviceSettings.volume_level=atoi(val);}else if(strcmp(key,"BL")==0){deviceSettings.backlight=!!atoi(val);}else if(strcmp(key,"BW")==0){deviceSettings.bandwidth_idx=atoi(val);needReinit=true;}else if(strcmp(key,"CR")==0){deviceSettings.coding_rate_idx=atoi(val);needReinit=true;}else if(strcmp(key,"FH")==0){deviceSettings.frequency_hopping_enabled=!!atoi(val);}else if(strcmp(key,"HOUR")==0){deviceSettings.hours=atoi(val);}else if(strcmp(key,"MIN")==0){deviceSettings.minutes=atoi(val);}else if(strcmp(key,"SEC")==0){deviceSettings.seconds=atoi(val);}}cp=kp?kp+1:nullptr;}if(needReinit)setupLoRa();sendNotificationToApp("OK{SETTINGS:saved}");handled=true; }
             else { handled=true; }
         } else {
             if (nlen==9 && localBuf[0]=='G' && localBuf[1]=='E' && localBuf[2]=='T' && localBuf[3]=='S' && localBuf[4]=='T' && localBuf[5]=='A' && localBuf[6]=='T' && localBuf[7]=='U' && localBuf[8]=='S') { extern bool isPeerAlive();bool la=isPeerAlive();char r[32];snprintf(r,sizeof(r),"OK{BLE:1}{LORA:%d}",la?1:0);sendNotificationToApp(r);handled=true; }

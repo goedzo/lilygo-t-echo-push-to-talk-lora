@@ -138,6 +138,10 @@ void sendScreenSync() {
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "txt_show_inbox:%d,", txtShowInbox ? 1 : 0);
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "txt_scroll_page:%d,", txtInboxScrollPage);
 
+        // Peer liveness — mirrors the on-device indicator to companion app
+        extern bool isPeerAlive();
+        off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "txt_lora_alive:%d,", (isPeerAlive() ? 1 : 0));
+
         if (!txtShowInbox && msg_count > 0) {
             uint8_t out_len = 0;
             bool out_trunc = false;
@@ -168,10 +172,10 @@ void sendScreenSync() {
         // Each channel pair = "{f8digits}r{-3digits}" = 12 bytes (float encoded as fixed-point)
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "s%d@%.0f,", layout_state.scan_progress_pct, currentFrequency);
         for (int i = 0; i < 5 && topChannels[i].frequency > 0; i++) {
-            // Encode frequency as integer MHz*10000 → 8 digits. RSSI * 10 → -3 digits (negative)
-            int freq_10k = (int)(topChannels[i].frequency * 10);
+            // Encode frequency as integer MHz*100 → 8 digits (preserves .XX precision)
+            int freq_100 = (int)(topChannels[i].frequency * 100);
             int rssi_10 = (int)(topChannels[i].rssi * 10);
-            off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "%08d%d,", freq_10k, rssi_10);
+            off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "%08d%d,", freq_100, rssi_10);
         }
     }
     else if (strcmp(current_mode, "RAW") == 0) {
@@ -387,6 +391,11 @@ void sendScreenSyncForced() {
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "txt_inbox_count:%d,", msg_count);
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "txt_show_inbox:%d,", txtShowInbox ? 1 : 0);
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "txt_scroll_page:%d,", txtInboxScrollPage);
+
+        // Peer liveness — mirrors the on-device indicator to companion app
+        extern bool isPeerAlive();
+        off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "txt_lora_alive:%d,", (isPeerAlive() ? 1 : 0));
+
         if (!txtShowInbox && msg_count > 0) {
             uint8_t out_len = 0;
             bool out_trunc = false;

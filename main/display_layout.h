@@ -34,6 +34,9 @@ struct LayoutState {
     int beacon_peer_name;     // index into display buffer for beacon peer name
     double beacon_distance;
     int range_distance_m;
+    float range_last_rssi;
+    float range_last_snr;
+    unsigned long range_last_time_on_air;
     bool range_sender;
     bool ptt_tx_active;       // true during transmission (audio being relayed to LoRa)
     bool ptt_rx_active;       // true during reception (audio being forwarded to BLE)
@@ -56,6 +59,9 @@ struct LayoutState {
     char raw_ascii_line[40];
     int tst_sent;
     int tst_rcvd;
+    float tst_last_rssi;
+    float tst_last_snr;
+    unsigned long tst_last_time_on_air;
     double wp_lat, wp_lon;
     float wp_alt;
     char wp_label[25];

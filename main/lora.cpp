@@ -83,6 +83,7 @@ unsigned long lastMapShareTime = 0;  // Last time the map was shared
 unsigned long mapShareDelay = 0;  // Random delay for map sharing
 
 unsigned long lastPeerPacketTime = 0;  // Track when last packet from peer was received
+bool     peerPacketReceived = false;    // Guard against zero-boot artifact
 unsigned long lastBeaconTime = 0;      // Track when last beacon was sent
 
 // Probe-based frequency hopping discovery globals
@@ -90,6 +91,7 @@ bool inProbeMode = true;              // Start in probe mode — waiting for tim
 unsigned long firstBootMillis = 0;    // Boot timestamp used for probe timing
 
 bool isPeerAlive() {
+    if (!peerPacketReceived) return false;  // Never report alive before first real packet
     return (millis() - lastPeerPacketTime < PEER_TIMEOUT);
 }
 
@@ -775,6 +777,7 @@ void checkLoraPacketComplete() {
                         // Reset sync loss timer on successful packet
                         syncLossTimer = millis();
                         lastPeerPacketTime = millis();
+                        peerPacketReceived = true;
 
                     } else {
                         //No need to process

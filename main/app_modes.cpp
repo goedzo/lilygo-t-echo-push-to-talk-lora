@@ -79,6 +79,10 @@ enum { BTN_STATE_IDLE = 0, BTN_STATE_PRESSING, BTN_STATE_SETTINGS, BTN_STATE_POW
 unsigned long btnPressTime = 0;       // When button was first pressed
 bool settingsToggled = false;         // Track if we already toggled settings for this press
 
+// Boot grace period: ignore all hold detection during boot (prevents entering settings on power-on)
+static unsigned long s_boot_start_ms = 0;
+#define BOOT_GRACE_PERIOD_MS 3000
+
 // Edge-triggered debounce for MODE_PIN — only fires once per press event
 static bool lastPinState = HIGH;      // Previous reading (button is active-LOW)
 static unsigned long debounceTimestamp = 0;
@@ -149,6 +153,11 @@ void handleAppModes() {
     // This ensures button detection is never blocked by a pending screen refresh.
     bool currentPinState = (digitalRead(MODE_PIN) == LOW);  // Active-LOW
 
+    // Boot grace period: ignore hold detection during first 3s of boot
+    // Only allow single-click and double-click during this window
+    unsigned long boot_elapsed = millis() - s_boot_start_ms;
+    bool in_grace_period = (boot_elapsed < BOOT_GRACE_PERIOD_MS);
+
     if (currentPinState != lastPinState) {
         debounceTimestamp = millis();
 
@@ -172,8 +181,8 @@ void handleAppModes() {
                     int nextIdx = (modeIndex + 1) % numModes;
                     s_pending_draw_mode = modes[nextIdx];  // Next mode (wraps around)
                 }
-            } else if (holdDuration >= 2000 && holdDuration < 10000) {
-                // Long press: enter/exit settings mode
+            } else if (!in_grace_period && holdDuration >= 2000 && holdDuration < 10000) {
+                // Long press: enter/exit settings mode (only after boot grace period)
                 if (!settingsToggled) {
                     settingsToggled = true;
                     toggleSettingsMode();
@@ -193,11 +202,11 @@ void handleAppModes() {
 
         unsigned long holdDuration = millis() - btnPressTime;
 
-        if (holdDuration >= 2000 && holdDuration < 10000 && !settingsToggled) {
+        if (!in_grace_period && holdDuration >= 2000 && holdDuration < 10000 && !settingsToggled) {
             settingsToggled = true;
             btnState = BTN_STATE_SETTINGS;
             toggleSettingsMode();
-        } else if (holdDuration >= 10000 && !in_settings_mode) {
+        } else if (!in_grace_period && holdDuration >= 10000 && !in_settings_mode) {
             btnState = BTN_STATE_POWER;
             powerOff();
         }
@@ -403,16 +412,13 @@ void handleAppModes() {
     if (in_settings_mode) {
         static uint8_t last_touch_state = 0;
         uint8_t touch_state = digitalRead(TOUCH_PIN) ? 0 : 1;
-        // Detect falling edge (touch press) to trigger update — capacitive pads reliably go LOW on touch
+        // Detect rising edge (pin goes HIGH on release) to trigger update
         if (!touch_state && last_touch_state) {
             unsigned long currentTime = millis();
             if ((currentTime - lastTouchPressTime) > touchDebounceDelay) {
                 updateCurrentSetting();
             }
-        }
-        // Track when the pin goes HIGH (released) to start debounce timer
-        if (touch_state) {
-            lastTouchPressTime = millis();
+            lastTouchPressTime = currentTime;  // Reset after handling — debounces rapid successive taps
         }
         last_touch_state = touch_state;
     }
@@ -701,6 +707,9 @@ bool debouncedTouchPress() {
 
 
 void setupAppModes() {
+    // Record boot start time for button grace period
+    s_boot_start_ms = millis();
+    
     // Re-ensure MODE_PIN is INPUT_PULLUP — may have been changed by Bluefruit or LoRa init
     pinMode(MODE_PIN, INPUT_PULLUP);
     
