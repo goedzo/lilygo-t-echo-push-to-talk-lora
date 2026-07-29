@@ -187,8 +187,8 @@ void setupDisplay() {
     // Now let's create the display class
     display = new GxEPD2_BW<GxEPD2_150_BN, GxEPD2_150_BN::HEIGHT>(GxEPD2_150_BN(ePaper_Cs, ePaper_Dc, ePaper_Rst, ePaper_Busy));
 
-    // init(115200, true, 20, ...) — reset_duration=20 matches the proven T-Echo working value.
-    display->init(115200, true, 20, false, *dispPort, spiSettings);
+    // init(0, true, 20, ...) — serial_diag_bitrate=0 disables diagnostic serial output (_diag_enabled stays false).
+    display->init(0, true, 20, false, *dispPort, spiSettings);
     display->setRotation(3); // Set display rotation
     enableBacklight(true);
 
