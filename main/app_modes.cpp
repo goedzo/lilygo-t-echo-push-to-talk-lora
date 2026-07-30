@@ -173,8 +173,6 @@ void handleAppModes() {
             if (holdDuration < 2000) {
                 if (in_settings_mode) {
                     cycleSettings();
-                } else if (!strcmp(current_mode, "TXT") && txtInboxMsgCount > 0) {
-                    txtModeToggleInboxView();
                 } else {
                     // Queue mode switch — actual render deferred until after button release
                     s_deferred_mode_switch = true;
@@ -206,7 +204,7 @@ void handleAppModes() {
             settingsToggled = true;
             btnState = BTN_STATE_SETTINGS;
             toggleSettingsMode();
-        } else if (!in_grace_period && holdDuration >= 10000 && !in_settings_mode) {
+        } else if (!in_grace_period && holdDuration >= 10000) {
             btnState = BTN_STATE_POWER;
             powerOff();
         }
@@ -299,6 +297,15 @@ void handleAppModes() {
         } 
         else if (current_mode == "TXT") {
             // Show latest message or inbox scroll view — render deferred to flush cycle
+            if (!in_settings_mode && !txtShowInbox && txtInboxMsgCount > 0) {
+                if (digitalRead(TOUCH_PIN) == LOW) {
+                    unsigned long now = millis();
+                    if (now - lastTouchPressTime > touchDebounceDelay) {
+                        txtModeToggleInboxView();
+                        lastTouchPressTime = now;
+                    }
+                }
+            }
             txtModeInboxDisplay();
             s_dirty_screen = true;
         }

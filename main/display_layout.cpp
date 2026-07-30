@@ -177,22 +177,11 @@ void drawBottomStatusbar() {
 typedef void (*drawFn)();
 
 static void renderPageLoop(drawFn drawContent, bool use_full_refresh) {
-    if (use_full_refresh) {
-        display->setFullWindow();
-        display->firstPage();
-        do {
-            display->fillScreen(GxEPD_WHITE);
-            drawContent();
-        } while (display->nextPage());
-
-    } else {
-        display->setPartialWindow(0, 0, disp_width, disp_height);
-        display->firstPage();
-        do {
-            display->fillScreen(GxEPD_WHITE);
-            drawContent();
-        } while (display->nextPage());
-    }
+    display->fillScreen(GxEPD_WHITE);
+    drawContent();
+    // Use displayWindow() — single writeImagePart + refresh cycle, no double-step fade.
+    // The old working code used this exact approach for every screen update.
+    display->displayWindow(0, 0, disp_width, disp_height);
 }
 
 // ── Default layout: header row + bottom status bar ──

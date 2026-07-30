@@ -633,31 +633,60 @@ var app = {
             return;
         }
         
+        var stripEl = document.getElementById('deviceStrip');
+        if (!stripEl) return;
+        
         section.style.display = 'block';
         var html = '';
         for (var i = 0; i < keys.length; i++) {
             var name = keys[i];
             var shortId = this.getShortDeviceId(name);
             var isActive = (name === this.targetDeviceName) ? ' active' : '';
-            html += '<button class="devicePill' + isActive + '" data-device="' + name + '" onclick="app.selectDevice(\'' + name.replace(/'/g, "\\'") + '\')">' +
+            html += '<button class="devicePill' + isActive + '" data-device="' + name + '">' +
                     '<span class="device-dot"></span><span>' + shortId + '</span></button>';
         }
-        strip.innerHTML = html;
+        stripEl.innerHTML = html;
+        
+        // Bind click handlers on the freshly rendered pills (avoids inline onclick issues on Android WebView)
+        var pills = stripEl.querySelectorAll('.devicePill');
+        for (var p = 0; p < pills.length; p++) {
+            pills[p].addEventListener('click', (function(deviceName) { return function() { app.selectDevice(deviceName); }; })(keys[p]));
+        }
     },
     
     selectDevice: function(deviceName) {
+        var oldTarget = this.targetDeviceName;
+        logMessage("selectDevice: oldTarget=" + (oldTarget ? app.getShortDeviceId(oldTarget) : 'null') + " newTarget=" + app.getShortDeviceId(deviceName));
+        if (!this.connectedDevices[deviceName]) {
+            logMessage("selectDevice FAILED: device not in connected list");
+            showToast('Device not connected');
+            return;
+        }
+        if (!this.connectedDevices[deviceName].peripheralId) {
+            logMessage("selectDevice FAILED: no peripheralId for " + app.getShortDeviceId(deviceName));
+            showToast('Peripheral not ready');
+            return;
+        }
         this.targetDeviceName = deviceName;
-        logMessage("Target set to " + deviceName);
+        logMessage("Target set to " + app.getShortDeviceId(deviceName) + " (full=" + deviceName + ")");
         this.renderDeviceSelector();
         
         var badge = document.getElementById('txtChannelBadge');
         if (badge) {
-            badge.textContent = 'Target: ' + this.getShortDeviceId(deviceName);
+            badge.textContent = 'Target: ' + app.getShortDeviceId(deviceName);
             badge.className = 'status-badge connected';
+        }
+        
+        // Stop TXT status polling for old target if mode is TXT
+        if (app.currentMode === 'TXT') {
+            stopTxtStatusPolling();
+            logMessage("Restarted TXT status polling for new target");
+            app.startTxtStatusPolling(deviceName);
         }
         
         // Fetch the new target's current screen state so the UI reflects it immediately
         setTimeout(function() {
+            logMessage("Sending GETSCREEN to selected target " + app.getShortDeviceId(deviceName));
             app.sendDataToDevice(deviceName, 'GETSCREEN');
         }, 100);
     },
@@ -1875,10 +1904,20 @@ var app = {
         if (crEl && parsed.CR !== undefined) crEl.value = parsed.CR;
         
         var fhEl = document.getElementById('settingFH');
-        if (fhEl && parsed.FH !== undefined) fhEl.checked = parsed.FH === 1;
+        if (fhEl && parsed.FH !== undefined) {
+            var fhVal = parsed.FH === 1;
+            fhEl.checked = fhVal;
+            fhEl.defaultChecked = fhVal;
+            if (fhVal) fhEl.setAttribute('checked', 'checked'); else fhEl.removeAttribute('checked');
+        }
         
         var blEl = document.getElementById('settingBL');
-        if (blEl && parsed.BL !== undefined) blEl.checked = parsed.BL === 1;
+        if (blEl && parsed.BL !== undefined) {
+            var blVal = parsed.BL === 1;
+            blEl.checked = blVal;
+            blEl.defaultChecked = blVal;
+            if (blVal) blEl.setAttribute('checked', 'checked'); else blEl.removeAttribute('checked');
+        }
         
         var volEl = document.getElementById('settingVOL');
         if (volEl && parsed.VOL !== undefined) volEl.value = parsed.VOL;
@@ -2245,7 +2284,8 @@ var app = {
             }
         } else {
             var srcShortId = this.getShortDeviceId(sourceDeviceName) || sourceDeviceName;
-            logMessage(srcShortId + ' screen data received (non-target, ignoring mode sync)');
+            logMessage(srcShortId + ' screen data received (non-target, ignoring)');
+            return; // Do not render non-target device data into the display section
         }
 
         // Update status bar
