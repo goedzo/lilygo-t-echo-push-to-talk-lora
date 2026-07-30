@@ -157,10 +157,9 @@ extern uint32_t wpBroadcastStartMs;
 
 void sendWaypointPacket(double lat, double lon, float alt, const char* label);
 
-// Probe-based frequency hopping discovery
-#define PROBE_FREQUENCY       startFreq   // Fixed known channel: 863.0 MHz
-#define PROBE_INTERVAL_HOPS   4           // Send probe every 4 hops (188s)
+// Probe-based frequency hopping discovery — uses 869.47 MHz as shared channel
 extern bool inProbeMode;                 // True while waiting for time sync via probes
 extern unsigned long firstBootMillis;    // Boot timestamp in millis for probe logic
+extern bool heardProbeThisCycle;         // Whether we received a PRB during current hop cycle
 
 #endif // LORA_H

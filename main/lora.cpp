@@ -49,7 +49,14 @@ bool transmitInProgress = false;  // Track transmission state
 SX1262* radio = nullptr;
 SPIClass* rfPort = nullptr;
 
-float defaultFrequency = 869.47;  // Default frequency
+// Discovery / hopping constants
+#define DISCOVERY_FREQUENCY      869.47   // Known discovery frequency (MHz) — used for probe-based discovery and periodic resync
+#define DEFAULT_FREQUENCY        869.47   // Default frequency when no hopping or map is available
+#define DISCOVERY_PERIOD         300      // Return to discovery channel every 5 minutes (seconds)
+#define PROBEBEACON_JITTER_MIN   40       // Minimum seconds into hop interval before transmitting PRB beacon (synced mode only)
+#define PROBEBEACON_JITTER_MAX   47       // Maximum seconds into hop interval before transmitting PRB beacon (synced mode only)
+
+float defaultFrequency = DEFAULT_FREQUENCY;  // Default frequency
 float currentFrequency = defaultFrequency;
 
 // Frequency hopping related variables
@@ -89,6 +96,7 @@ unsigned long lastBeaconTime = 0;      // Track when last beacon was sent
 // Probe-based frequency hopping discovery globals
 bool inProbeMode = true;              // Start in probe mode — waiting for time sync
 unsigned long firstBootMillis = 0;    // Boot timestamp used for probe timing
+bool heardProbeThisCycle = false;     // Whether we received a PRB during current hop cycle
 
 bool isPeerAlive() {
     if (!peerPacketReceived) return false;  // Never report alive before first real packet
@@ -388,10 +396,11 @@ void autoSyncRTCFromPacket(const Packet& packet) {
     }
 }
 
-// Send a probe beacon on the known discovery frequency
+// Send a probe beacon on the discovery frequency with RTC timestamp for sync
 void sendProbeBeacon() {
-    char probeBuf[80];
-    snprintf(probeBuf, sizeof(probeBuf), "PR~DI%s", bleGetDeviceIdShort());
+    // Include ~SD field so receiver can adopt our RTC time
+    char probeBuf[120];
+    snprintf(probeBuf, sizeof(probeBuf), "PR~DI%s~SD%s", bleGetDeviceIdShort(), getFormattedDateTime().c_str());
     sendPacket(probeBuf);
 }
 
@@ -690,13 +699,27 @@ void checkLoraPacketComplete() {
 
                         // PRB packet handling — probe discovery: extract DI and auto-sync RTC
                         if (packet.type == "PRB") {
-                            inProbeMode = false;  // Exit probe mode — we can hop now
+                            sendSerialToApp(F("PRB rx on "));
+                            sendSerialToApp((String)currentFrequency);
+                            sendSerialToAppLn(F(" MHz"));
+
+                            if (inProbeMode) {
+                                inProbeMode = false;  // Exit probe mode — we can hop now
+                                sendSerialToAppLn(F("→ exited PROBE mode, starting hopping"));
+                            } else {
+                                sendSerialToAppLn(F("→ periodic resync PRB"));
+                            }
+
+                            heardProbeThisCycle = true;  // Mark that we heard a probe this cycle
                             
                             // Auto-sync local RTC from sender's ~SD if not set via GPS
                             if (!time_set) {
                                 time_set = true;
+                                sendSerialToApp(F("RTC synced from PRB ~SD: "));
+                                sendSerialToAppLn(packet.sendDateTime);
                                 adjustRTC(packet.sendDateTime);
                             } else {
+                                sendSerialToApp(F("RTC nudged ±1s from peer PRB"));
                                 autoSyncRTCFromPacket(packet);
                             }
                             
@@ -771,6 +794,7 @@ void checkLoraPacketComplete() {
 
                         // Update local frequency map if frequency map packet is received
                         if (packet.type == "MAP") {
+                            sendSerialToApp(F("MAP rx — merging frequency map from peer"));
                             updateFrequencyMap(rcv_pkt_buf + 3, packet_len - 4);  // Skip the header and checksum
                         }
 
@@ -794,26 +818,58 @@ void checkLoraPacketComplete() {
         }
     }
 
-    // Probe mode: hop on a fixed known frequency until time sync via ~SD field
+    // Discovery mode: stay on 869.47 MHz, listen for other devices
+    // Transmit a PRB beacon once per hop cycle if we haven't heard anything
     if (deviceSettings.frequency_hopping_enabled && inProbeMode) {
-        unsigned long totalSeconds = 0;
         RTC_Date rtc_dt = rtc.getDateTime();
-        totalSeconds = rtc_dt.hour * 3600 + rtc_dt.minute * 60 + rtc_dt.second;
-        unsigned long hopsSinceBoot = totalSeconds / FrequencyHopSeconds;
-        
-        // Check if we should send a probe beacon (every PROBE_INTERVAL_HOPS)
-        if (hopsSinceBoot > 0 && hopsSinceBoot % PROBE_INTERVAL_HOPS == 0 && !transmitFlag && operationDone) {
+        unsigned long currentSecondsInDay = rtc_dt.hour * 3600 + rtc_dt.minute * 60 + rtc_dt.second;
+
+        // Use the hop cycle number to trigger once per cycle
+        unsigned long currentHopCycle = currentSecondsInDay / FrequencyHopSeconds;
+        static unsigned long lastProbeTxCycle = 0;
+
+        if (currentHopCycle > 0 && currentHopCycle != lastProbeTxCycle && !transmitFlag) {
+            sendSerialToAppLn(F("PROBE tx — broadcasting on 869.47"));
             sendProbeBeacon();
+            lastBeaconTime = millis();
+            lastProbeTxCycle = currentHopCycle;
+        }
+
+        // If we heard a probe from another device during this window, exit probe mode
+        if (heardProbeThisCycle && !inProbeMode) {
+            // Already exited in PRB receive handler above
+        }
+
+        // Periodic status: show probe mode uptime every 3 hop cycles
+        static unsigned long lastProbeLog = 0;
+        if (currentSecondsInDay - lastProbeLog >= FrequencyHopSeconds * 3 && currentSecondsInDay > 0) {
+            sendSerialToApp(F("PROBE mode — "));
+            sendSerialToApp((String)currentSecondsInDay);
+            sendSerialToAppLn(F("s since midnight"));
+            lastProbeLog = currentSecondsInDay;
         }
     }
 
-    // Handle frequency hopping using RTC time — only when already synced
+    // Periodic resync: synced devices return to the discovery frequency every 5 minutes
     if (deviceSettings.frequency_hopping_enabled && !inProbeMode) {
-        RTC_Date currentTime = rtc.getDateTime();  // Get current time from the RTC
+        RTC_Date currentTime = rtc.getDateTime();
         unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
 
-        float newFrequency = getNextFrequency(sharedTime, sharedSeed);
+        // Check if we should hop to discovery frequency (every 5 minutes, for one hop cycle)
+        bool forceDiscoveryHop = ((sharedTime % DISCOVERY_PERIOD) < FrequencyHopSeconds);
+        
+        float newFrequency = currentFrequency;
+        if (forceDiscoveryHop) {
+            // Stay on discovery frequency for this hop cycle
+            newFrequency = DISCOVERY_FREQUENCY;
+        } else {
+            newFrequency = getNextFrequency(sharedTime, sharedSeed);
+        }
+
         if (newFrequency != currentFrequency) {
+            sendSerialToApp(F("HOP → "));
+            sendSerialToAppLn((String)(forceDiscoveryHop ? "869.47(resync)" : (String)newFrequency));
+
             if (!transmitFlag && operationDone) {
                 hopToFrequency = newFrequency;
                 hopAfterTxRx = true;
@@ -821,6 +877,37 @@ void checkLoraPacketComplete() {
                 setFrequency(newFrequency);  // Set the new frequency
             }
             lastHopTime = sharedTime;  // Update the last hop time
+
+            // If we're hopping away from discovery mode, reset heard probe flag
+            if (newFrequency != DISCOVERY_FREQUENCY) {
+                heardProbeThisCycle = false;
+            }
+        }
+
+        // During a discovery hop, transmit a PRB beacon to announce ourselves
+        unsigned long currentSecondsInDay = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
+        unsigned long secondsIntoHop = currentSecondsInDay % FrequencyHopSeconds;
+        if (forceDiscoveryHop && secondsIntoHop >= PROBEBEACON_JITTER_MIN && secondsIntoHop < PROBEBEACON_JITTER_MAX
+            && !transmitFlag && operationDone) {
+            // Only send if we haven't already sent a PRB in this cycle
+            if (!heardProbeThisCycle || (lastHopTime == 0)) {
+                if (millis() - lastBeaconTime >= 5000) {
+                    sendSerialToAppLn(F("→ TX probe on resync channel"));
+                    sendProbeBeacon();
+                    lastBeaconTime = millis();
+                    heardProbeThisCycle = true;
+                }
+            }
+        }
+
+        // Log hop cycle summary every 3 cycles
+        static unsigned long lastHopLog = 0;
+        if (currentSecondsInDay - lastHopLog >= FrequencyHopSeconds * 3 && currentSecondsInDay > 0) {
+            sendSerialToApp(F("CYC "));
+            sendSerialToApp((String)(sharedTime / 60));
+            sendSerialToAppLn(F(" min — freq:"));
+            sendSerialToAppLn((String)currentFrequency);
+            lastHopLog = currentSecondsInDay;
         }
     }
 
