@@ -161,5 +161,6 @@ void sendWaypointPacket(double lat, double lon, float alt, const char* label);
 extern bool inProbeMode;                 // True while waiting for time sync via probes
 extern unsigned long firstBootMillis;    // Boot timestamp in millis for probe logic
 extern bool heardProbeThisCycle;         // Whether we received a PRB during current hop cycle
+extern unsigned long syncLockUntilCycle; // Hop cycle number until which we lock to discovery freq after PRB receive
 
 #endif // LORA_H

@@ -297,14 +297,17 @@ void handleAppModes() {
         } 
         else if (current_mode == "TXT") {
             // Show latest message or inbox scroll view — render deferred to flush cycle
-            if (!in_settings_mode && !txtShowInbox && txtInboxMsgCount > 0) {
-                if (digitalRead(TOUCH_PIN) == LOW) {
+            if (!in_settings_mode && txtInboxMsgCount > 0) {
+                static bool s_last_touch_state = true;
+                bool current_touch = (digitalRead(TOUCH_PIN) != LOW);
+                if (!current_touch && s_last_touch_state) {
                     unsigned long now = millis();
                     if (now - lastTouchPressTime > touchDebounceDelay) {
                         txtModeToggleInboxView();
                         lastTouchPressTime = now;
                     }
                 }
+                s_last_touch_state = current_touch;
             }
             txtModeInboxDisplay();
             s_dirty_screen = true;
@@ -755,6 +758,7 @@ void powerOff() {
     pinMode(MODE_PIN, INPUT);       // Set button pin to low power state
     pinMode(TOUCH_PIN, INPUT);      // Set touch pin to low power state
     // Set other pins to INPUT if needed to prevent power leakage
+
 
 
     // Step 3: Shut down serial interfaces to save power

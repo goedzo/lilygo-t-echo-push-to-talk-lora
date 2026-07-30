@@ -7,6 +7,8 @@
 #include "settings.h"
 #include <time.h>  // Include time.h for time manipulation
 #include "display_layout.h"
+#include <Fonts/FreeMonoBold12pt7b.h>
+#include <Fonts/FreeMonoBold9pt7b.h>
 
 // PCF8563 I2C address (7-bit)
 #define PCF8563_I2C_ADDR    0x51
@@ -235,6 +237,9 @@ void updateCurrentSetting() {
         case FREQUENCY_HOPPING:
             deviceSettings.toggleFrequencyHopping();
             break;
+        case PANEL_REFRESH:
+            panelRefreshToggle();
+            break;
     }
     drawSettingsLayout();
 }
@@ -243,7 +248,29 @@ void displayCurrentSetting() {
     drawSettingsLayout();
 }
 
-// Legacy functions kept for backward compatibility — no-ops since rendering uses drawSettingsLayout()
+bool panel_refresh_enabled = false;
+
+void panelRefreshToggle() {
+    panel_refresh_enabled = !panel_refresh_enabled;
+
+    if (panel_refresh_enabled) {
+        // Run one white/black cycle (~8s total)
+        display->clearScreen();
+        delay(200);
+
+        display->setFullWindow();
+        display->firstPage();
+        do {
+            display->fillScreen(GxEPD_BLACK);
+        } while (display->nextPage());
+
+        delay(4500);
+
+        // Show done message
+        panel_refresh_enabled = false;
+        drawSettingsLayout();
+    }
+}
 
 // Example function to map the bitrate index to actual bitrate value (bps)
 int getBitrateFromIndex(int index) {

@@ -97,6 +97,7 @@ unsigned long lastBeaconTime = 0;      // Track when last beacon was sent
 bool inProbeMode = true;              // Start in probe mode — waiting for time sync
 unsigned long firstBootMillis = 0;    // Boot timestamp used for probe timing
 bool heardProbeThisCycle = false;     // Whether we received a PRB during current hop cycle
+unsigned long syncLockUntilCycle = 0; // Hop cycle number until which we lock to discovery freq after PRB receive
 
 bool isPeerAlive() {
     if (!peerPacketReceived) return false;  // Never report alive before first real packet
@@ -711,7 +712,13 @@ void checkLoraPacketComplete() {
                             }
 
                             heardProbeThisCycle = true;  // Mark that we heard a probe this cycle
-                            
+
+                            // Lock to discovery channel for several hop cycles after PRB receive
+                            // This ensures both devices verify sync before diverging
+                            RTC_Date rtc_now = rtc.getDateTime();
+                            unsigned long nowSecondsInDay = rtc_now.hour * 3600 + rtc_now.minute * 60 + rtc_now.second;
+                            syncLockUntilCycle = (nowSecondsInDay / FrequencyHopSeconds) + 5;
+
                             // Auto-sync local RTC from sender's ~SD if not set via GPS
                             if (!time_set) {
                                 time_set = true;
@@ -761,6 +768,19 @@ void checkLoraPacketComplete() {
                             if (time_set && inProbeMode) {
                                 inProbeMode = false;
                                 sendSerialToAppLn(F("Auto-synced via ~SD field — enabling hopping"));
+                            }
+                        }
+
+                        // Always allow probe mode exit on any received packet
+                        // This handles the case where both devices are in probe mode but only hear BEACONs (no PRBs)
+                        if (inProbeMode) {
+                            sendSerialToAppLn(F("Received valid packet — exiting probe mode"));
+                            inProbeMode = false;
+
+                            // Sync RTC from packet's ~SD if available
+                            if (packet.sendDateTime.length() == 14) {
+                                time_set = true;
+                                adjustRTC(packet.sendDateTime);
                             }
                         }
 
@@ -854,9 +874,22 @@ void checkLoraPacketComplete() {
     if (deviceSettings.frequency_hopping_enabled && !inProbeMode) {
         RTC_Date currentTime = rtc.getDateTime();
         unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
+        unsigned long currentHopCycle = sharedTime / FrequencyHopSeconds;
 
         // Check if we should hop to discovery frequency (every 5 minutes, for one hop cycle)
         bool forceDiscoveryHop = ((sharedTime % DISCOVERY_PERIOD) < FrequencyHopSeconds);
+
+        // During sync lock period after PRB receive, always stay on discovery freq
+        if (syncLockUntilCycle > currentHopCycle) {
+            forceDiscoveryHop = true;
+            static unsigned long lastSyncLog = 0;
+            RTC_Date now = rtc.getDateTime();
+            unsigned long nowSecs = now.hour * 3600 + now.minute * 60 + now.second;
+            if (nowSecs - lastSyncLog >= FrequencyHopSeconds) {
+                sendSerialToAppLn(F("SYNC LOCK — staying on 869.47 for verification"));
+                lastSyncLog = nowSecs;
+            }
+        }
         
         float newFrequency = currentFrequency;
         if (forceDiscoveryHop) {

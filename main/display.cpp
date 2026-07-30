@@ -192,9 +192,10 @@ void setupDisplay() {
     display->setRotation(3); // Set display rotation
     enableBacklight(true);
 
-    // Use clearScreen() which does buffer fill + full waveform in ONE step.
-    // Then draw with page-loop for content.
-    display->clearScreen();  // fills buffer + triggers one full refresh (cleans panel)
+    // clearScreen() writes both current (0x24) and previous (0x26) controller RAM
+    // to white (0xFF), then triggers one full waveform refresh (~4s).
+    // This is the only correct way to fully reset the e-paper panel on boot.
+    display->clearScreen();  // fills controller RAM + triggers one full refresh (cleans panel)
 }
 
 void swapIconBytes(const uint16_t* originalIcon, uint16_t* swappedIcon, int size) {
@@ -310,26 +311,10 @@ void updDisp(uint8_t line, const char* msg, bool updateScreen) {
         printline(disp_buf[line]);
 
         if (updateScreen) {
-            // Push entire screen using GxEPD2_BW's internal displayWindow path.
-            // The buffer was already drawn to by fillRect/print above, so we push what's there.
             display->displayWindow(0, 0, disp_width, disp_height);
         }
-
-        char formattedMessage[100];
-        if (line < 10) {
-            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
-        } else {
-            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
-        }
-        sendNotificationToApp(formattedMessage);
     } else {
-        char formattedMessage[100];
-        if (line < 10) {
-            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:0%d|TEXT:%s", line, msg);
-        } else {
-            snprintf(formattedMessage, sizeof(formattedMessage), "LINE:%d|TEXT:%s", line, msg);
-        }
-        sendNotificationToApp(formattedMessage);
+        // Update buffer even if content unchanged (no-op display render)
     }
 }
 

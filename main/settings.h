@@ -22,6 +22,7 @@ enum Setting {
     BANDWIDTH,          // New bandwidth setting
     CODING_RATE,        // New coding rate setting
     FREQUENCY_HOPPING,  // New frequency hopping setting
+    PANEL_REFRESH,      // Panel refresh / relaxation
     NUM_SETTINGS        // Always keep this as the last element to track the total number of settings
 };
 
@@ -105,5 +106,9 @@ void displayBandwidth();   // New function to display bandwidth
 void displayCodingRate();  // New function to display coding rate
 void displayFrequencyHopping();  // New function to display frequency hopping status
 int getBitrateFromIndex(int index);
+
+// Panel refresh as a setting
+extern bool panel_refresh_enabled;  // Defined in settings.cpp
+void panelRefreshToggle();
 
 #endif // SETTINGS_H

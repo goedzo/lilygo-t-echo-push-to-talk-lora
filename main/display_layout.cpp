@@ -906,7 +906,11 @@ void drawSettingsLayout() {
                 setting_name = "Freq Hopping";
                 strncpy(setting_value, deviceSettings.frequency_hopping_enabled ? "Enabled" : "Disabled", sizeof(setting_value));
                 break;
-        }
+            case PANEL_REFRESH:
+                setting_name = "Panel Refresh";
+                strncpy(setting_value, panel_refresh_enabled ? "Running..." : "Tap to start", sizeof(setting_value));
+                break;
+        }  // end of setting name/value selection
 
         // Draw setting name (top of card)
         display->setFont(&FreeMonoBold9pt7b);

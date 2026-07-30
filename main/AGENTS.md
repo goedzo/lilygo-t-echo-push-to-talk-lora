@@ -149,7 +149,7 @@ GATT service for companion app (Cordova/Android). Device scans as `LilygoT-Echo-
 
 ### BLE notification transport
 
-All text notifications from firmware are wrapped with a `LINE:NOTIF|DATA:` prefix and `~~` terminators before being queued. The characteristic max length is 253 bytes; the notification string buffer must fit this full payload. **Bug fix (2026-07-02):** `notifStr` was only 130 bytes, truncating screen sync payloads up to 200 bytes + prefix (~220 chars total). Fixed by using a static buffer of `16 + 200 + 2 + 4 = 222` bytes.
+All text notifications from firmware are wrapped with a `LINE:NOTIF|DATA:` prefix and `~~` terminators before being queued. The characteristic max length is 253 bytes; the notification string buffer must fit this full payload. **Bug fix (2026-07-02):** `notifStr` was only 130 bytes, truncating screen sync payloads up to 200 bytes + prefix (~220 chars total). Fixed by using a static buffer of `16 + 200 + 2 + 4 = 222` bytes. **Legacy mechanism removed (2026-07-30):** `updDisp()` no longer sends `LINE:NN|TEXT:` entries for each displayed line — these were queued during boot and never cleared, causing stale "Booting..." text to appear in the app before screen sync data arrived. Screen state is now communicated exclusively via the `LINE:S|M:...` forced screen sync payload.
 
 ## Crash Debug Infrastructure (`crash_debug.h`)
 
