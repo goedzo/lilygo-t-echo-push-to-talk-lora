@@ -109,6 +109,5 @@ int getBitrateFromIndex(int index);
 
 // Panel refresh as a setting
 extern bool panel_refresh_enabled;  // Defined in settings.cpp
-void panelRefreshToggle();
 
 #endif // SETTINGS_H

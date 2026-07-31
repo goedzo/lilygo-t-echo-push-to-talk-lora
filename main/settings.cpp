@@ -238,7 +238,44 @@ void updateCurrentSetting() {
             deviceSettings.toggleFrequencyHopping();
             break;
         case PANEL_REFRESH:
-            panelRefreshToggle();
+            panel_refresh_enabled = !panel_refresh_enabled;
+            if (panel_refresh_enabled) {
+                // Start cycling — block while cycling, exit when user presses touch again
+                drawSettingsLayout();  // show "Cycling..." in settings layout
+                
+                unsigned long start_time = millis();
+                while (panel_refresh_enabled && (millis() - start_time < 120000)) {  // max 2 minutes
+                    // Check if user pressed touch (falling edge on TOUCH_PIN) — used as stop signal
+                    static uint8_t last_touch_state = 0;
+                    uint8_t touch_state = digitalRead(Touch_Pin) ? 0 : 1;
+                    
+                    if (touch_state == 0 && last_touch_state == 1) {
+                        // Touch pressed during cycling — exit loop
+                        panel_refresh_enabled = false;
+                        drawSettingsLayout();
+                        break;
+                    }
+                    last_touch_state = touch_state;
+
+                    display->setFullWindow();
+                    display->firstPage();
+                    do {
+                        display->fillScreen(GxEPD_BLACK);
+                    } while (display->nextPage());
+
+                    delay(5000);  // wait for full waveform (~4s) + brief pause
+                    
+                    display->clearScreen();  // white panel
+                    delay(200);
+
+                    drawSettingsLayout();  // keep "Cycling..." visible
+                }
+
+                panel_refresh_enabled = false;
+            } else {
+                drawDefaultLayout();
+                toggleSettingsMode();
+            }
             break;
     }
     drawSettingsLayout();
@@ -249,28 +286,6 @@ void displayCurrentSetting() {
 }
 
 bool panel_refresh_enabled = false;
-
-void panelRefreshToggle() {
-    panel_refresh_enabled = !panel_refresh_enabled;
-
-    if (panel_refresh_enabled) {
-        // Run one white/black cycle (~8s total)
-        display->clearScreen();
-        delay(200);
-
-        display->setFullWindow();
-        display->firstPage();
-        do {
-            display->fillScreen(GxEPD_BLACK);
-        } while (display->nextPage());
-
-        delay(4500);
-
-        // Show done message
-        panel_refresh_enabled = false;
-        drawSettingsLayout();
-    }
-}
 
 // Example function to map the bitrate index to actual bitrate value (bps)
 int getBitrateFromIndex(int index) {

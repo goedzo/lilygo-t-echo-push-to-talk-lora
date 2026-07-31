@@ -908,7 +908,7 @@ void drawSettingsLayout() {
                 break;
             case PANEL_REFRESH:
                 setting_name = "Panel Refresh";
-                strncpy(setting_value, panel_refresh_enabled ? "Running..." : "Tap to start", sizeof(setting_value));
+                strncpy(setting_value, panel_refresh_enabled ? "Cycling..." : "Tap to start", sizeof(setting_value));
                 break;
         }  // end of setting name/value selection
 

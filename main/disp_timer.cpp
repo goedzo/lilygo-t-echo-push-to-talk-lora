@@ -51,7 +51,11 @@ void flushDisplayIfNeeded() {
     else if (strcmp(mode, "BEACON") == 0) drawBeaconLayout();
     else if (strcmp(mode, "PTT") == 0) drawPttLayout();
     else if (strcmp(mode, "SCAN") == 0) drawScanLayout();
-    else if (strcmp(mode, "TXT") == 0) drawTxtSingleLayout();
+    else if (strcmp(mode, "TXT") == 0) {
+        extern bool txtShowInbox;
+        if (txtShowInbox) drawTxtInboxLayout();
+        else drawTxtSingleLayout();
+    }
     else if (strcmp(mode, "TST") == 0) drawTstLayout();
     else if (strcmp(mode, "PONG") == 0) drawPongLayout();
     else if (strcmp(mode, "RAW") == 0) drawRawLayout();

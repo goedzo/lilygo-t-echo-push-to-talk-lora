@@ -205,63 +205,205 @@ function updateDeviceInfo(info) {
     document.getElementById('infoSection').style.display = 'block';
 }
 
-// Message history storage (sent and received)
-const messageHistory = [];
-const MAX_HISTORY = 100;
+// Message storage: per-conversation map keyed by sender short ID
+const conversations = {};  // { shortId: { peerName, messages:[], unreadCount } }
+const MAX_CONVERSATIONS = 100;
 
-function addMessageToHistory(type, text, timestamp, status) {
-    const msg = { type: type, text: text, time: timestamp, status: status || 'pending' };
-    messageHistory.push(msg);
-    if (messageHistory.length > MAX_HISTORY) {
-        messageHistory.shift();
+function getOrCreateConversation(senderShortId) {
+    if (!conversations[senderShortId]) {
+        conversations[senderShortId] = { peerName: senderShortId, messages: [], unreadCount: 0 };
     }
-    updateMessageHistoryUI();
+    return conversations[senderShortId];
 }
 
-function updateMessageHistoryUI() {
-    const container = document.getElementById('messageHistoryContainer');
+function addMessageToConversation(type, text, senderShortId, timestamp, status) {
+    const conv = getOrCreateConversation(senderShortId);
+    const msg = { type: type, text: text, time: timestamp, status: status || 'pending' };
+    conv.messages.push(msg);
+    
+    // Mark as unread if received
+    if (type === 'received') {
+        conv.unreadCount++;
+    }
+    
+    // Trim old messages per conversation
+    if (conv.messages.length > MAX_CONVERSATIONS) {
+        conv.messages = conv.messages.slice(-MAX_CONVERSATIONS);
+    }
+    
+    updateChatListUI();
+}
+
+// Track last sent message for ACK matching
+var _lastSentText = '';
+var _lastSenderShortId = '';
+
+function markLastSentAsSent() {
+    if (_lastSentText && _lastSenderShortId) {
+        const conv = conversations[_lastSenderShortId];
+        if (conv) {
+            for (var i = conv.messages.length - 1; i >= 0; i--) {
+                if (conv.messages[i].text === _lastSentText && conv.messages[i].status === 'pending') {
+                    conv.messages[i].status = 'sent';
+                    break;
+                }
+            }
+        }
+    }
+}
+
+function getActiveConversationPeer() {
+    return app._activeChatPeerId || null;
+}
+
+function setActiveChat(peerShortId) {
+    // Mark all messages in this conversation as read
+    if (peerShortId && conversations[peerShortId]) {
+        const prevUnread = conversations[peerShortId].unreadCount;
+        conversations[peerShortId].unreadCount = 0;
+        
+        // Show notification if there were unread messages
+        if (prevUnread > 0) {
+            showToast('Viewing ' + conversations[peerShortId].peerName + ' (' + prevUnread + ')');
+        }
+    }
+    
+    app._activeChatPeerId = peerShortId;
+    app.renderActiveChat(peerShortId);
+    
+    // Show active chat section, hide list
+    document.getElementById('chatSection').style.display = 'none';
+    const acs = document.getElementById('activeChatSection');
+    if (acs) {
+        acs.style.display = 'block';
+    }
+}
+
+function exitActiveChat() {
+    app._activeChatPeerId = null;
+    
+    // Show list, hide active chat
+    const acs = document.getElementById('activeChatSection');
+    if (acs) acs.style.display = 'none';
+    document.getElementById('chatSection').style.display = 'block';
+}
+
+function updateChatListUI() {
+    const container = document.getElementById('chatListContainer');
+    const totalBadge = document.getElementById('chatTotalBadge');
     if (!container) return;
     
-    // Group by type: received first, then sent
+    const activePeer = getActiveConversationPeer();
+    let unreadTotal = 0;
+    
+    // Sort conversations by last message time (most recent first)
+    const sortedIds = Object.keys(conversations).sort((a, b) => {
+        const aLast = conversations[a].messages.length ? conversations[a].messages[conversations[a].messages.length - 1].time : '';
+        const bLast = conversations[b].messages.length ? conversations[b].messages[conversations[b].messages.length - 1].time : '';
+        return bLast.localeCompare(aLast);
+    });
+    
     let html = '';
-    for (let i = 0; i < messageHistory.length; i++) {
-        const m = messageHistory[i];
-        const isReceived = m.type === 'received';
-        const cls = isReceived ? 'history-msg received' : 'history-msg sent';
-        const statusIcon = !isReceived ? getStatusIcon(m.status) : '';
+    for (let i = 0; i < sortedIds.length; i++) {
+        const sid = sortedIds[i];
+        const conv = conversations[sid];
+        unreadTotal += conv.unreadCount;
+        
+        const lastMsg = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
+        const peerName = conv.peerName || sid;
+        const isActive = (sid === activePeer);
+        const cls = isActive ? 'chat-thread active' : 'chat-thread';
+        
+        let previewText = lastMsg ? lastMsg.text : '';
+        if (previewText.length > 35) previewText = previewText.slice(0, 35) + '...';
+        const prefix = lastMsg && lastMsg.type === 'sent' ? 'You: ' : '';
+        
+        html += '<div class="' + cls + '" onclick="app.setActiveChat(\'' + sid + '\')">';
+        
+        // Peer name row
+        html += '<div class="chat-thread-peer">';
+        html += '<span class="chat-peer-name">' + escapeHtml(peerName) + '</span>';
+        if (conv.unreadCount > 0) {
+            html += '<span class="chat-unread-badge">' + conv.unreadCount + '</span>';
+        }
+        html += '</div>';
+        
+        // Preview text row
+        if (lastMsg) {
+            const time = lastMsg.time || '';
+            const timeClass = conv.unreadCount > 0 ? 'chat-time unread' : 'chat-time';
+            html += '<div class="chat-thread-preview">';
+            html += '<span class="' + timeClass + '">' + escapeHtml(time) + '</span>';
+            html += '<span class="chat-preview-text">' + escapeHtml(prefix + previewText) + '</span>';
+            html += '</div>';
+        }
+        
+        html += '</div>';
+    }
+    
+    if (sortedIds.length === 0) {
+        html = '<div class="chat-empty">No messages yet. Send a message to get started.</div>';
+    }
+    
+    container.innerHTML = html;
+    
+    // Update total badge
+    if (totalBadge) {
+        if (unreadTotal > 0) {
+            totalBadge.textContent = unreadTotal;
+            totalBadge.style.display = 'inline-block';
+        } else {
+            totalBadge.style.display = 'none';
+        }
+    }
+}
+
+function renderActiveChat(peerShortId) {
+    const peerEl = document.getElementById('activeChatPeer');
+    const msgsEl = document.getElementById('activeChatMessages');
+    if (!peerEl || !msgsEl) return;
+    
+    if (!peerShortId || !conversations[peerShortId]) {
+        peerEl.textContent = '---';
+        msgsEl.innerHTML = '<div class="chat-empty">No messages yet.</div>';
+        return;
+    }
+    
+    const conv = conversations[peerShortId];
+    peerEl.textContent = conv.peerName || peerShortId;
+    
+    let html = '';
+    for (let i = 0; i < conv.messages.length; i++) {
+        const m = conv.messages[i];
+        const cls = m.type === 'received' ? 'chat-bubble received' : 'chat-bubble sent';
+        const statusIcon = m.type !== 'received' ? getStatusIcon(m.status) : '';
         
         html += '<div class="' + cls + '">';
-        if (isReceived) {
-            html += '<div class="history-msg-time">' + m.time + '</div>';
-            html += '<div class="history-msg-text">' + escapeHtml(m.text) + '</div>';
-        } else {
-            html += '<div class="history-msg-text">' + escapeHtml(m.text) + '</div>';
-            const devTag = m.deviceName ? '[' + m.deviceName + '] ' : '';
-            html += '<div class="history-msg-status">' + statusIcon + ' ' + devTag + m.status + '</div>';
+        if (m.time) {
+            html += '<span class="chat-bubble-time">' + m.time + '</span>';
+        }
+        const textHtml = escapeHtml(m.text);
+        html += '<span class="chat-bubble-text">' + textHtml + '</span>';
+        if (statusIcon && m.type !== 'received') {
+            html += '<span class="chat-bubble-status">' + statusIcon + '</span>';
         }
         html += '</div>';
     }
-    container.innerHTML = html;
     
-    // Scroll to bottom for received messages
-    if (messageHistory.length > 0) {
-        const lastItem = container.lastElementChild;
-        if (lastItem && messageHistory[messageHistory.length-1].type === 'received') {
-            lastItem.scrollIntoView({ behavior: 'smooth' });
-        }
-    }
+    msgsEl.innerHTML = html;
     
-    // Update badge count
-    const badge = document.getElementById('historyBadge');
-    if (badge) {
-        const unreadCount = messageHistory.filter(m => m.type === 'received' && m.unread).length;
-        if (unreadCount > 0) {
-            badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
-            badge.style.display = 'inline-block';
-        } else {
-            badge.style.display = 'none';
-        }
-    }
+    // Scroll to bottom
+    setTimeout(function() {
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+    }, 50);
+}
+
+function clearMessageHistory() {
+    Object.keys(conversations).forEach(function(key) {
+        conversations[key] = { peerName: key, messages: [], unreadCount: 0 };
+    });
+    updateChatListUI();
+    showToast('Messages cleared');
 }
 
 function getStatusIcon(status) {
@@ -332,6 +474,7 @@ function switchMode(aMode) {
 		inputSection.style.display = 'block';
 		pttSection.style.display = 'none';
 		app.startTxtStatusPolling(targetDeviceName);
+		updateChatListUI();
 	} else if (aMode === 'WP') {
 		inputSection.style.display = 'none';
 		pttSection.style.display = 'none';
@@ -343,6 +486,7 @@ function switchMode(aMode) {
 		pttSection.style.display = 'none';
 		document.getElementById('mapSection').style.display = 'none';
 		app.stopTxtStatusPolling && app.stopTxtStatusPolling();
+		updateChatListUI();
 	}
 }
 
@@ -362,18 +506,17 @@ function sendData() {
         setTxtSendState('sending');
         
         logMessage('Sending: ' + data);
+        _lastSentText = data;
+        _lastSenderShortId = app.getShortDeviceId(app.targetDeviceName) || 'self';
+        addMessageToConversation('sent', data, _lastSenderShortId, formatTimestamp(), 'pending');
+        
         app.sendDataToDevice(app.targetDeviceName, "SENDTXT:"+data, function(success) {
             if (success) {
-                var devName = app.getShortDeviceId(app.targetDeviceName) || app.targetDeviceName;
-                addMessageToHistory('sent', data, formatTimestamp(), 'pending');
                 // After send succeeds over BLE, show "Sent" and wait for LoRa confirm
                 setTimeout(function() {
-                    // Show "Transmitting..." while waiting for device confirmation
                     setTxtSendState('transmitting');
                     
-                    // Set a timeout for ACK (30 seconds)
                     app.txtAckTimer = setTimeout(function() {
-                        // No ACK received — mark as failed
                         setTxtSendState('no_ack');
                         logMessage('No ACK from device after ' + (Date.now() - app.txtTxStartTime) + 'ms');
                     }, 5000);
@@ -578,6 +721,9 @@ var app = {
     pttHoldDuration: 0,
     pendingDeviceSetMode: null,
 
+    // Active chat view state
+    _activeChatPeerId: null,
+
     // Opus encode/decode
     opusEncoderInitialized: false,
     mediaRecorder: null,
@@ -667,6 +813,15 @@ var app = {
             showToast('Peripheral not ready');
             return;
         }
+
+        // If we had a previous target, stop its TXT polling and clear stale GETSCREEN pending
+        if (oldTarget && oldTarget !== deviceName) {
+            if (app.currentMode === 'TXT') {
+                stopTxtStatusPolling();
+            }
+            clearTimeout(app._getScreenRetryTimer);
+        }
+
         this.targetDeviceName = deviceName;
         logMessage("Target set to " + app.getShortDeviceId(deviceName) + " (full=" + deviceName + ")");
         this.renderDeviceSelector();
@@ -676,19 +831,43 @@ var app = {
             badge.textContent = 'Target: ' + app.getShortDeviceId(deviceName);
             badge.className = 'status-badge connected';
         }
-        
-        // Stop TXT status polling for old target if mode is TXT
-        if (app.currentMode === 'TXT') {
-            stopTxtStatusPolling();
-            logMessage("Restarted TXT status polling for new target");
-            app.startTxtStatusPolling(deviceName);
+
+        // Show a brief pending state on the screen mirror so user knows a refresh is happening
+        var contentArea = document.getElementById('screenContentArea');
+        if (contentArea) {
+            contentArea.setAttribute('data-refreshing', 'true');
+            contentArea.classList.add('refreshing');
         }
-        
-        // Fetch the new target's current screen state so the UI reflects it immediately
-        setTimeout(function() {
-            logMessage("Sending GETSCREEN to selected target " + app.getShortDeviceId(deviceName));
-            app.sendDataToDevice(deviceName, 'GETSCREEN');
-        }, 100);
+
+        // Send GETSCREEN with staged retries so the app reflects the new device state reliably
+        var fetchNewTargetState = function(retryAttempt) {
+            if (app.targetDeviceName !== deviceName) return; // user switched away mid-retry
+            if (!app.connectedDevices[deviceName]) return;
+
+            logMessage("Sending GETSCREEN to " + app.getShortDeviceId(deviceName) + " (attempt " + (retryAttempt + 1) + ")");
+            app.sendDataToDevice(deviceName, 'GETSCREEN', function(ok) {
+                if (!ok && retryAttempt < 2) {
+                    var backoff = [300, 600, 1200][retryAttempt];
+                    logMessage("GETSCREEN failed, retrying in " + backoff + "ms");
+                    app._getScreenRetryTimer = setTimeout(function() {
+                        fetchNewTargetState(retryAttempt + 1);
+                    }, backoff);
+                } else if (ok) {
+                    clearTimeout(app._getScreenRetryTimer);
+                    logMessage("GETSCREEN OK from " + app.getShortDeviceId(deviceName));
+                }
+            });
+        };
+
+        fetchNewTargetState(0);
+
+        // Clear the refreshing class after a timeout as a safety net
+        app._getScreenRetryTimer = setTimeout(function() {
+            if (contentArea) {
+                contentArea.removeAttribute('data-refreshing');
+                contentArea.classList.remove('refreshing');
+            }
+        }, 8000);
     },
 
     initialize: function() {
@@ -759,17 +938,26 @@ var app = {
         // PTT button - hold to talk with mic capture + Opus encode
         var pttBtn = document.getElementById('pttButton');
         if (pttBtn) {
-            pttBtn.addEventListener('touchstart', function(e) {
-                e.preventDefault();
+            function pttOn(e) {
+                e.preventDefault && e.preventDefault();
                 if (!app.isAnyDeviceConnected() || !app.pttLoraAlive) return;
                 app.pttIsPressing = true;
                 startPttCapture();
-            });
-            pttBtn.addEventListener('touchend', function(e) {
-                e.preventDefault();
+            }
+            function pttOff(e) {
+                e.preventDefault && e.preventDefault();
                 if (app.pttIsPressing) {
                     stopPttCapture();
                     app.pttIsPressing = false;
+                }
+            }
+            pttBtn.addEventListener('touchstart', pttOn);
+            pttBtn.addEventListener('touchend', pttOff);
+            pttBtn.addEventListener('mousedown', pttOn);
+            pttBtn.addEventListener('mouseup', pttOff);
+            pttBtn.addEventListener('mouseleave', function(e) {
+                if (app.pttIsPressing) {
+                    pttOff.call(pttBtn, e);
                 }
             });
         }
@@ -1405,14 +1593,8 @@ var app = {
 			
 			if (app.txtSendState === 'transmitting') {
 				setTxtSendState('sent');
-				for (var i = messageHistory.length - 1; i >= 0; i--) {
-					if (messageHistory[i].type === 'sent' && messageHistory[i].status === 'pending') {
-						messageHistory[i].status = 'sent';
-                        messageHistory[i].deviceName = app.getShortDeviceId(deviceName);
-						updateMessageHistoryUI();
-						break;
-					}
-				}
+                markLastSentAsSent();
+				updateChatListUI();
 			}
 			return;
 		}
@@ -1509,19 +1691,6 @@ var app = {
 			var syncSource = (wrappedData.length > 0) ? wrappedData : message;
 			var syncData = syncSource.slice(lineMatch[0].length);
 			logMessage('SCREEN:MIRROR data=' + JSON.stringify(syncData).substring(0, 300));
-			var fields = app.parseScreenMirrorFields(syncData);
-			
-			// Extract channel and spreading factor from H field (format: "chn:A spf:8") to update Device Settings panel
-			if (fields.h) {
-				var hMatch = fields.h.match(/chn:([A-Fa-f])/);
-				var sfMatch = fields.h.match(/spf:(\d+)/);
-				var fakeSettings = '';
-				if (hMatch && sfMatch) {
-					fakeSettings = 'CHAN=' + hMatch[1].toUpperCase() + ',SF=' + sfMatch[1];
-					app.populateDeviceSettings(fakeSettings);
-				}
-			}
-			
 			app.renderScreenMirror(syncData, deviceName);
 			
 			// BLE liveness update from screen mirror — if the device sends screen data,
@@ -1573,8 +1742,22 @@ var app = {
                 // If the received message is from a device OTHER than our target, it's a LoRa receive
                 var activeDeviceName = app.getActiveDeviceId();
                 if (activeDeviceName && activeDeviceName !== deviceName && cleanText.length > 0) {
-                    addMessageToHistory('received', '[LoRa via ' + displayName + '] ' + cleanText, formatTimestamp(), 'read');
-                    showToast('Received from ' + displayName);
+                    addMessageToConversation('received', cleanText, displayName, formatTimestamp(), 'read');
+                    
+                    // Show toast notification when message arrives and no thread is open
+                    var activePeer = getActiveConversationPeer();
+                    if (!activePeer || activePeer !== displayName) {
+                        showToast('New message from ' + displayName);
+                        
+                        // Trigger Android notification via Cordova plugin if available
+                        if (window.cordova && cordova.exec) {
+                            try {
+                                cordova.exec(null, null, 'com.devdactic.cordovanotification', 'createNotification', [
+                                    { title: 'PTTLora Message', text: cleanText.slice(0, 50), priority: 2 }
+                                ]);
+                            } catch(e) {}
+                        }
+                    }
                 } else if (!activeDeviceName || activeDeviceName === deviceName) {
                     // Echo ACK from our target device — just log it
                     logMessage("Echo from " + displayName + ": " + cleanText);
@@ -1720,14 +1903,16 @@ var app = {
         var saved = localStorage.getItem('ptt_buddy_name');
         if (saved) {
             app.displayName = saved;
-            document.getElementById('myAliasInput').value = saved;
+            var aliasInput = document.getElementById('myAliasInput');
+            if (aliasInput) aliasInput.value = saved;
         } else {
             // Default to last 4 of MAC
             var names = Object.keys(app.connectedDevices);
             var mac = names.length ? names[0].replace(/^LilygoT-Echo-/i, '').substr(-4) : '';
             if (mac) {
                 app.displayName = mac.toUpperCase();
-                document.getElementById('myAliasInput').value = mac;
+                var aliasInput = document.getElementById('myAliasInput');
+                if (aliasInput) aliasInput.value = mac;
             }
         }
     },
@@ -1937,7 +2122,21 @@ var app = {
 
     // === PTT Methods ===
     startPttStatusPolling: function() {
-        // polling logic moved to app.startPttStatusPolling in timer below
+        if (app.pttPollTimer) clearInterval(app.pttPollTimer);
+        app.pttPollTimer = setInterval(function() {
+            var target = app.getActiveDeviceId();
+            if (!target || !app.connectedDevices[target]) return;
+            var pid = app.connectedDevices[target].peripheralId;
+            if (!pid) return;
+            ble.write(
+                pid,
+                app.serviceUUID,
+                app.characteristicUUID,
+                app.stringToBytes("GETSTATUS"),
+                function() {},
+                function(err) { logMessage("PTT status poll error: " + err); }
+            );
+        }, 3000);
     },
 
     refreshPttButtonFromState: function() {
@@ -2241,6 +2440,12 @@ var app = {
 
         if (!contentArea) return;
 
+        // Clear refreshing state when screen data arrives from the target device
+        if (isTargetDevice) {
+            contentArea.removeAttribute('data-refreshing');
+            contentArea.classList.remove('refreshing');
+        }
+
         // Update header
         var mode = fields.m || 'TXT';
         if (modeBadge) modeBadge.textContent = mode;
@@ -2373,11 +2578,24 @@ var app = {
 
         case 'TXT':
             var msgCount = parseInt(c['txt_inbox_count']) || 0;
-            var loraAlive = c['txt_lora_alive'] ? true : false;
+            var loraAlive = c['txt_lora_alive'] === '1';
             if (loraAlive) {
                 html += this._screenRow('<span class="status-badge connected">✓ On channel</span>');
             } else {
                 html += this._screenRow('✗ No one on channel');
+            }
+            // Sync TXT badge pill from screen mirror (1s update) to avoid stale GETSTATUS data (3s poll)
+            if (isTargetDevice) {
+                var txtBadge = document.getElementById('txtChannelBadge');
+                if (txtBadge) {
+                    if (loraAlive) {
+                        txtBadge.textContent = '\u2713 On channel';
+                        txtBadge.className = 'status-badge connected';
+                    } else {
+                        txtBadge.textContent = '\u2717 No one on channel';
+                        txtBadge.className = 'status-badge disconnected';
+                    }
+                }
             }
             if (c['txt_show_inbox'] === '1') {
                 var scrollPage = parseInt(c['txt_scroll_page']) || 0;

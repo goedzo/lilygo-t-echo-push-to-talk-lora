@@ -249,13 +249,25 @@ void handleAppModes() {
             else if (strcmp(current_mode, "BEACON") == 0) drawBeaconLayout();
             else if (strcmp(current_mode, "PTT") == 0) drawPttLayout();
             else if (strcmp(current_mode, "SCAN") == 0) drawScanLayout();
-            else if (strcmp(current_mode, "TXT") == 0) drawTxtSingleLayout();
+            else if (strcmp(current_mode, "TXT") == 0) {
+                extern bool txtShowInbox;
+                if (txtShowInbox) drawTxtInboxLayout();
+                else drawTxtSingleLayout();
+            }
             else if (strcmp(current_mode, "TST") == 0) drawTstLayout();
             else if (strcmp(current_mode, "PONG") == 0) drawPongLayout();
             else if (strcmp(current_mode, "RAW") == 0) drawRawLayout();
             else if (strcmp(current_mode, "WP") == 0) drawWpLayout();
             else drawDefaultLayout();
             s_display_rendering = false;
+
+            // Push the new mode + full screen state to the companion app immediately
+            // — periodic sendScreenSyncIfDirty() is blocked by the battery-change filter,
+            // so use the forced path that bypasses all throttling.
+            extern bool isBleConnected();
+            if (isBleConnected()) {
+                sendScreenSyncForced();
+            }
         }
     }
 
@@ -855,7 +867,9 @@ void sendTxtMessage(const char* message) {
         
         // Only render TXT layout if we're actually in TXT mode (TST doesn't need it)
         if (current_mode == "TXT") {
-            drawTxtSingleLayout();
+            extern bool txtShowInbox;
+            if (txtShowInbox) drawTxtInboxLayout();
+            else drawTxtSingleLayout();
         }
     } else {
         // Long message — split into chunks with TXM multi-packet header
@@ -896,7 +910,11 @@ void sendTxtMessage(const char* message) {
                 
                 // Update TXT inbox count and render
                 txtInboxMsgCount = inboxCount();
-                drawTxtSingleLayout();
+                {
+                    extern bool txtShowInbox;
+                    if (txtShowInbox) drawTxtInboxLayout();
+                    else drawTxtSingleLayout();
+                }
             }
 
             // Brief gap between chunks to avoid radio contention
@@ -907,7 +925,11 @@ void sendTxtMessage(const char* message) {
 
         // Final TXT layout render after all chunks sent
         txtInboxMsgCount = inboxCount();
-        drawTxtSingleLayout();
+        {
+            extern bool txtShowInbox;
+            if (txtShowInbox) drawTxtInboxLayout();
+            else drawTxtSingleLayout();
+        }
     }
 }
 

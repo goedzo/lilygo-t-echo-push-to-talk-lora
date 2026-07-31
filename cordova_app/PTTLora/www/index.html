@@ -59,8 +59,8 @@
             <!-- Mode Selector -->
             <section class="card mode-section">
                 <div class="mode-strip" id="modeStrip">
-                    <button class="modePill" data-mode="RAW"><span>Raw</span></button>
                     <button class="modePill active" data-mode="TXT"><span>Txt</span></button>
+                    <button class="modePill" data-mode="RAW"><span>Raw</span></button>
                     <button class="modePill" data-mode="RANGE"><span>Range</span></button>
                     <button class="modePill" data-mode="TST"><span>Tst</span></button>
                     <button class="modePill" data-mode="PONG"><span>Pong</span></button>
@@ -70,28 +70,35 @@
                 </div>
             </section>
 
-            <!-- Display Name / Alias -->
-            <section class="card buddy-section" id="aliasSection">
-                <div class="alias-input-row">
-                    <input type="text" id="myAliasInput" placeholder="My alias (call sign)" maxlength="16" autocomplete="off" autocapitalize="words" />
-                    <button class="buddy-action-btn" id="aliasSetBtn" title="Save alias">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                    </button>
+            <!-- Message Conversations List -->
+            <section class="card chat-section" id="chatSection">
+                <div class="chat-header-row" id="chatHeaderRow">
+                    <span class="chat-title">Messages</span>
+                    <span class="chat-total-badge" id="chatTotalBadge"></span>
+                </div>
+                <div class="chat-list" id="chatListContainer">
+                    <!-- Conversation threads populated by JS -->
                 </div>
             </section>
 
-            <!-- Device Selector (multi-device testing) -->
-            <section class="card device-section" id="deviceSection" style="display:none;">
-                <div class="device-strip" id="deviceStrip">
-                    <!-- Connected devices populated dynamically -->
+            <!-- Active Chat View (shown when a thread is selected) -->
+            <section class="card active-chat-section" id="activeChatSection" style="display:none;">
+                <div class="active-chat-header">
+                    <button class="chat-back-btn" onclick="app.exitActiveChat()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <span class="active-chat-peer" id="activeChatPeer">---</span>
+                </div>
+                <div class="active-chat-body" id="activeChatMessages">
+                    <!-- Chat messages for selected thread -->
                 </div>
             </section>
 
             <!-- PTT Button -->
             <section class="card ptt-section" id="pttSection" style="display:none;">
                 <div class="ptt-status-bar" id="pttStatus">
-                    <span class="status-badge" id="bleBadge">📱 Connecting</span>
-                    <span class="status-badge" id="loraBadge">📡 Checking...</span>
+                    <span class="status-badge" id="bleBadge">\u{1F4E1} Connecting</span>
+                    <span class="status-badge" id="loraBadge">\u{1F4E1} Checking...</span>
                 </div>
                 <button class="ptt-button" id="pttButton" disabled>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 15v1a3 3 0 003 3h8a3 3 0 003-3v-1"/></svg>
@@ -147,34 +154,16 @@
                 </div>
             </section>
 
-            <!-- Text Input -->
-            <section class="card input-section" id="inputSection">
-                <div class="txt-input-header">
-                    <span class="char-counter ok" id="charCounter">85 left</span>
-                    <button class="clear-history-btn" onclick="clearMessageHistory()" title="Clear history">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    </button>
-                </div>
+            <!-- Chat Input (only visible in TXT mode) -->
+            <section class="card chat-input-section" id="inputSection">
                 <form class="send-form" id="sendForm">
                     <input type="text" id="inputField" placeholder="Type a message..." autocomplete="off" autocapitalize="none" maxlength="85" oninput="updateCharCounter(this.value.length)" />
                     <button type="submit" class="send-btn" id="sendBtn">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                        Send
                     </button>
                 </form>
                 <div class="txt-status-area" id="txtStatusLine">
-                    <span class="status-badge checking" id="txtChannelBadge">📡 Checking...</span>
-                </div>
-            </section>
-
-            <!-- Message History Panel -->
-            <section class="card history-section" id="messageHistoryPanel">
-                <div class="history-header">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <span>Message History</span>
-                </div>
-                <div class="history-body" id="messageHistoryContainer">
-                    <!-- Messages populated by JS -->
+                    <span class="status-badge checking" id="txtChannelBadge">\u{1F4E1} Checking...</span>
                 </div>
             </section>
 
@@ -202,7 +191,7 @@
             </section>
 
             <!-- Device Settings Section -->
-            <section class="card settings-section" id="settingsSection" style="display:none;">
+            <section class="card settings-section open" id="settingsSection" style="display:block;">
                 <div class="settings-header">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                     <span>Device Settings</span>
@@ -292,6 +281,17 @@
                             <input type="number" class="time-input" id="settingMIN" min="0" max="59" placeholder="MM" />
                             <span class="time-sep">:</span>
                             <input type="number" class="time-input" id="settingSEC" min="0" max="59" placeholder="SS" />
+                        </div>
+                    </div>
+
+                    <!-- Display Name / Alias -->
+                    <div class="setting-row">
+                        <span class="setting-label">My Alias</span>
+                        <div style="display:flex;gap:6px;width:100%;">
+                            <input type="text" id="myAliasInput" placeholder="Call sign" maxlength="16" autocomplete="off" autocapitalize="words" style="flex:1;background:#0D1923;border:1.5px solid #1E3040;border-radius:8px;padding:6px 10px;font-size:13px;color:#C8DCE8;outline:none;" />
+                            <button class="buddy-action-btn" id="aliasSetBtn" title="Save alias">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                            </button>
                         </div>
                     </div>
                 </div>
