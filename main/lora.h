@@ -8,7 +8,7 @@
 
 #define QUALITY_THRESHOLD 50  // Define a threshold for channel quality (value can be adjusted)
 #define RETRANSMIT_BUFFER_SIZE 100  // Buffer size for packet retransmission — effectively infinite for realistic loss (~500s at 5s sends)
-#define RECEIVE_PACKET_QUEUE_SIZE 5  // Buffer size for storing newer packets
+#define RECEIVE_PACKET_QUEUE_SIZE 25  // Buffer size for storing newer packets (before, 5 was too small for hop gaps)
 #define MAX_PACKET_SIZE 128        // Maximum packet payload in bytes (fits LoRa max, eliminates heap allocation)
 
 // NAK reliability parameters
@@ -18,20 +18,6 @@
 #define REQ_PACKET_SPACING_MS 2500            // Minimum gap between consecutive outgoing REQ packets
 #define REQ_DEDUP_WINDOW_MS 8000              // Ignore duplicate REQs within this window at sender
 #define MAX_BUFFER_AGE_MS 120000              // Discard buffer entries older than 2 minutes
-
-// Enum for Frequency Status
-enum FrequencyStatusEnum {
-    FREQUENCY_GOOD = 0,
-    FREQUENCY_BAD_LOCAL = 1,    // Marked bad by the local device
-    FREQUENCY_BAD_EXTERNAL = 2, // Marked bad by an external device
-    FREQUENCY_BAD_BOTH = 3      // Marked bad by both local and external devices
-};
-
-// Structure to track frequency status
-struct FrequencyStatus {
-    float frequency;
-    FrequencyStatusEnum status;  // Status of the frequency (good, bad by local, bad by external, or both)
-};
 
 // Fixed-size packet buffer for retransmission — no heap allocation needed
 struct PacketBuffer {
@@ -75,7 +61,7 @@ struct PacketQueueEntry {
 extern SX1262* radio;
 extern float defaultFrequency;
 extern float currentFrequency;
-extern FrequencyStatus* frequencyMap;  // Pointer to store frequency statuses (good/bad)
+extern float* frequencyMap;  // Hopping frequency array — no status tracking (bad-channel removed)
 extern float startFreq;
 extern float endFreq;
 extern float stepSize;
@@ -96,13 +82,8 @@ bool setupLoRa();
 void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverride = 0);
 void sendPacket(const char* str);
 void sleepLoRa();
-void markFrequencyAsGood(float freq);
-void markFrequencyAsBad(float freq, bool local);
 int setFrequency(float freq);
-void shareFrequencyMap();  // Function to share the frequency map
-void updateFrequencyMap(const unsigned char* receivedData, int len);  // Function to update the frequency map based on received data
-void handleMapSharing();  // Function to handle map sharing logic
-unsigned char calculateChecksum(const unsigned char* data, int len);  // Function to calculate checksum for data validation
+unsigned char calculateChecksum(const unsigned char* data, int len);
 int calculateQuality(float rssi, float snr, bool ignoreSNR);
 String getFormattedDateTime();
 
@@ -123,7 +104,7 @@ void checkOutstandingReqs(unsigned int processedCounter);  // Check if any resol
 bool markPacketReceived(unsigned int counter);           // Track that a specific counter arrived (resolves outstanding REQs)
 void sendRetransmitRequest(unsigned int counter);        // Send REQ with dedup + spacing logic
 // Peer beacon & liveness tracking
-#define PEER_BEACON_INTERVAL 47000  // 47s, matches hop cycle
+#define PEER_BEACON_INTERVAL 94000  // 94s = 2 hop cycles, reduces airtime while keeping liveness visible
 #define PEER_TIMEOUT 94000          // 94s = 2 beacon cycles
 
 extern unsigned long lastPeerPacketTime;
@@ -162,5 +143,11 @@ extern bool inProbeMode;                 // True while waiting for time sync via
 extern unsigned long firstBootMillis;    // Boot timestamp in millis for probe logic
 extern bool heardProbeThisCycle;         // Whether we received a PRB during current hop cycle
 extern unsigned long syncLockUntilCycle; // Hop cycle number until which we lock to discovery freq after PRB receive
+
+// Peer-to-peer handshake (bidirectional liveness)
+#define P2P_ACK_TIMEOUT_MS 94000          // 94s = 2 beacon cycles
+extern bool peerAcked;                   // True once peer acknowledged our probe (bidirectional sync)
+extern unsigned long peerAckedTimeMs;    // millis() when peer ACK was last received
+void setPeerAcked();                     // Called on receiving PS packet from peer
 
 #endif // LORA_H

@@ -2531,6 +2531,7 @@ var app = {
 
         switch (mode) {
         case 'BEACON':
+            var peerAlive = c['beacon_peer_alive'] === '1';
             var peerName = c['peer_name'] || '---';
             var peerDist = c['peer_dist'];
             if (peerDist && peerDist !== '-1') {
@@ -2539,6 +2540,19 @@ var app = {
             } else {
                 html += this._screenRow('No peer loc');
                 html += this._screenRow('???');
+            }
+            // Sync BEACON badge pill from screen mirror (1s update)
+            if (isTargetDevice) {
+                var beaconBadge = document.getElementById('beaconChannelBadge');
+                if (beaconBadge) {
+                    if (peerAlive) {
+                        beaconBadge.textContent = '\u2713 On channel';
+                        beaconBadge.className = 'status-badge connected';
+                    } else {
+                        beaconBadge.textContent = '\u2717 No one on channel';
+                        beaconBadge.className = 'status-badge disconnected';
+                    }
+                }
             }
             var rosterCount = c['roster_count'] || 0;
             html += this._screenRow(rosterCount + ' peers');

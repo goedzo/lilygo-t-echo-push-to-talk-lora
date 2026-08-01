@@ -82,6 +82,10 @@ void sendScreenSync() {
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "peer_dist:%.0fm,", (beacon_display_dist >= 0) ? beacon_display_dist : -1);
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "roster_count:%d,", peerRosterCount);
 
+        // Peer liveness — mirrors the on-device indicator to companion app
+        extern bool isPeerAlive();
+        off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "beacon_peer_alive:%d,", (isPeerAlive() ? 1 : 0));
+
         int roster_rows = 0;
         // Guard against corrupted peerRosterCount causing out-of-bounds read
         int max_roster = peerRosterCount;
@@ -346,6 +350,11 @@ void sendScreenSyncForced() {
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "peer_name:%s,", pn);
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "peer_dist:%.0fm,", (beacon_display_dist >= 0) ? beacon_display_dist : -1);
         off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "roster_count:%d,", peerRosterCount);
+
+        // Peer liveness — mirrors the on-device indicator to companion app
+        extern bool isPeerAlive();
+        off += snprintf(buf + off, SYNC_MAX_PAYLOAD - off, "beacon_peer_alive:%d,", (isPeerAlive() ? 1 : 0));
+
         int roster_rows = 0;
         int max_roster = peerRosterCount;
         if (max_roster < 0 || max_roster > 50) max_roster = 0;

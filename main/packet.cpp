@@ -243,6 +243,10 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
         channel = buffer[2];  // Set the channel (A, B, C, etc.)
         sendSerialToApp(F("Type determined: TXT on channel "));
         sendSerialToAppLn((String)channel);
+    } else if (strncmp((char*)buffer, "PS", 2) == 0 && index >= 3 && buffer[2] == '~') {
+        type = "P2P_SYNC";  // Peer-to-peer handshake acknowledgment
+        channel = '\0';
+        sendSerialToAppLn(F("Type determined: P2P_SYNC (Peer Handshake ACK)"));
     } else if (strncmp((char*)buffer, "PR", 2) == 0 && index >= 2) {
         type = "PRB";  // Probe discovery packet
         channel = '\0';  // Probes don't use channel field
@@ -297,12 +301,14 @@ bool Packet::parseHeader(uint8_t* buffer, uint16_t bufferSize) {
                     sendSerialToAppLn((String)packetCounter);
                 }
             } else if (strcmp(fieldType, "SD") == 0) {
-                // Send DateTime (SD)
-                if (fieldLength == 14) {  // Check for 14 characters for YYYYMMDDHHMMSS
-                    char dateTimeStr[15];  // 14 characters + null terminator
-                    strncpy(dateTimeStr, (char*)(buffer + fieldStart), 14);
-                    dateTimeStr[14] = '\0';
-                    sendDateTime = String(dateTimeStr);  // Store as string or convert to actual time format if needed
+                // Send DateTime (SD) — always take first 14 chars as YYYYMMDDHHMMSS
+                // The value may be followed by other data (e.g. device ID in beacons)
+                if (fieldLength > 0) {
+                    int len = fieldLength < 14 ? fieldLength : 14;
+                    char dateTimeStr[15];
+                    strncpy(dateTimeStr, (char*)(buffer + fieldStart), len);
+                    dateTimeStr[len] = '\0';
+                    sendDateTime = String(dateTimeStr);
                     sendSerialToApp(F("Send DateTime (SD) determined: "));
                     sendSerialToAppLn(sendDateTime);
                 }

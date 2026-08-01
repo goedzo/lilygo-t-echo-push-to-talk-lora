@@ -16,7 +16,6 @@
 #include <time.h>  // For RTC time management
 #include <stdlib.h>  // For random number generation
 
-#define RECEIVE_PACKET_QUEUE_SIZE 5
 #define SEND_PACKET_QUEUE_SIZE 10
 
 // NAK reliability globals — initialized in initNakReliability()
@@ -64,8 +63,11 @@ float startFreq = 863.0;
 float endFreq = 869.65;
 float stepSize = 0.01;
 int numFrequencies = (endFreq - startFreq) / stepSize;
-FrequencyStatus* frequencyMap = nullptr;
+float* frequencyMap = nullptr;
 int FrequencyHopSeconds = 47; //After how many seconds do we hop to the next frequency?
+
+// All channels are always used — no bad-channel tracking.
+// Deterministic hopping depends on all devices selecting the same channel each cycle.
 
 // Epoch-aligned hop interval computation — seconds in a day for cycling
 #define HOP_EPOCH_SECONDS 86400UL
@@ -85,9 +87,7 @@ unsigned long lastHopTime = 0;  // Time of last hop
 
 unsigned long syncLossTimer = 0;  // Timer for detecting lost synchronization
 
-bool mapChanged = false;  // Flag to track if the map has changed locally
-unsigned long lastMapShareTime = 0;  // Last time the map was shared
-unsigned long mapShareDelay = 0;  // Random delay for map sharing
+unsigned long resendTime = 0;  // Non-blocking timer for post-hop retransmit delay
 
 unsigned long lastPeerPacketTime = 0;  // Track when last packet from peer was received
 bool     peerPacketReceived = false;    // Guard against zero-boot artifact
@@ -99,9 +99,20 @@ unsigned long firstBootMillis = 0;    // Boot timestamp used for probe timing
 bool heardProbeThisCycle = false;     // Whether we received a PRB during current hop cycle
 unsigned long syncLockUntilCycle = 0; // Hop cycle number until which we lock to discovery freq after PRB receive
 
+// Peer-to-peer handshake (bidirectional liveness)
+bool peerAcked = false;
+unsigned long peerAckedTimeMs = 0;
+
+void setPeerAcked() {
+    peerAcked = true;
+    peerAckedTimeMs = millis();
+}
+
 bool isPeerAlive() {
-    if (!peerPacketReceived) return false;  // Never report alive before first real packet
-    return (millis() - lastPeerPacketTime < PEER_TIMEOUT);
+    if (!peerPacketReceived && !peerAcked) return false;  // Never report alive before first packet or ACK
+    bool received_ok = (millis() - lastPeerPacketTime < PEER_TIMEOUT);
+    bool acked_ok = peerAcked && (millis() - peerAckedTimeMs < PEER_TIMEOUT);
+    return received_ok || acked_ok;  // Alive if either direction confirmed
 }
 
 // Peer roster globals for BEACON mode
@@ -255,10 +266,9 @@ unsigned int lastMessageCounter=0;     // The packetCounter of the last message
 void initializeFrequencyMap() {
     numFrequencies = (endFreq - startFreq) / stepSize;
 
-    frequencyMap = new FrequencyStatus[numFrequencies];
+    frequencyMap = new float[numFrequencies];
     for (int i = 0; i < numFrequencies; i++) {
-        frequencyMap[i].frequency = startFreq + (i * stepSize);
-        frequencyMap[i].status = FREQUENCY_GOOD;  // Start by assuming all frequencies are good
+        frequencyMap[i] = startFreq + (i * stepSize);
     }
 }
 
@@ -274,22 +284,10 @@ float getNextFrequency(unsigned long sharedTime, unsigned long sharedSeed) {
     // Generate a random starting index based on intervalCount
     int startingIndex = randomValue % numFrequencies;
 
-    // Loop through the frequencies starting from the random index
-    for (int i = 0; i < numFrequencies; i++) {
-        int index = (startingIndex + i) % numFrequencies;  // Wrap around if we exceed the range
-        if (frequencyMap[index].status == FREQUENCY_GOOD) {
-            //Serial.print(F("Selected Frequency: "));
-            //Serial.println(frequencyMap[index].frequency);
-            return frequencyMap[index].frequency;  // Return the good frequency
-        }
-    }
-
-    // If no good frequency is found, fallback to startFreq
-    sendSerialToAppLn(F("No good frequency found, falling back to startFreq"));
-    return defaultFrequency;
+    // Always return the channel at this index — all channels used unconditionally.
+    int index = (startingIndex + 0) % numFrequencies;
+    return frequencyMap[index];
 }
-
-
 
 
 // Simple checksum calculation for validating received maps
@@ -405,67 +403,10 @@ void sendProbeBeacon() {
     sendPacket(probeBuf);
 }
 
-// Function to share the frequency map with other devices
-void shareFrequencyMap() {
-    char send_pkt_buf[155];
-    snprintf(send_pkt_buf, sizeof(send_pkt_buf), "MAP");  // Add "MAP" header
-
-    unsigned char frequencyStatusData[numFrequencies];
-    for (int i = 0; i < numFrequencies; i++) {
-        frequencyStatusData[i] = (frequencyMap[i].status == FREQUENCY_BAD_LOCAL) ? 0 : 1;  // Only share locally marked bad frequencies
-    }
-
-    // Append the frequency status data to the packet
-    memcpy(send_pkt_buf + 3, frequencyStatusData, numFrequencies);
-
-    // Calculate checksum and append it
-    unsigned char checksum = calculateChecksum((unsigned char*)send_pkt_buf, numFrequencies + 3);
-    send_pkt_buf[numFrequencies + 3] = checksum;
-
-    // Send the frequency map packet with the "MAP" header
-    sendPacket((uint8_t*)send_pkt_buf, numFrequencies + 4);  // +4 to include header and checksum
-
-    // Reset the mapChanged flag and set the last shared time
-    mapChanged = false;
-    lastMapShareTime = millis();
-}
-
-// Function to update local frequency map based on received data
-void updateFrequencyMap(const unsigned char* receivedData, int len) {
-    // Validate the checksum
-    if (calculateChecksum(receivedData, len - 1) != receivedData[len - 1]) {
-        sendSerialToAppLn(F("Invalid frequency map received"));
-        return;  // Invalid map, do not update
-    }
-
-    // Merge the received map into the local map, keeping locally marked bad channels
-    for (int i = 0; i < len - 1 && i < numFrequencies; i++) {
-        if (frequencyMap[i].status == FREQUENCY_GOOD && receivedData[i] == 0) {
-            // If it was good locally but bad in the received map, mark it bad externally
-            frequencyMap[i].status = FREQUENCY_BAD_EXTERNAL;
-        } else if (frequencyMap[i].status == FREQUENCY_BAD_LOCAL && receivedData[i] == 0) {
-            // If it was bad locally and bad in the received map, mark it bad by both
-            frequencyMap[i].status = FREQUENCY_BAD_BOTH;
-        }
-    }
-}
 
 void setFlag(void) {
     operationDone = true;
  }
-
-// Function to handle map sharing logic
-void handleMapSharing() {
-    if(deviceSettings.frequency_hopping_enabled) {
-      if (mapChanged) {
-          // Check if it's time to share the map
-          unsigned long currentTime = millis();
-          if (currentTime - lastMapShareTime >= mapShareDelay) {
-              shareFrequencyMap();
-          }
-      }
-    }
-}
 
 void storePacketInQueue(uint8_t* pkt_buf, uint16_t len, unsigned int counter) {
     if (receivePacketQueueCount >= RECEIVE_PACKET_QUEUE_SIZE) {
@@ -620,9 +561,7 @@ void checkLoraPacketComplete() {
                 hopAfterTxRx = false;
                 setFrequency(hopToFrequency);  // Set the new frequency
                 if (lastMessageLength > 0) {
-                    delay(1000);  // Allow some deviation in other devices
-                    sendSerialToAppLn(F("Resending last message after frequency hop"));
-                    sendPacket(lastMessageBuffer, lastMessageLength, lastMessageCounter);
+                    resendTime = millis() + 1000;  // Defer retransmit — non-blocking
                 }
             } else {
                 radio->startReceive();  // Start receiving after transmission
@@ -630,6 +569,12 @@ void checkLoraPacketComplete() {
             //If there are more messages in the queue, send them now
             handleTransmissionComplete();
 
+            // Non-blocking post-hop retransmit — defer until resendTime
+            if (resendTime > 0 && millis() >= resendTime) {
+                sendSerialToAppLn(F("Resending last message after frequency hop"));
+                sendPacket(lastMessageBuffer, lastMessageLength, lastMessageCounter);
+                resendTime = 0;
+            }
         } else {
             uint16_t packet_len = radio->getPacketLength(false);
             uint16_t irqFlags = radio->getIrqFlags();
@@ -704,6 +649,8 @@ void checkLoraPacketComplete() {
                             sendSerialToApp((String)currentFrequency);
                             sendSerialToAppLn(F(" MHz"));
 
+                            bool wasInProbe = inProbeMode;  // Save before any changes below
+
                             if (inProbeMode) {
                                 inProbeMode = false;  // Exit probe mode — we can hop now
                                 sendSerialToAppLn(F("→ exited PROBE mode, starting hopping"));
@@ -714,41 +661,50 @@ void checkLoraPacketComplete() {
                             heardProbeThisCycle = true;  // Mark that we heard a probe this cycle
 
                             // Lock to discovery channel for several hop cycles after PRB receive
-                            // This ensures both devices verify sync before diverging
-                            RTC_Date rtc_now = rtc.getDateTime();
-                            unsigned long nowSecondsInDay = rtc_now.hour * 3600 + rtc_now.minute * 60 + rtc_now.second;
-                            syncLockUntilCycle = (nowSecondsInDay / FrequencyHopSeconds) + 5;
+                            // Use sender's time (from ~SD) so both devices start their lock period together.
+                            unsigned long senderCycle = 0;
+                            if (packet.sendDateTime.length() >= 14) {
+                                unsigned long senderSecs = packet.sendDateTime.substring(8, 10).toInt() * 3600
+                                                 + packet.sendDateTime.substring(10, 12).toInt() * 60
+                                                 + packet.sendDateTime.substring(12, 14).toInt();
+                                senderCycle = (senderSecs / FrequencyHopSeconds) + 5;
+                            }
 
-                            // Auto-sync local RTC from sender's ~SD if not set via GPS
-                            if (!time_set) {
+                            // After syncing, set lock period based on sender's cycle so both devices diverge together
+                            if (senderCycle > 0) {
+                                syncLockUntilCycle = senderCycle;
+                            }
+
+                            // Always accept peer time on first PRB after probe exit — GPS may be stale.
+                            if (!time_set || wasInProbe) {
                                 time_set = true;
                                 sendSerialToApp(F("RTC synced from PRB ~SD: "));
                                 sendSerialToAppLn(packet.sendDateTime);
                                 adjustRTC(packet.sendDateTime);
-                            } else {
-                                sendSerialToApp(F("RTC nudged ±1s from peer PRB"));
-                                autoSyncRTCFromPacket(packet);
-                            }
-                            
-                            // Extract sender's device ID from ~DI field for logging
-                            String senderID;
-                            const char* rawPtr = (const char*)rcv_pkt_buf;
-                            uint16_t pi = 0;
-                            while (pi < packet_len && rcv_pkt_buf[pi] != '~') pi++;
-                            if (pi < packet_len) {
-                                pi++; // skip first ~
-                                while (pi + 1 < packet_len) {
-                                    if (rcv_pkt_buf[pi] == '~' && rcv_pkt_buf[pi+1] == '~') break;
-                                    if (rcv_pkt_buf[pi] == '~') {
-                                        pi++;
-                                        if (pi + 2 <= packet_len && rcv_pkt_buf[pi] == 'D' && rcv_pkt_buf[pi+1] == 'I') {
-                                            pi += 2; // skip DI
-                                            while (pi < packet_len && rcv_pkt_buf[pi] != '~' && rcv_pkt_buf[pi] != 0) {
-                                                senderID += (char)rcv_pkt_buf[pi];
-                                                pi++;
-                                            }
-                                        } else {
-                                            while (pi < packet_len && rcv_pkt_buf[pi] != '~') pi++;
+                            } else if (packet.sendDateTime.length() >= 14) {
+                                // Already peer-synced — gradual convergence only
+                             autoSyncRTCFromPacket(packet);
+                         }
+                         
+                         // Extract sender's device ID from ~DI field for logging and use in sync confirmation
+                         String senderID;
+                         const char* rawPtr = (const char*)rcv_pkt_buf;
+                         uint16_t pi = 0;
+                         while (pi < packet_len && rcv_pkt_buf[pi] != '~') pi++;
+                         if (pi < packet_len) {
+                             pi++; // skip first ~
+                             while (pi + 1 < packet_len) {
+                                 if (rcv_pkt_buf[pi] == '~' && rcv_pkt_buf[pi+1] == '~') break;
+                                 if (rcv_pkt_buf[pi] == '~') {
+                                     pi++;
+                                     if (pi + 2 <= packet_len && rcv_pkt_buf[pi] == 'D' && rcv_pkt_buf[pi+1] == 'I') {
+                                         pi += 2; // skip DI
+                                         while (pi < packet_len && rcv_pkt_buf[pi] != '~' && rcv_pkt_buf[pi] != 0) {
+                                             senderID += (char)rcv_pkt_buf[pi];
+                                             pi++;
+                                         }
+                                     } else {
+                                         while (pi < packet_len && rcv_pkt_buf[pi] != '~') pi++;
                                         }
                                     } else {
                                         while (pi < packet_len && rcv_pkt_buf[pi] != '~') pi++;
@@ -756,13 +712,43 @@ void checkLoraPacketComplete() {
                                 }
                             }
                             
-                            sendSerialToApp(F("PROBE received from: "));
-                            sendSerialToAppLn(senderID);
-                            sendSerialToAppLn(F("PROBE synced — enabling hopping"));
+                             sendSerialToApp(F("PROBE received from: "));
+                             sendSerialToAppLn(senderID);
+                             sendSerialToAppLn(F("PROBE synced — enabling hopping"));
+
+                             // If the incoming packet is a PS (our own probe ACK), record bidirectional liveness
+                             if (packet.type == "P2P_SYNC") {
+                                 setPeerAcked();
+                                 sendSerialToApp(F("P2P handshake from: "));
+                                 sendSerialToAppLn(senderID);
+                             }
+
+                             // After syncing from this PRB, broadcast sync confirmation so peer also exits probe mode
+                             if (wasInProbe && packet.sendDateTime.length() == 14) {
+                                char confirmBuf[80];
+                                snprintf(confirmBuf, sizeof(confirmBuf), "PR~DI%s~SD%s", bleGetDeviceIdShort(), packet.sendDateTime.c_str());
+                                sendPacket((uint8_t*)confirmBuf, strlen(confirmBuf));
+                                sendSerialToApp(F("Sent sync confirmation PRB to: "));
+                                sendSerialToAppLn(senderID);
+
+                                // Also send P2P_SYNC handshake so we know the peer heard us (bidirectional)
+                                char ackBuf[60];
+                                snprintf(ackBuf, sizeof(ackBuf), "PS~DI%s", bleGetDeviceIdShort());
+                                sendPacket((uint8_t*)ackBuf, strlen(ackBuf));
+                                
+                                // Mark our own probe as acknowledged — we heard the peer and will hear us back
+                                setPeerAcked();
+                            }
                         } else if (!time_set) {
-                            // Not a PRB packet but we have no GPS time yet
-                            // Try to auto-sync from ANY packet's ~SD field
-                            autoSyncRTCFromPacket(packet);
+                            // Not a PRB but no GPS yet — accept sender's time as truth
+                            if (packet.sendDateTime.length() == 14) {
+                                time_set = true;
+                                sendSerialToApp(F("RTC synced from peer ~SD: "));
+                                sendSerialToAppLn(packet.sendDateTime);
+                                adjustRTC(packet.sendDateTime);
+                            } else {
+                                autoSyncRTCFromPacket(packet);
+                            }
                             
                             // If we just got time set, exit probe mode
                             if (time_set && inProbeMode) {
@@ -777,10 +763,47 @@ void checkLoraPacketComplete() {
                             sendSerialToAppLn(F("Received valid packet — exiting probe mode"));
                             inProbeMode = false;
 
-                            // Sync RTC from packet's ~SD if available
+                            // During probe mode exit, always accept peer time as truth for sync.
+                            // Gradual convergence only applies after initial sync is established.
+
+                            // Handle P2P_SYNC handshake during probe exit
+                            if (packet.type == "P2P_SYNC") {
+                                setPeerAcked();
+                                sendSerialToApp(F("P2P handshake from: "));
+                                sendSerialToAppLn(packet.beacon_deviceId);
+                            }
+
                             if (packet.sendDateTime.length() == 14) {
+                                if (!time_set) {
+                                    time_set = true;
+                                    sendSerialToApp(F("RTC synced from peer ~SD: "));
+                                    sendSerialToAppLn(packet.sendDateTime);
+                                    adjustRTC(packet.sendDateTime);
+                                } else {
+                                    // Already have GPS — accept peer time anyway to resolve drift
+                                    long localSecs = rtc.getDateTime().hour * 3600 + rtc.getDateTime().minute * 60 + rtc.getDateTime().second;
+                                    long pktSecs = packet.sendDateTime.substring(8, 10).toInt() * 3600
+                                                 + packet.sendDateTime.substring(10, 12).toInt() * 60
+                                                 + packet.sendDateTime.substring(12, 14).toInt();
+                                    long diff = abs(pktSecs - localSecs);
+                                    
+                                    if (diff > FrequencyHopSeconds) {
+                                        // RTC is wildly wrong — accept peer time to get back in sync
+                                        sendSerialToApp(F("RTC drifting by "));
+                                        sendSerialToApp((String)diff);
+                                        sendSerialToAppLn(F("s from peer — correcting"));
+                                        adjustRTC(packet.sendDateTime);
+                                    } else {
+                                        // Within hop cycle tolerance — gradual nudge is fine
+                                        autoSyncRTCFromPacket(packet);
+                                    }
+                                }
+                            } else if (!time_set) {
                                 time_set = true;
-                                adjustRTC(packet.sendDateTime);
+                                sendSerialToApp(F("RTC set from beacon"));
+                                autoSyncRTCFromPacket(packet);
+                            } else {
+                                autoSyncRTCFromPacket(packet);
                             }
                         }
 
@@ -797,25 +820,6 @@ void checkLoraPacketComplete() {
                             
                             // After processing a packet, check if it resolved any outstanding REQs
                             checkOutstandingReqs(packet.packetCounter);
-                        }
-
-                        // Update quality of the current frequency
-                        float rssi = radio->getRSSI();
-                        float snr = radio->getSNR();
-                        int qualityScore = calculateQuality(rssi, snr, false);
-
-                        if (qualityScore >= QUALITY_THRESHOLD) {
-                            markFrequencyAsGood(currentFrequency);
-                        } else {
-                            markFrequencyAsBad(currentFrequency, true);  // Mark bad by local
-                            mapChanged = true;  // Flag that a local change occurred
-                            mapShareDelay = random(1000, 5000);  // Randomize the map share delay (1-5 seconds)
-                        }
-
-                        // Update local frequency map if frequency map packet is received
-                        if (packet.type == "MAP") {
-                            sendSerialToApp(F("MAP rx — merging frequency map from peer"));
-                            updateFrequencyMap(rcv_pkt_buf + 3, packet_len - 4);  // Skip the header and checksum
                         }
 
                         // Reset sync loss timer on successful packet
@@ -839,7 +843,6 @@ void checkLoraPacketComplete() {
     }
 
     // Discovery mode: stay on 869.47 MHz, listen for other devices
-    // Transmit a PRB beacon once per hop cycle if we haven't heard anything
     if (deviceSettings.frequency_hopping_enabled && inProbeMode) {
         RTC_Date rtc_dt = rtc.getDateTime();
         unsigned long currentSecondsInDay = rtc_dt.hour * 3600 + rtc_dt.minute * 60 + rtc_dt.second;
@@ -853,6 +856,19 @@ void checkLoraPacketComplete() {
             sendProbeBeacon();
             lastBeaconTime = millis();
             lastProbeTxCycle = currentHopCycle;
+
+        } else if (currentHopCycle > 0) {
+            // Second probe attempt: seconds 23-25 of each hop cycle (middle of interval)
+            unsigned long secondsIntoHop = currentSecondsInDay % FrequencyHopSeconds;
+            if (secondsIntoHop >= 23 && secondsIntoHop <= 25 && !transmitFlag) {
+                static uint32_t lastMidProbe = 0;
+                if (currentSecondsInDay != lastMidProbe) {
+                    sendSerialToAppLn(F("PROBE tx (mid-cycle) — broadcasting on 869.47"));
+                    sendProbeBeacon();
+                    lastBeaconTime = millis();
+                    lastMidProbe = currentSecondsInDay;
+                }
+            }
         }
 
         // If we heard a probe from another device during this window, exit probe mode
@@ -870,7 +886,15 @@ void checkLoraPacketComplete() {
         }
     }
 
-    // Periodic resync: synced devices return to the discovery frequency every 5 minutes
+    // Post-sync probe broadcast: if we just exited probe mode, send one more PRB on 869.47
+    // to announce our synced time to any peers still in probe mode with a different RTC offset.
+    static uint32_t syncBroadcastAt = 0;
+    if (syncBroadcastAt == 0 && !inProbeMode) {
+        char confirmBuf[80];
+        snprintf(confirmBuf, sizeof(confirmBuf), "PR~DI%s~SD%s", bleGetDeviceIdShort(), getFormattedDateTime().c_str());
+        sendPacket((uint8_t*)confirmBuf, strlen(confirmBuf));
+        syncBroadcastAt = millis() + 30000;  // Reset after 30s
+    }
     if (deviceSettings.frequency_hopping_enabled && !inProbeMode) {
         RTC_Date currentTime = rtc.getDateTime();
         unsigned long sharedTime = currentTime.hour * 3600 + currentTime.minute * 60 + currentTime.second;
@@ -943,9 +967,6 @@ void checkLoraPacketComplete() {
             lastHopLog = currentSecondsInDay;
         }
     }
-
-    // Handle map sharing logic
-    handleMapSharing();
 
     // Periodically check outstanding REQs for retry / exhaustion
     if (nakInitialized && lastReceivedCounter > 0) {
@@ -1214,7 +1235,7 @@ void sendPacket(uint8_t* pkt_buf, uint16_t len, unsigned int messageCounterOverr
 
     // Get time-on-air for logging
     timeOnAir = radio->getTimeOnAir(newLen);
-    sendSerialToApp(F("Time-on-Air (ms): "));
+    sendSerialToApp(F("Time-on-Air (us): "));
     sendSerialToAppLn((String)timeOnAir);
 
     sendSerialToApp((String)send_pkt_buf);
@@ -1279,37 +1300,7 @@ void sleepLoRa() {
     }
 }
 
-// Mark frequency as good
-void markFrequencyAsGood(float freq) {
-    for (int i = 0; i < numFrequencies; i++) {
-        if (frequencyMap[i].frequency == freq) {
-            frequencyMap[i].status = FREQUENCY_GOOD;
-            break;
-        }
-    }
-}
-
-// Mark frequency as bad (local or external)
-void markFrequencyAsBad(float freq, bool local) {
-    for (int i = 0; i < numFrequencies; i++) {
-        if (frequencyMap[i].frequency == freq) {
-            if (local) {
-                if (frequencyMap[i].status == FREQUENCY_BAD_EXTERNAL) {
-                    frequencyMap[i].status = FREQUENCY_BAD_BOTH;
-                } else {
-                    frequencyMap[i].status = FREQUENCY_BAD_LOCAL;
-                }
-            } else {
-                if (frequencyMap[i].status == FREQUENCY_BAD_LOCAL) {
-                    frequencyMap[i].status = FREQUENCY_BAD_BOTH;
-                } else {
-                    frequencyMap[i].status = FREQUENCY_BAD_EXTERNAL;
-                }
-            }
-            break;
-        }
-    }
-}
+// markFrequencyAsGood / markFrequencyAsBad removed — bad-channel tracking disabled (see comment at line 68).
 
 // Check if the packet is duplicate by comparing packetCounter
 bool isDuplicatePacket(Packet& packet) {
